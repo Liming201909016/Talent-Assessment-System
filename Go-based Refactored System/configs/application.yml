@@ -1,0 +1,30 @@
+# 默认配置，环境变量或 configs/application-<env>.yml 可覆盖
+server:
+  port: 8092
+
+# 数据源：新数据库服务器 20.200.136.133（通过 SSH 隧道 23306）
+mysql:
+  dsn: "DB_USER:DB_PASSWORD@tcp(127.0.0.1:3306)/element?charset=utf8mb4&collation=utf8mb4_general_ci&parseTime=True&loc=Local"
+  maxOpen: 50
+  maxIdle: 10
+
+redis:
+  addr: 127.0.0.1:6379
+  db: 1
+  password: ""
+
+jwt:
+  # 必须与 Legacy Java token.secret 完全一致，以保证 token 互通
+  secret: CHANGE_ME_TO_A_SECURE_SECRET
+  expireMinutes: 30
+  header: Authorization
+  prefix: "Bearer "
+  loginUserKey: login_user_key
+
+captcha:
+  enabled: true
+  type: math
+
+upload:
+  path: "./tmp/uploadPath"
+  profile: "/profile"

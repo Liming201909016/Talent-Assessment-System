@@ -1,0 +1,20 @@
+# Go backend service for talent assessment system
+[Unit]
+Description=Talent Assessment Go Backend
+After=network.target mysql.service redis-server.service
+
+[Service]
+Type=simple
+User=liming
+Group=liming
+WorkingDirectory=/opt/talent-assessment
+ExecStart=/opt/talent-assessment/server
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Environment
+Environment=GIN_MODE=release
+
+[Install]
+WantedBy=multi-user.target

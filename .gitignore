@@ -1,0 +1,44 @@
+# === 只推送 Go 源码，排除其他一切 ===
+
+# Legacy Java System（只读参考，不推送）
+Legacy Java System/
+
+# 文档
+docs/
+
+# 脚本（测试、工具、DB、数据）
+scripts/
+
+# Copilot 规则（本地使用）
+.github/
+
+# Build artifacts
+Go-based Refactored System/bin/
+Go-based Refactored System/logs/
+Go-based Refactored System/tmp/
+Go-based Refactored System/ruoyi-ui/node_modules/
+Go-based Refactored System/ruoyi-ui/dist/
+
+# 前端源码（Vue，不推送）
+Go-based Refactored System/ruoyi-ui/
+
+# Environment files
+*.env.local
+*.env.staging
+*.env.production
+
+# SSH keys & secrets
+**/.ssh/
+*.pem
+*.key
+
+# Redis dumps
+**/dump.rdb
+
+# Go production config (contains credentials)
+Go-based Refactored System/configs/application-production.yml
+
+# Runtime
+*.exe
+*.log
+*.pid

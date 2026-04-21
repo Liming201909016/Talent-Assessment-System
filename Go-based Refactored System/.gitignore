@@ -1,0 +1,8 @@
+bin/
+logs/
+tmp/
+.env.local
+.env.staging
+.env.production
+*.exe
+*.log
