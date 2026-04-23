@@ -66,11 +66,17 @@ func (h *QuHandler) Paging(c *gin.Context) {
 
 	// 兼容 DataTable 的 params 嵌套和直接传参
 	content := req.Content
-	if content == "" { content = req.Params.Content }
+	if content == "" {
+		content = req.Params.Content
+	}
 	repoID := req.RepoID
-	if repoID == "" && len(req.Params.RepoIds) > 0 { repoID = req.Params.RepoIds[0] }
+	if repoID == "" && len(req.Params.RepoIds) > 0 {
+		repoID = req.Params.RepoIds[0]
+	}
 	quType := toIntPtr(req.QuType)
-	if quType == nil { quType = toIntPtr(req.Params.QuType) }
+	if quType == nil {
+		quType = toIntPtr(req.Params.QuType)
+	}
 	level := toIntPtr(req.Level)
 
 	// 如指定 repoId，通过 el_qu_repo 关联过滤
@@ -194,7 +200,9 @@ func (h *QuHandler) Save(c *gin.Context) {
 		ir := int8(0)
 		switch v := a.IsRight.(type) {
 		case bool:
-			if v { ir = 1 }
+			if v {
+				ir = 1
+			}
 		case float64:
 			ir = int8(v)
 		case int:
@@ -252,6 +260,14 @@ func (h *QuHandler) Save(c *gin.Context) {
 		if isNew {
 			qu.ID = strconv.FormatInt(nextID(), 10)
 			qu.CreateTime = &now
+		} else {
+			// 保留原有 create_time
+			var orig model.Qu
+			if err := tx.Select("create_time").Where("id = ?", qu.ID).Take(&orig).Error; err == nil && orig.CreateTime != nil {
+				qu.CreateTime = orig.CreateTime
+			} else {
+				qu.CreateTime = &now // 原值为空时用当前时间
+			}
 		}
 		qu.UpdateTime = &now
 		if isNew {
@@ -354,11 +370,12 @@ func (h *QuHandler) Delete(c *gin.Context) {
 }
 
 // refreshRepoStat 对齐 Java RepoMapper.refreshStat：
-//   UPDATE el_repo a SET
-//     radio_count=(SELECT COUNT(0) FROM el_qu_repo WHERE repo_id=a.id AND qu_type=1),
-//     multi_count=(SELECT COUNT(0) FROM el_qu_repo WHERE repo_id=a.id AND qu_type=2),
-//     judge_count=(SELECT COUNT(0) FROM el_qu_repo WHERE repo_id=a.id AND qu_type=3)
-//   WHERE a.id=?
+//
+//	UPDATE el_repo a SET
+//	  radio_count=(SELECT COUNT(0) FROM el_qu_repo WHERE repo_id=a.id AND qu_type=1),
+//	  multi_count=(SELECT COUNT(0) FROM el_qu_repo WHERE repo_id=a.id AND qu_type=2),
+//	  judge_count=(SELECT COUNT(0) FROM el_qu_repo WHERE repo_id=a.id AND qu_type=3)
+//	WHERE a.id=?
 func refreshRepoStat(tx *gorm.DB, repoID string) error {
 	if repoID == "" {
 		return nil

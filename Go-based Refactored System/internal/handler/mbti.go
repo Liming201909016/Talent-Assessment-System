@@ -13,9 +13,15 @@ import (
 
 // MbtiHandler MBTI 职业性格测验独立模块
 // 使用 el_mbti_answer 表，与现有 el_paper_qu_answer 完全隔离
-type MbtiHandler struct{ db *gorm.DB }
+type MbtiHandler struct {
+	db            *gorm.DB
+	reportHandler *MbtiReportHandler
+}
 
 func NewMbtiHandler(db *gorm.DB) *MbtiHandler { return &MbtiHandler{db: db} }
+
+// SetReportHandler 注入报告生成器（在 router 中设置，避免循环依赖）
+func (h *MbtiHandler) SetReportHandler(rh *MbtiReportHandler) { h.reportHandler = rh }
 
 // mbtiAnswer 对应 el_mbti_answer 表
 type mbtiAnswer struct {
@@ -45,9 +51,9 @@ func (h *MbtiHandler) PaperDetail(c *gin.Context) {
 
 	// 获取 paper 信息（计算剩余时间）
 	var paper struct {
-		ExamID    string     `gorm:"column:exam_id"`
-		TotalTime int        `gorm:"column:total_time"`
-		State     int        `gorm:"column:state"`
+		ExamID     string     `gorm:"column:exam_id"`
+		TotalTime  int        `gorm:"column:total_time"`
+		State      int        `gorm:"column:state"`
 		CreateTime *time.Time `gorm:"column:create_time"`
 	}
 	if err := h.db.Table("el_paper").Where("id = ?", b.PaperID).First(&paper).Error; err != nil {
@@ -188,7 +194,7 @@ func (h *MbtiHandler) FillAnswer(c *gin.Context) {
 	now := time.Now()
 	if err == gorm.ErrRecordNotFound {
 		h.db.Create(&mbtiAnswer{
-			ID: strconv.FormatInt(time.Now().UnixNano(), 10),
+			ID:      strconv.FormatInt(time.Now().UnixNano(), 10),
 			PaperID: b.PaperID, QuID: b.QuID,
 			ScoreA: b.ScoreA, ScoreB: b.ScoreB,
 			Answered: 1, CreateTime: &now,
@@ -222,7 +228,9 @@ func (h *MbtiHandler) Submit(c *gin.Context) {
 	userTime := 0
 	if paper.CreateTime != nil {
 		userTime = int(now.Sub(*paper.CreateTime).Minutes())
-		if userTime < 1 { userTime = 1 }
+		if userTime < 1 {
+			userTime = 1
+		}
 	}
 	h.db.Table("el_paper").Where("id = ? AND state = 0", b.PaperID).
 		Updates(map[string]interface{}{"state": 2, "update_time": &now, "user_time": userTime})
@@ -250,6 +258,11 @@ func (h *MbtiHandler) Submit(c *gin.Context) {
 		"type":   mbtiType,
 		"scores": scores,
 	})
+
+	// 异步生成 PDF 报告（不阻塞响应）
+	if h.reportHandler != nil {
+		go h.reportHandler.GenerateReportByPaperID(b.PaperID)
+	}
 }
 
 // ===================== POST /exam/api/mbti/score =====================

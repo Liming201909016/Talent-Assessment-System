@@ -116,6 +116,13 @@ func (h *PaperHandler) Save(c *gin.Context) {
 			return
 		}
 	} else {
+		// 保留原有 create_time
+		var orig model.Paper
+		if err := h.db.Select("create_time").Where("id = ?", p.ID).Take(&orig).Error; err == nil && orig.CreateTime != nil {
+			p.CreateTime = orig.CreateTime
+		} else {
+			p.CreateTime = &now // 原值为空时用当前时间
+		}
 		if err := h.db.Save(&p).Error; err != nil {
 			response.RestErr(c, err.Error())
 			return
@@ -239,8 +246,8 @@ func (h *PaperHandler) createPaperTx(exam *model.Exam) (string, error) {
 		limit := now.Add(time.Duration(exam.TotalTime) * time.Minute)
 		paper := model.Paper{
 			ID:           strconv.FormatInt(nextID(), 10),
-			UserID:       "101",  // Java 原系统也硬编码管理员ID
-			DepartID:     "105",  // Java 原系统也硬编码部门ID
+			UserID:       "101", // Java 原系统也硬编码管理员ID
+			DepartID:     "105", // Java 原系统也硬编码部门ID
 			ExamID:       exam.ID,
 			Title:        exam.Title,
 			TotalScore:   exam.TotalScore,

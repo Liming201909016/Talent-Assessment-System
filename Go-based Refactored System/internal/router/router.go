@@ -307,6 +307,17 @@ func Setup(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		mbtiGrp.POST("/fill-answer", mbtiH.FillAnswer)
 		mbtiGrp.POST("/submit", mbtiH.Submit)
 		mbtiGrp.POST("/score", mbtiH.Score)
+
+		// MBTI 报告生成（docx 模板替换）
+		mbtiReportH := handler.NewMbtiReportHandler(db, cfg.Upload.MbtiTemplates, cfg.Upload.Path)
+		mbtiH.SetReportHandler(mbtiReportH) // 注入报告生成器，Submit 后自动生成 PDF
+		mbtiGrp.POST("/generate-report", mbtiReportH.GenerateReport)
+		mbtiGrp.POST("/download-report", mbtiReportH.DownloadReport)
+
+		// 模板管理
+		mbtiGrp.GET("/templates", mbtiReportH.ListTemplates)
+		mbtiGrp.GET("/templates/download/:type", mbtiReportH.DownloadTemplate)
+		mbtiGrp.POST("/templates/upload", mbtiReportH.UploadTemplate)
 	}
 
 	// sys/depart

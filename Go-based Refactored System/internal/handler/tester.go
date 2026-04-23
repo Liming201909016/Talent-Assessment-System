@@ -98,9 +98,15 @@ func (h *TesterHandler) List(c *gin.Context) {
 		Joins("LEFT JOIN el_repo AS rp ON rp.id = er.repo_id").
 		Where("t.del_flag IS NULL OR t.del_flag = '0'").
 		Scopes(func(db *gorm.DB) *gorm.DB {
-			if name != "" { db = db.Where("t.name like ?", "%"+name+"%") }
-			if idNumber != "" { db = db.Where("t.id_number like ?", "%"+idNumber+"%") }
-			if examID != "" { db = db.Where("t.exam_id = ?", examID) }
+			if name != "" {
+				db = db.Where("t.name like ?", "%"+name+"%")
+			}
+			if idNumber != "" {
+				db = db.Where("t.id_number like ?", "%"+idNumber+"%")
+			}
+			if examID != "" {
+				db = db.Where("t.exam_id = ?", examID)
+			}
 			switch examStatus {
 			case "0":
 				db = db.Where("t.paper_id IS NULL")
@@ -119,7 +125,12 @@ func (h *TesterHandler) List(c *gin.Context) {
 	for i := range rows {
 		if rows[i].PaperID != nil && *rows[i].PaperID != "" {
 			var n int64
-			h.db.Table("el_paper_qu").Where("paper_id = ? AND answered = 1", *rows[i].PaperID).Count(&n)
+			// MBTI（repoCode 003）答题记录在 el_mbti_answer
+			if rows[i].RepoCode != nil && strings.HasPrefix(*rows[i].RepoCode, "003") {
+				h.db.Table("el_mbti_answer").Where("paper_id = ? AND answered = 1", *rows[i].PaperID).Count(&n)
+			} else {
+				h.db.Table("el_paper_qu").Where("paper_id = ? AND answered = 1", *rows[i].PaperID).Count(&n)
+			}
 			rows[i].AnswerNum = int(n)
 		}
 	}
@@ -279,19 +290,45 @@ func (h *TesterHandler) Update(c *gin.Context) {
 	updates := map[string]any{
 		"update_time": &now,
 	}
-	if r.Name != "" { updates["name"] = r.Name }
-	if a := toIntPtr(r.Age); a != nil { updates["age"] = *a }
-	if r.Gender != nil { updates["gender"] = r.Gender }
-	if r.Password != "" { updates["password"] = r.Password }
-	if r.Telephone != nil { updates["telephone"] = r.Telephone }
-	if r.Affiliation != nil { updates["affiliation"] = r.Affiliation }
-	if r.Depart != nil { updates["depart"] = r.Depart }
-	if r.Post != nil { updates["post"] = r.Post }
-	if r.Degree != nil { updates["degree"] = r.Degree }
-	if r.Major != nil { updates["major"] = r.Major }
-	if sf := toIntPtr(r.StuFlag); sf != nil { updates["stu_flag"] = *sf }
-	if r.PaperID != nil { updates["paper_id"] = *r.PaperID }
-	if r.ExamID != "" { updates["exam_id"] = r.ExamID }
+	if r.Name != "" {
+		updates["name"] = r.Name
+	}
+	if a := toIntPtr(r.Age); a != nil {
+		updates["age"] = *a
+	}
+	if r.Gender != nil {
+		updates["gender"] = r.Gender
+	}
+	if r.Password != "" {
+		updates["password"] = r.Password
+	}
+	if r.Telephone != nil {
+		updates["telephone"] = r.Telephone
+	}
+	if r.Affiliation != nil {
+		updates["affiliation"] = r.Affiliation
+	}
+	if r.Depart != nil {
+		updates["depart"] = r.Depart
+	}
+	if r.Post != nil {
+		updates["post"] = r.Post
+	}
+	if r.Degree != nil {
+		updates["degree"] = r.Degree
+	}
+	if r.Major != nil {
+		updates["major"] = r.Major
+	}
+	if sf := toIntPtr(r.StuFlag); sf != nil {
+		updates["stu_flag"] = *sf
+	}
+	if r.PaperID != nil {
+		updates["paper_id"] = *r.PaperID
+	}
+	if r.ExamID != "" {
+		updates["exam_id"] = r.ExamID
+	}
 	if err := h.db.Table("el_tester").Where("id = ?", r.ID).Updates(updates).Error; err != nil {
 		response.AjaxErr(c, err.Error())
 		return
@@ -399,7 +436,9 @@ func (h *TesterHandler) selectTesterByIdentifier(idNumber, examID string) (*mode
 
 type testerAmbigErr struct{}
 
-func (*testerAmbigErr) Error() string { return "同一个测评人员已关联多个测评，请传入examId" }
+func (*testerAmbigErr) Error() string {
+	return "同一个测评人员已关联多个测评，请传入examId"
+}
 
 func splitCsv(s string) []string {
 	parts := strings.Split(s, ",")

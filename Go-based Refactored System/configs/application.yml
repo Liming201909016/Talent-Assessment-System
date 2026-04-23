@@ -28,3 +28,4 @@ captcha:
 upload:
   path: "./tmp/uploadPath"
   profile: "/profile"
+  mbtiTemplates: "./deploy/mbti-templates"

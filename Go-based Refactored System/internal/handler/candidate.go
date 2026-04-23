@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -124,6 +126,10 @@ func (h *CandidateHandler) Save(c *gin.Context) {
 		return
 	} else {
 		ca.ID = existing.ID
+		ca.CreateTime = existing.CreateTime // 保留原有 create_time
+		if ca.CreateTime == nil {
+			ca.CreateTime = &now // 原值为空时用当前时间
+		}
 		ca.UpdateTime = &now
 		if err := h.db.Save(&ca).Error; err != nil {
 			response.RestErr(c, err.Error())
@@ -319,7 +325,11 @@ func (h *CandidateHandler) TesterList(c *gin.Context) {
 	for i := range rows {
 		if rows[i].PaperID != nil && *rows[i].PaperID != "" {
 			var n int64
-			h.db.Table("el_paper_qu").Where("paper_id = ? AND answered = 1", *rows[i].PaperID).Count(&n)
+			if rows[i].RepoCode != nil && strings.HasPrefix(*rows[i].RepoCode, "003") {
+				h.db.Table("el_mbti_answer").Where("paper_id = ? AND answered = 1", *rows[i].PaperID).Count(&n)
+			} else {
+				h.db.Table("el_paper_qu").Where("paper_id = ? AND answered = 1", *rows[i].PaperID).Count(&n)
+			}
 			rows[i].AnswerNum = int(n)
 		}
 	}
@@ -465,7 +475,9 @@ func (h *CandidateHandler) PdfPersistence(c *gin.Context) {
 	}
 	var name, title string
 	tbl := "el_candidate"
-	if useTester { tbl = "el_tester" }
+	if useTester {
+		tbl = "el_tester"
+	}
 	h.db.Table(tbl+" AS ec").
 		Select("ec.name, ep.title").
 		Joins("JOIN el_paper AS ep ON ec.paper_id = ep.id").
@@ -522,20 +534,18 @@ func (h *CandidateHandler) PdfUpload(c *gin.Context) {
 		File string `json:"file" form:"file"`
 	}
 	_ = c.ShouldBind(&b)
+	log.Printf("[pdf-upload] file=%q, contentType=%s", b.File, c.ContentType())
 	if b.File == "" {
 		response.RestErr(c, "file 为空")
 		return
 	}
 	// 安全检查：仅允许服务器上传目录下的文件
-	profile := h.cfg.Upload.Profile
-	if profile == "" {
-		profile = h.cfg.Upload.Path
-	}
-	if profile == "" {
-		profile = "./tmp"
+	allowedDir := filepath.Clean(h.cfg.Upload.Path)
+	if allowedDir == "" || allowedDir == "." {
+		allowedDir = filepath.Clean("./tmp")
 	}
 	clean := filepath.Clean(b.File)
-	allowedDir := filepath.Clean(filepath.Dir(profile))
+	log.Printf("[pdf-upload] allowedDir=%q, clean=%q, hasPrefix=%v", allowedDir, clean, strings.HasPrefix(clean, allowedDir))
 	if !strings.HasPrefix(clean, allowedDir) {
 		response.RestErr(c, "文件路径不合法")
 		return
@@ -546,10 +556,11 @@ func (h *CandidateHandler) PdfUpload(c *gin.Context) {
 		return
 	}
 	defer f.Close()
-	c.Header("Content-Type", "application/pdf")
-	c.Header("Content-Disposition", "attachment; filename="+filepath.Base(clean))
+	fname := filepath.Base(clean)
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(fname))
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
-	http.ServeContent(c.Writer, c.Request, filepath.Base(clean), time.Now(), f)
+	http.ServeContent(c.Writer, c.Request, fname, time.Now(), f)
 }
 
 // POST /exam/api/candidate/batch-download

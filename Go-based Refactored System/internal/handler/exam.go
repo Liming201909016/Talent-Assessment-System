@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
+	"io"
+	"log"
 	"strconv"
 	"time"
 
@@ -47,7 +50,9 @@ func (h *ExamHandler) Paging(c *gin.Context) {
 	}
 	q := h.db.Model(&model.Exam{})
 	searchTitle := req.Title
-	if searchTitle == "" { searchTitle = req.Params.Title }
+	if searchTitle == "" {
+		searchTitle = req.Params.Title
+	}
 	if searchTitle != "" {
 		q = q.Where("title like ?", "%"+searchTitle+"%")
 	}
@@ -68,8 +73,10 @@ func (h *ExamHandler) Paging(c *gin.Context) {
 
 // POST /exam/api/exam/exam/online-paging (在线测评列表)
 // 对齐 Java ExamMapper.online：按 open_type 过滤可见考试
-//   open_type=1(全部公开) 或 open_type=3 → 所有人可见
-//   open_type=2(部门限定) → 需通过 el_exam_depart + sys_user 匹配（简化：匿名端点无 userId，暂不过滤部门）
+//
+//	open_type=1(全部公开) 或 open_type=3 → 所有人可见
+//	open_type=2(部门限定) → 需通过 el_exam_depart + sys_user 匹配（简化：匿名端点无 userId，暂不过滤部门）
+//
 // 注意：不按 is_open 过滤！is_open 是测评人员来源方式（1=开放/2=封闭），不是可见性控制
 func (h *ExamHandler) OnlinePaging(c *gin.Context) {
 	var req examPagingReq
@@ -85,7 +92,9 @@ func (h *ExamHandler) OnlinePaging(c *gin.Context) {
 	// Java 原始 SQL：WHERE (ex.open_type=1 OR ex.open_type=3 OR uc.user_id=#{userId})
 	// 简化处理：匿名端点无法获取 userId，直接返回全部（与 admin 登录行为一致）
 	searchTitle := req.Title
-	if searchTitle == "" { searchTitle = req.Params.Title }
+	if searchTitle == "" {
+		searchTitle = req.Params.Title
+	}
 	if searchTitle != "" {
 		q = q.Where("title like ?", "%"+searchTitle+"%")
 	}
@@ -197,7 +206,7 @@ func (h *ExamHandler) Detail(c *gin.Context) {
 		"totalScore": e.TotalScore, "totalTime": e.TotalTime,
 		"qualifyScore": e.QualifyScore, "pdfPath": e.PdfPath,
 		"requiredFields": e.RequiredFields,
-		"repoList": reposOut, "departIds": departs,
+		"repoList":       reposOut, "departIds": departs,
 		"repoCode": repoCode, "repoIds": repoIDs,
 		"stuFlag": e.StuFlag,
 	})
@@ -216,52 +225,94 @@ const (
 //  2. 状态修复：timeLimit=false 且 state=2 时，state 置 0。
 //  3. 仅当 joinType=REPO_JOIN 才保存 exam_repo；仅当 openType=DEPT_OPEN 才保存 exam_depart。
 func (h *ExamHandler) Save(c *gin.Context) {
+	// 先读 raw JSON
+	rawBytes, _ := io.ReadAll(c.Request.Body)
+	var rawMap map[string]interface{}
+	json.Unmarshal(rawBytes, &rawMap)
+
+	// 用扁平 struct 接收（避免 model.Exam 嵌入导致的 JSON tag 冲突）
 	var body struct {
-		model.Exam
-		TimeLimitRaw interface{}       `json:"timeLimit"`
-		ShowPdfRaw   interface{}       `json:"showPdf"`
-		StartTimeRaw interface{}       `json:"startTime"`
-		EndTimeRaw   interface{}       `json:"endTime"`
-		RepoList     []model.ExamRepo  `json:"repoList"`
-		DepartIDs    []string          `json:"departIds"`
+		ID             string           `json:"id"`
+		Title          string           `json:"title"`
+		Content        string           `json:"content"`
+		OpenType       int              `json:"openType"`
+		JoinType       int              `json:"joinType"`
+		IsOpen         int              `json:"isOpen"`
+		AnswerType     int              `json:"answerType"`
+		Level          int              `json:"level"`
+		State          int              `json:"state"`
+		TotalScore     int              `json:"totalScore"`
+		TotalTime      int              `json:"totalTime"`
+		QualifyScore   int              `json:"qualifyScore"`
+		PdfPath        string           `json:"pdfPath"`
+		RequiredFields string           `json:"requiredFields"`
+		StuFlag        int8             `json:"stuFlag"`
+		RepoList       []model.ExamRepo `json:"repoList"`
+		DepartIDs      []string         `json:"departIds"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil {
+	if err := json.Unmarshal(rawBytes, &body); err != nil {
+		log.Printf("[exam-save] unmarshal error: %v", err)
 		response.RestErr(c, "参数错误")
 		return
 	}
-	// 处理 startTime/endTime: string → *time.Time
+
+	// 处理冲突字段：startTime/endTime/timeLimit/showPdf
 	parseTime := func(raw interface{}) *time.Time {
-		if raw == nil { return nil }
+		if raw == nil {
+			return nil
+		}
 		s, ok := raw.(string)
-		if !ok || s == "" { return nil }
+		if !ok || s == "" {
+			return nil
+		}
 		for _, layout := range []string{"2006-01-02 15:04", "2006-01-02 15:04:05", time.RFC3339} {
-			if t, err := time.Parse(layout, s); err == nil { return &t }
+			if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+				return &t
+			}
 		}
 		return nil
 	}
-	body.Exam.StartTime = parseTime(body.StartTimeRaw)
-	body.Exam.EndTime = parseTime(body.EndTimeRaw)
-	// 处理 timeLimit: bool/int/string → int8
-	if body.TimeLimitRaw != nil {
-		switch v := body.TimeLimitRaw.(type) {
+	startTime := parseTime(rawMap["startTime"])
+	endTime := parseTime(rawMap["endTime"])
+	var timeLimit int8
+	if v, ok := rawMap["timeLimit"]; ok && v != nil {
+		switch vv := v.(type) {
 		case bool:
-			if v { body.Exam.TimeLimit = 1 } else { body.Exam.TimeLimit = 0 }
+			if vv {
+				timeLimit = 1
+			}
 		case float64:
-			body.Exam.TimeLimit = int8(v)
+			timeLimit = int8(vv)
 		case string:
-			if v == "true" || v == "1" { body.Exam.TimeLimit = 1 } else { body.Exam.TimeLimit = 0 }
+			if vv == "true" || vv == "1" {
+				timeLimit = 1
+			}
 		}
 	}
-	// 处理 showPdf
-	if body.ShowPdfRaw != nil {
-		switch v := body.ShowPdfRaw.(type) {
+	var showPdf int8
+	if v, ok := rawMap["showPdf"]; ok && v != nil {
+		switch vv := v.(type) {
 		case bool:
-			if v { body.Exam.ShowPdf = 1 } else { body.Exam.ShowPdf = 0 }
+			if vv {
+				showPdf = 1
+			}
 		case float64:
-			body.Exam.ShowPdf = int8(v)
+			showPdf = int8(vv)
 		case string:
-			if v == "true" || v == "1" { body.Exam.ShowPdf = 1 } else { body.Exam.ShowPdf = 0 }
+			if vv == "true" || vv == "1" {
+				showPdf = 1
+			}
 		}
+	}
+
+	// 映射到 model.Exam
+	exam := model.Exam{
+		ID: body.ID, Title: body.Title, Content: body.Content,
+		OpenType: body.OpenType, JoinType: body.JoinType, IsOpen: body.IsOpen,
+		AnswerType: body.AnswerType, Level: body.Level, State: body.State,
+		TotalScore: body.TotalScore, TotalTime: body.TotalTime, QualifyScore: body.QualifyScore,
+		PdfPath: body.PdfPath, RequiredFields: body.RequiredFields, StuFlag: body.StuFlag,
+		StartTime: startTime, EndTime: endTime, TimeLimit: timeLimit, ShowPdf: showPdf,
 	}
 
 	// 1. 计算总分（仅题库组卷）
@@ -278,33 +329,40 @@ func (h *ExamHandler) Save(c *gin.Context) {
 				obj += item.JudgeCount * item.JudgeScore
 			}
 		}
-		body.TotalScore = obj
+		exam.TotalScore = obj
 	}
 
 	// 2. 状态修复：非限时 + state=2 → state=0
-	if body.Exam.TimeLimit == 0 && body.State == 2 {
-		body.State = 0
+	if exam.TimeLimit == 0 && exam.State == 2 {
+		exam.State = 0
 	}
 
 	now := time.Now()
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		e := body.Exam
-		isNew := e.ID == ""
+		isNew := exam.ID == ""
 		if isNew {
-			e.ID = strconv.FormatInt(nextID(), 10)
-			e.CreateTime = &now
+			exam.ID = strconv.FormatInt(nextID(), 10)
+			exam.CreateTime = &now
+		} else {
+			// 保留原有 create_time（Save 会覆盖所有字段）
+			var orig model.Exam
+			if err := tx.Select("create_time").Where("id = ?", exam.ID).Take(&orig).Error; err == nil && orig.CreateTime != nil {
+				exam.CreateTime = orig.CreateTime
+			} else {
+				exam.CreateTime = &now // 原值为空时用当前时间
+			}
 		}
-		e.UpdateTime = &now
+		exam.UpdateTime = &now
 		if isNew {
-			if err := tx.Create(&e).Error; err != nil {
+			if err := tx.Create(&exam).Error; err != nil {
 				return err
 			}
 		} else {
-			if err := tx.Save(&e).Error; err != nil {
+			if err := tx.Save(&exam).Error; err != nil {
 				return err
 			}
-			tx.Where("exam_id = ?", e.ID).Delete(&model.ExamRepo{})
-			tx.Where("exam_id = ?", e.ID).Delete(&model.ExamDepart{})
+			tx.Where("exam_id = ?", exam.ID).Delete(&model.ExamRepo{})
+			tx.Where("exam_id = ?", exam.ID).Delete(&model.ExamDepart{})
 		}
 
 		// 3a. 仅题库组卷保存 exam_repo
@@ -320,7 +378,7 @@ func (h *ExamHandler) Save(c *gin.Context) {
 				}
 				seen[r.RepoID] = true
 				r.ID = strconv.FormatInt(nextID()+int64(i), 10)
-				r.ExamID = e.ID
+				r.ExamID = exam.ID
 				if err := tx.Create(&r).Error; err != nil {
 					return err
 				}
@@ -335,7 +393,7 @@ func (h *ExamHandler) Save(c *gin.Context) {
 				}
 				d := model.ExamDepart{
 					ID:       strconv.FormatInt(nextID()+int64(200+i), 10),
-					ExamID:   e.ID,
+					ExamID:   exam.ID,
 					DepartID: did,
 				}
 				if err := tx.Create(&d).Error; err != nil {
@@ -344,7 +402,6 @@ func (h *ExamHandler) Save(c *gin.Context) {
 			}
 		}
 
-		body.Exam = e
 		return nil
 	})
 	if err != nil {
@@ -355,7 +412,7 @@ func (h *ExamHandler) Save(c *gin.Context) {
 		response.RestErr(c, err.Error())
 		return
 	}
-	response.Rest(c, body.Exam)
+	response.Rest(c, exam)
 }
 
 // POST /exam/api/exam/exam/delete
