@@ -39,10 +39,11 @@ type testerListRow struct {
 // GET /exam/api/tester/tester-list  (TableDataInfo)
 // 对齐 Java CandidateServiceImpl.testerInfoList / TesterController.testerList：
 // Java 直接查 el_candidate 表（即使是封闭考试场景也是如此），Go 保持一致。
-//   SELECT ca.*, o.code repoCode, pa.create_time, pa.user_time
-//   FROM el_candidate ca LEFT JOIN ...
-//   WHERE ca.del_flag='0' [and filters]
-//   ORDER BY pa.create_time DESC
+//
+//	SELECT ca.*, o.code repoCode, pa.create_time, pa.user_time
+//	FROM el_candidate ca LEFT JOIN ...
+//	WHERE ca.del_flag='0' [and filters]
+//	ORDER BY pa.create_time DESC
 func (h *TesterHandler) TesterList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))

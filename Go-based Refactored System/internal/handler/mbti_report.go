@@ -25,10 +25,10 @@ import (
 
 // MbtiReportHandler 生成 MBTI 报告 (docx) — 支持完整版和简版
 type MbtiReportHandler struct {
-	db              *gorm.DB
-	templateDir     string // 完整版 16 个 docx 模板所在目录
-	simpleDir       string // 简版 16 个 docx 模板所在目录
-	outputDir       string // 生成的报告存放目录
+	db          *gorm.DB
+	templateDir string // 完整版 16 个 docx 模板所在目录
+	simpleDir   string // 简版 16 个 docx 模板所在目录
+	outputDir   string // 生成的报告存放目录
 }
 
 func NewMbtiReportHandler(db *gorm.DB, templateDir, simpleDir, outputDir string) *MbtiReportHandler {
