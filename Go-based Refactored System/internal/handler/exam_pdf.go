@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/url"
 	"os"
@@ -16,7 +16,16 @@ import (
 	"github.com/talent-assessment/refactored/internal/model"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"github.com/xuri/excelize/v2"
+	"gorm.io/gorm"
 )
+
+// paperQuContent 试卷题目内容查询结果（共享 struct）
+type paperQuContent struct {
+	Content     string
+	IsRight     int8
+	Answered    int8
+	ActualScore int
+}
 
 // POST /exam/api/exam/exam/pdf-upload  {examId}
 // 对齐 Java PdfUpload：按 exam.pdf_path 回传 PDF 二进制
@@ -112,7 +121,9 @@ func (h *ExamHandler) PdfTeam(c *gin.Context) {
 	}
 
 	exam.PdfPath = savePath
-	_ = h.db.Save(&exam).Error
+	if err := h.db.Save(&exam).Error; err != nil {
+		slog.Error("pdf-team: save pdf_path failed", "error", err)
+	}
 	response.Rest(c, gin.H{"pdfPath": savePath})
 }
 
@@ -211,16 +222,21 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 	h.exportFallback(c, exam, repoCode, isMng, isMbti, rows)
 }
 
-// findExportTemplate 查找 configs/export-templates/{repoCode}.*.xlsx
-// 如果精确匹配不到，尝试用前缀的前3位匹配（如 00302 → 003*）
+// findExportTemplate 查找导出模板文件
+// 优先使用配置路径，退化到默认路径
 func (h *ExamHandler) findExportTemplate(repoCode string) string {
-	searchDirs := []string{"./configs/export-templates", "../configs/export-templates"}
+	searchDirs := []string{}
+	if h.cfg.Upload.ExportTemplates != "" {
+		searchDirs = append(searchDirs, h.cfg.Upload.ExportTemplates)
+	}
+	searchDirs = append(searchDirs, "./configs/export-templates", "../configs/export-templates")
+
 	// 先精确匹配 repoCode
 	for _, dir := range searchDirs {
 		pattern := filepath.Join(dir, repoCode+".*xlsx")
 		matches, err := filepath.Glob(pattern)
 		if err == nil && len(matches) > 0 {
-			log.Printf("[export] template found: %s", matches[0])
+			slog.Info("export: template found", "path", matches[0])
 			return matches[0]
 		}
 	}
@@ -231,7 +247,7 @@ func (h *ExamHandler) findExportTemplate(repoCode string) string {
 			pattern := filepath.Join(dir, prefix+"*.*xlsx")
 			matches, err := filepath.Glob(pattern)
 			if err == nil && len(matches) > 0 {
-				log.Printf("[export] template fallback: %s (prefix %s)", matches[0], prefix)
+				slog.Info("export: template fallback", "path", matches[0], "prefix", prefix)
 				return matches[0]
 			}
 		}
@@ -250,7 +266,7 @@ func (h *ExamHandler) exportMbtiByTemplate(c *gin.Context, exam model.Exam,
 
 	f, err := excelize.OpenFile(templateFile)
 	if err != nil {
-		log.Printf("[export] open template %s failed: %v", templateFile, err)
+		slog.Error("export: open template failed", "template", templateFile, "error", err)
 		response.RestErr(c, "打开模板失败")
 		return
 	}
@@ -340,7 +356,7 @@ func (h *ExamHandler) exportMbtiByTemplate(c *gin.Context, exam model.Exam,
 		"; filename*=UTF-8''"+url.QueryEscape(fileName))
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
 	if err := f.Write(c.Writer); err != nil {
-		log.Printf("[export] write failed: %v", err)
+		slog.Error("export: write failed", "error", err)
 	}
 }
 
@@ -385,7 +401,7 @@ func (h *ExamHandler) exportPsyByTemplate(c *gin.Context, exam model.Exam,
 
 	f, err := excelize.OpenFile(templateFile)
 	if err != nil {
-		log.Printf("[export] open template %s failed: %v", templateFile, err)
+		slog.Error("export: open template failed", "template", templateFile, "error", err)
 		response.RestErr(c, "打开模板失败")
 		return
 	}
@@ -448,7 +464,7 @@ func (h *ExamHandler) exportPsyByTemplate(c *gin.Context, exam model.Exam,
 
 		// 计算维度分
 		if r.PaperID != nil && *r.PaperID != "" && r.EndTime != nil {
-			qus, err := h.queryPaperQuForScore(*r.PaperID)
+			qus, err := queryPaperQuContent(h.db, *r.PaperID)
 			if err == nil {
 				scores := standScore1(qus)
 				// 健康水平
@@ -470,7 +486,7 @@ func (h *ExamHandler) exportPsyByTemplate(c *gin.Context, exam model.Exam,
 		"; filename*=UTF-8''"+url.QueryEscape(fileName))
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
 	if err := f.Write(c.Writer); err != nil {
-		log.Printf("[export] write failed: %v", err)
+		slog.Error("export: write failed", "error", err)
 	}
 }
 
@@ -525,7 +541,7 @@ func (h *ExamHandler) exportMngByTemplate(c *gin.Context, exam model.Exam,
 
 	f, err := excelize.OpenFile(templateFile)
 	if err != nil {
-		log.Printf("[export] open template %s failed: %v", templateFile, err)
+		slog.Error("export: open template failed", "template", templateFile, "error", err)
 		response.RestErr(c, "打开模板失败")
 		return
 	}
@@ -569,7 +585,7 @@ func (h *ExamHandler) exportMngByTemplate(c *gin.Context, exam model.Exam,
 		f.SetCellValue(sheet, cellName(13, row), 140) // 答题数（140题固定）
 
 		if r.PaperID != nil && *r.PaperID != "" && r.EndTime != nil {
-			qus, err := h.queryPaperQuForScore(*r.PaperID)
+			qus, err := queryPaperQuContent(h.db, *r.PaperID)
 			if err == nil {
 				scores := standScore2(qus)
 				// 总分
@@ -599,7 +615,7 @@ func (h *ExamHandler) exportMngByTemplate(c *gin.Context, exam model.Exam,
 		"; filename*=UTF-8''"+url.QueryEscape(fileName))
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
 	if err := f.Write(c.Writer); err != nil {
-		log.Printf("[export] write failed: %v", err)
+		slog.Error("export: write failed", "error", err)
 	}
 }
 
@@ -744,7 +760,7 @@ func (h *ExamHandler) exportFallback(c *gin.Context, exam model.Exam,
 					}
 				}
 			} else {
-				qus, err := h.queryPaperQuForScore(*r.PaperID)
+				qus, err := queryPaperQuContent(h.db, *r.PaperID)
 				if err == nil {
 					var scores map[string]float64
 					if isMng {
@@ -811,10 +827,22 @@ func derefInt(p *int) int {
 	return *p
 }
 
-// queryPaperQuForScore 与 TesterHandler.queryPaperQuWithContent 相同语义，放 ExamHandler 避免交叉依赖
-func (h *ExamHandler) queryPaperQuForScore(paperID string) ([]paperQuContent, error) {
+// capPageSize 限制分页大小，防止恶意大请求
+func capPageSize(size int) int {
+	if size <= 0 {
+		return 10
+	}
+	if size > 200 {
+		return 200
+	}
+	return size
+}
+
+// queryPaperQuContent 统一的试卷题目查询（消除 3 处重复）
+// 被 tester_score.go, candidate.go, exam_pdf.go 共用
+func queryPaperQuContent(db *gorm.DB, paperID string) ([]paperQuContent, error) {
 	var rows []paperQuContent
-	err := h.db.Table("el_paper_qu AS pq").
+	err := db.Table("el_paper_qu AS pq").
 		Select("eq.content AS content, pq.is_right AS is_right, pq.answered AS answered, pq.actual_score AS actual_score").
 		Joins("LEFT JOIN el_qu AS eq ON pq.qu_id = eq.id").
 		Where("pq.paper_id = ?", paperID).

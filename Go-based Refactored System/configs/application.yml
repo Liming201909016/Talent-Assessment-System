@@ -29,3 +29,5 @@ upload:
   path: "./tmp/uploadPath"
   profile: "/profile"
   mbtiTemplates: "./deploy/mbti-templates"
+  mbtiTemplatesSimple: "./deploy/mbti-templates-simple"
+  exportTemplates: "./configs/export-templates"

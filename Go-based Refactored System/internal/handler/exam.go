@@ -3,7 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"io"
-	"log"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -45,9 +45,7 @@ func (h *ExamHandler) Paging(c *gin.Context) {
 	if req.Current <= 0 {
 		req.Current = 1
 	}
-	if req.Size <= 0 {
-		req.Size = 10
-	}
+	req.Size = capPageSize(req.Size)
 	q := h.db.Model(&model.Exam{})
 	searchTitle := req.Title
 	if searchTitle == "" {
@@ -251,7 +249,7 @@ func (h *ExamHandler) Save(c *gin.Context) {
 		DepartIDs      []string         `json:"departIds"`
 	}
 	if err := json.Unmarshal(rawBytes, &body); err != nil {
-		log.Printf("[exam-save] unmarshal error: %v", err)
+		slog.Info("exam-save: unmarshal error", "value", err)
 		response.RestErr(c, "参数错误")
 		return
 	}

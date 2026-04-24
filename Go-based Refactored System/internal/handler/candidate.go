@@ -346,7 +346,7 @@ func (h *CandidateHandler) StandScoreCandidate(c *gin.Context) {
 		response.RestErr(c, "paperId 为空")
 		return
 	}
-	rows, err := queryPaperQuContentForCandidate(h.db, b.PaperID)
+	rows, err := queryPaperQuContent(h.db, b.PaperID)
 	if err != nil {
 		response.RestErr(c, err.Error())
 		return
@@ -395,7 +395,7 @@ func (h *CandidateHandler) TeamScore(c *gin.Context) {
 		if p.PaperID == nil || *p.PaperID == "" || p.EndTime == nil {
 			continue
 		}
-		rows, err := queryPaperQuContentForCandidate(h.db, *p.PaperID)
+		rows, err := queryPaperQuContent(h.db, *p.PaperID)
 		if err != nil {
 			continue
 		}
@@ -595,16 +595,4 @@ func (h *CandidateHandler) BatchDownload(c *gin.Context) {
 		io.Copy(w, f)
 		f.Close()
 	}
-}
-
-// queryPaperQuContentForCandidate 与 tester_score.go 的 queryPaperQuWithContent 结构相同
-func queryPaperQuContentForCandidate(db *gorm.DB, paperID string) ([]paperQuContent, error) {
-	var rows []paperQuContent
-	err := db.Table("el_paper_qu AS pq").
-		Select("eq.content AS content, pq.is_right AS is_right, pq.answered AS answered, pq.actual_score AS actual_score").
-		Joins("LEFT JOIN el_qu AS eq ON pq.qu_id = eq.id").
-		Where("pq.paper_id = ?", paperID).
-		Order("pq.sort ASC").
-		Find(&rows).Error
-	return rows, err
 }

@@ -38,7 +38,7 @@ func (h *RuoYiSystemHandler) RoleList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 	roleName := c.Query("roleName")
 	status := c.Query("status")
 
@@ -171,7 +171,7 @@ func (h *RuoYiSystemHandler) PostList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 	postName := c.Query("postName")
 	status := c.Query("status")
 
@@ -202,7 +202,7 @@ func (h *RuoYiSystemHandler) DictTypeList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 	dictName := c.Query("dictName")
 	dictType := c.Query("dictType")
 	status := c.Query("status")
@@ -231,7 +231,7 @@ func (h *RuoYiSystemHandler) DictDataList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 	dictType := c.Query("dictType")
 	dictLabel := c.Query("dictLabel")
 	status := c.Query("status")
@@ -276,7 +276,7 @@ func (h *RuoYiSystemHandler) ConfigList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 	configName := c.Query("configName")
 	configKey := c.Query("configKey")
 	configType := c.Query("configType")
@@ -320,7 +320,7 @@ func (h *RuoYiSystemHandler) NoticeList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 	noticeTitle := c.Query("noticeTitle")
 	createBy := c.Query("createBy")
 	noticeType := c.Query("noticeType")
@@ -342,7 +342,7 @@ func (h *RuoYiSystemHandler) LogininforList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 	userName := c.Query("userName")
 	ipaddr := c.Query("ipaddr")
 	status := c.Query("status")
@@ -377,7 +377,7 @@ func (h *RuoYiSystemHandler) OperlogList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 	title := c.Query("title")
 	operName := c.Query("operName")
 	status := c.Query("status")
@@ -416,7 +416,7 @@ func (h *RuoYiSystemHandler) JobList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 
 	q := h.db.Table("sys_job")
 	var total int64
@@ -446,7 +446,7 @@ func (h *RuoYiSystemHandler) OnlineList(c *gin.Context) {
 	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	if pageNum <= 0 { pageNum = 1 }
-	if pageSize <= 0 { pageSize = 10 }
+	pageSize = capPageSize(pageSize)
 
 	type row struct {
 		InfoID        int64      `gorm:"column:info_id"        json:"tokenId"`

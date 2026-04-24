@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,7 +44,7 @@ func (h *TesterHandler) StandScore(c *gin.Context) {
 	}
 
 	// 读取所有题目（paper_qu 关联 qu.content）
-	rows, err := h.queryPaperQuWithContent(b.PaperID)
+	rows, err := queryPaperQuContent(h.db, b.PaperID)
 	if err != nil {
 		response.AjaxErr(c, err.Error())
 		return
@@ -58,24 +59,8 @@ func (h *TesterHandler) StandScore(c *gin.Context) {
 	response.AjaxOK(c, out)
 }
 
-// queryPaperQuWithContent 对齐 PaperQuMapper.listByPaper
-type paperQuContent struct {
-	Content     string
-	IsRight     int8
-	Answered    int8
-	ActualScore int
-}
-
-func (h *TesterHandler) queryPaperQuWithContent(paperID string) ([]paperQuContent, error) {
-	var rows []paperQuContent
-	err := h.db.Table("el_paper_qu AS pq").
-		Select("eq.content AS content, pq.is_right AS is_right, pq.answered AS answered, pq.actual_score AS actual_score").
-		Joins("LEFT JOIN el_qu AS eq ON pq.qu_id = eq.id").
-		Where("pq.paper_id = ?", paperID).
-		Order("pq.sort ASC").
-		Find(&rows).Error
-	return rows, err
-}
+// queryPaperQuWithContent 已迁移到 exam_pdf.go 的 queryPaperQuContent 共享函数
+// paperQuContent struct 也移到 exam_pdf.go
 
 // standScore1 对齐 CandidateServiceImpl.standScore（SCL-90 式 12 项指标）
 func standScore1(rows []paperQuContent) map[string]float64 {
@@ -401,8 +386,8 @@ func (h *TesterHandler) BatchDownload(c *gin.Context) {
 // 并更新 tester_exam.pdf_path 与 pdf_flag=1。
 //
 // 与 Java 行为一致：
-//  - 多文件时按最后一个落盘（同文件名）；通常前端只传 1 个
-//  - 若 tester 已有旧 pdfPath，先删除旧文件
+//   - 多文件时按最后一个落盘（同文件名）；通常前端只传 1 个
+//   - 若 tester 已有旧 pdfPath，先删除旧文件
 func (h *TesterHandler) PdfPersistence(c *gin.Context) {
 	idNumber := c.PostForm("idNumber")
 	examID := c.PostForm("examId")
@@ -517,8 +502,6 @@ func (h *TesterHandler) pdfNameByPaperID(paperID *string) (string, string, error
 	return r.Name, r.Title, err
 }
 
-
-
 // POST /exam/api/tester/login  对齐 Java TesterController.login
 // Java 使用 AjaxResult（code=200），接受 form/query 参数（无 @RequestBody）
 // 返回：AjaxResult success data 为完整 Tester 合并视图（含 password）
@@ -551,7 +534,9 @@ func (h *TesterHandler) LoginForm(c *gin.Context) {
 	if b.ExamID != "" {
 		updates["exam_id"] = b.ExamID
 	}
-	_ = h.db.Table("el_tester").Where("id = ?", te.ID).Updates(updates).Error
+	if err := h.db.Table("el_tester").Where("id = ?", te.ID).Updates(updates).Error; err != nil {
+		slog.Error("tester-login: update failed", "error", err)
+	}
 
 	// 签发 JWT（Go 侧额外追加，Java 原生无此字段）
 	claims := map[string]any{

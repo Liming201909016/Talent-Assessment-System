@@ -38,9 +38,11 @@ type CaptchaCfg struct {
 }
 
 type UploadCfg struct {
-	Path          string `mapstructure:"path"`
-	Profile       string `mapstructure:"profile"`
-	MbtiTemplates string `mapstructure:"mbtiTemplates"`
+	Path                string `mapstructure:"path"`
+	Profile             string `mapstructure:"profile"`
+	MbtiTemplates       string `mapstructure:"mbtiTemplates"`
+	MbtiTemplatesSimple string `mapstructure:"mbtiTemplatesSimple"`
+	ExportTemplates     string `mapstructure:"exportTemplates"`
 }
 
 type Config struct {

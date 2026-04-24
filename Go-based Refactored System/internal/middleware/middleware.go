@@ -14,20 +14,69 @@ func CORS() gin.HandlerFunc {
 		AllowOriginFunc:  func(origin string) bool { return true },
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"*"},
-		ExposeHeaders:    []string{"Content-Length", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length", "Authorization", "Content-Disposition"},
 		AllowCredentials: true,
 	})
 }
 
-// Anonymous paths (no JWT required) — 对齐 Java SecurityConfig
+// SecurityHeaders 安全响应头
+func SecurityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-XSS-Protection", "1; mode=block")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Next()
+	}
+}
+
+// Anonymous paths (no JWT required)
+// 精确列出测评者/考生公开访问的路径，管理后台接口必须认证
 var anonymousPrefixes = []string{
+	// 系统公开
 	"/login", "/register", "/captchaImage", "/logout",
-	"/my/", "/exam/",
-	"/system/dict/",
 	"/profile/", "/common/download",
+	"/system/dict/",
+	"/health",
+
+	// 在线测评页面（前端路由）
+	"/my/",
+
+	// 测评者登录
+	"/exam/api/tester/login",
+
+	// 考生（开放模式）
+	"/exam/api/candidate/save",
+	"/exam/api/candidate/info",
+	"/exam/api/candidate/update",
+	"/exam/api/candidate/tester-info",
+	"/exam/api/candidate/stand-score",
+	"/exam/api/candidate/end-time",
+	"/exam/api/candidate/pdf-persistence",
+	"/exam/api/candidate/pdf-upload",
+
+	// 答卷
+	"/exam/api/paper/paper/",
+
+	// MBTI 答题
+	"/exam/api/mbti/paper-detail",
+	"/exam/api/mbti/fill-answer",
+	"/exam/api/mbti/submit",
+	"/exam/api/mbti/score",
+	"/exam/api/mbti/download-report",
+
+	// 考试列表（测评者查看）
+	"/exam/api/exam/exam/online-paging",
+	"/exam/api/exam/exam/detail",
+
+	// 测评者相关（答题/报告）
+	"/exam/api/tester/stand-score",
+	"/exam/api/tester/end-time",
+	"/exam/api/tester/pdf-persistence",
+
+	// Swagger / 其他
 	"/swagger-ui", "/swagger-resources", "/v3/api-docs", "/v2/api-docs",
 	"/druid/", "/doc.html", "/ws/",
-	"/health",
 }
 
 func IsAnonymous(path string) bool {

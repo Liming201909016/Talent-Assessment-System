@@ -60,9 +60,7 @@ func (h *QuHandler) Paging(c *gin.Context) {
 	if req.Current <= 0 {
 		req.Current = 1
 	}
-	if req.Size <= 0 {
-		req.Size = 10
-	}
+	req.Size = capPageSize(req.Size)
 
 	// 兼容 DataTable 的 params 嵌套和直接传参
 	content := req.Content

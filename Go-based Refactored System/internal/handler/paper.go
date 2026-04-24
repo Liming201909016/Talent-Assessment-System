@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -362,7 +363,9 @@ func (h *PaperHandler) PaperDetail(c *gin.Context) {
 	var er model.ExamRepo
 	var repo model.Repo
 	if err := h.db.Where("exam_id = ?", paper.ExamID).Take(&er).Error; err == nil {
-		_ = h.db.Where("id = ?", er.RepoID).Take(&repo).Error
+		if err2 := h.db.Where("id = ?", er.RepoID).Take(&repo).Error; err2 != nil {
+			slog.Warn("paper: repo not found", "repoId", er.RepoID, "error", err2)
+		}
 	}
 	var qs []model.PaperQu
 	h.db.Where("paper_id = ?", id).Order("sort ASC").Find(&qs)
@@ -696,7 +699,9 @@ func (h *PaperHandler) PaperQuDetail(c *gin.Context) {
 	var er model.ExamRepo
 	var repo model.Repo
 	if err := h.db.Where("exam_id = ?", paper.ExamID).Take(&er).Error; err == nil {
-		_ = h.db.Where("id = ?", er.RepoID).Take(&repo).Error
+		if err2 := h.db.Where("id = ?", er.RepoID).Take(&repo).Error; err2 != nil {
+			slog.Warn("paper: repo not found", "repoId", er.RepoID, "error", err2)
+		}
 	}
 	var qs []model.PaperQu
 	h.db.Where("paper_id = ?", id).Order("sort ASC").Find(&qs)

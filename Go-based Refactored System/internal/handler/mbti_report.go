@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,22 +23,35 @@ import (
 	"gorm.io/gorm"
 )
 
-// MbtiReportHandler 生成 MBTI 完整报告 (docx)
+// MbtiReportHandler 生成 MBTI 报告 (docx) — 支持完整版和简版
 type MbtiReportHandler struct {
-	db          *gorm.DB
-	templateDir string // 16 个 docx 模板所在目录
-	outputDir   string // 生成的报告存放目录
+	db              *gorm.DB
+	templateDir     string // 完整版 16 个 docx 模板所在目录
+	simpleDir       string // 简版 16 个 docx 模板所在目录
+	outputDir       string // 生成的报告存放目录
 }
 
-func NewMbtiReportHandler(db *gorm.DB, templateDir, outputDir string) *MbtiReportHandler {
-	return &MbtiReportHandler{db: db, templateDir: templateDir, outputDir: outputDir}
+func NewMbtiReportHandler(db *gorm.DB, templateDir, simpleDir, outputDir string) *MbtiReportHandler {
+	return &MbtiReportHandler{db: db, templateDir: templateDir, simpleDir: simpleDir, outputDir: outputDir}
 }
 
-// POST /exam/api/mbti/generate-report {paperId}
+// mbtiTesterRow 报告生成用考生信息
+type mbtiTesterRow struct {
+	Name        string  `gorm:"column:name"`
+	Age         *int    `gorm:"column:age"`
+	Gender      *string `gorm:"column:gender"`
+	Telephone   *string `gorm:"column:telephone"`
+	Affiliation *string `gorm:"column:affiliation"`
+	Post        *string `gorm:"column:post"`
+	ExamID      string  `gorm:"column:exam_id"`
+}
+
+// POST /exam/api/mbti/generate-report {paperId, type: "full"|"simple"}
 // 根据 MBTI 类型选择 docx 模板 → 替换首页字段 + 图表数据 → 存文件 → 返回下载路径
 func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 	var b struct {
-		PaperID string `json:"paperId"`
+		PaperID    string `json:"paperId"`
+		ReportType string `json:"type"` // "full"(默认) 或 "simple"
 	}
 	_ = c.ShouldBindJSON(&b)
 	if b.PaperID == "" {
@@ -54,16 +68,7 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 	}
 
 	// 2. 查考生信息（先查 el_tester，再查 el_candidate）
-	type testerRow struct {
-		Name        string  `gorm:"column:name"`
-		Age         *int    `gorm:"column:age"`
-		Gender      *string `gorm:"column:gender"`
-		Telephone   *string `gorm:"column:telephone"`
-		Affiliation *string `gorm:"column:affiliation"`
-		Post        *string `gorm:"column:post"`
-		ExamID      string  `gorm:"column:exam_id"`
-	}
-	var tester testerRow
+	var tester mbtiTesterRow
 	if err := h.db.Table("el_tester").Where("paper_id = ?", b.PaperID).Take(&tester).Error; err != nil {
 		if err2 := h.db.Table("el_candidate").Where("paper_id = ?", b.PaperID).Take(&tester).Error; err2 != nil {
 			response.RestErr(c, "考生信息不存在")
@@ -79,14 +84,26 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 	var requiredFields string
 	h.db.Table("el_exam").Where("id = ?", tester.ExamID).Pluck("required_fields", &requiredFields)
 
-	// 4. 选择模板文件
-	templateFile := h.findTemplate(mbtiType)
+	// 4. 判断报告类型
+	isSimple := b.ReportType == "simple"
+
+	// 5. 选择模板文件
+	var templateFile string
+	if isSimple {
+		templateFile = h.findTemplateInDir(h.simpleDir, mbtiType)
+	} else {
+		templateFile = h.findTemplate(mbtiType)
+	}
 	if templateFile == "" {
-		response.RestErr(c, fmt.Sprintf("找不到 %s 类型的报告模板", mbtiType))
+		label := "完整版"
+		if isSimple {
+			label = "简版"
+		}
+		response.RestErr(c, fmt.Sprintf("找不到 %s 类型的%s报告模板", mbtiType, label))
 		return
 	}
 
-	// 5. 构造替换数据
+	// 6. 构造替换数据
 	gender := ""
 	if tester.Gender != nil {
 		if *tester.Gender == "0" {
@@ -95,54 +112,71 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 			gender = "女"
 		}
 	}
-	timeStr := ""
-	if userTime != nil && *userTime > 0 {
-		timeStr = strconv.Itoa(*userTime) + "分钟"
+
+	var fields map[string]string
+	if isSimple {
+		// 简版只有姓名/年龄/性别
+		fields = map[string]string{
+			"姓名：": tester.Name,
+			"年龄：": intToStr(tester.Age),
+			"性别：": gender,
+		}
+	} else {
+		// 完整版全部字段
+		timeStr := ""
+		if userTime != nil && *userTime > 0 {
+			timeStr = strconv.Itoa(*userTime) + "分钟"
+		}
+		fields = map[string]string{
+			"姓名：":   tester.Name,
+			"年龄：":   intToStr(tester.Age),
+			"性别：":   gender,
+			"单位：":   ptrStr(tester.Affiliation),
+			"岗位：":   ptrStr(tester.Post),
+			"联系方式：": ptrStr(tester.Telephone),
+			"测评时长：": timeStr,
+		}
+
+		// 按 requiredFields 过滤（空 = 全显示）
+		rfMap := map[string]string{
+			"name": "姓名：", "age": "年龄：", "gender": "性别：",
+			"affiliation": "单位：", "post": "岗位：", "telephone": "联系方式：",
+		}
+		if requiredFields != "" {
+			allowed := map[string]bool{"姓名：": true}
+			for _, f := range strings.Split(requiredFields, ",") {
+				if label, ok := rfMap[f]; ok {
+					allowed[label] = true
+				}
+			}
+			for k := range fields {
+				if !allowed[k] {
+					fields[k] = ""
+				}
+			}
+		}
 	}
-	fields := map[string]string{
-		"姓名：":   tester.Name,
-		"年龄：":   intToStr(tester.Age),
-		"性别：":   gender,
-		"单位：":   ptrStr(tester.Affiliation),
-		"岗位：":   ptrStr(tester.Post),
-		"联系方式：": ptrStr(tester.Telephone),
-		"测评时长：": timeStr,
-	}
+
 	// 报告日期
 	now := time.Now()
 	dateStr := fmt.Sprintf("%d年%d月%d日", now.Year(), now.Month(), now.Day())
 
-	// 按 requiredFields 过滤（空 = 全显示）
-	rfMap := map[string]string{
-		"name": "姓名：", "age": "年龄：", "gender": "性别：",
-		"affiliation": "单位：", "post": "岗位：", "telephone": "联系方式：",
-	}
-	if requiredFields != "" {
-		allowed := map[string]bool{"姓名：": true} // 姓名始终显示
-		for _, f := range strings.Split(requiredFields, ",") {
-			if label, ok := rfMap[f]; ok {
-				allowed[label] = true
-			}
-		}
-		for k := range fields {
-			if !allowed[k] {
-				fields[k] = "" // 不显示的字段留空
-			}
-		}
-	}
-
-	// 6. 执行 docx 模板替换
-	outputBuf, err := h.processTemplate(templateFile, fields, dateStr, scores)
+	// 7. 执行 docx 模板替换
+	outputBuf, err := h.processTemplate(templateFile, fields, dateStr, scores, isSimple)
 	if err != nil {
 		response.RestErr(c, "生成报告失败: "+err.Error())
 		return
 	}
 
-	// 7. 保存 docx 文件
+	// 8. 保存 docx 文件
 	day := now.Format("20060102")
 	outDir := filepath.Join(h.outputDir, day)
 	_ = os.MkdirAll(outDir, 0o755)
-	baseName := fmt.Sprintf("%s_%s_%s", tester.Name, mbtiType, now.Format("20060102150405"))
+	suffix := ""
+	if isSimple {
+		suffix = "_simple"
+	}
+	baseName := fmt.Sprintf("%s_%s_%s%s", tester.Name, mbtiType, now.Format("20060102150405"), suffix)
 	docxPath := filepath.Join(outDir, baseName+".docx")
 	if err := os.WriteFile(docxPath, outputBuf.Bytes(), 0o644); err != nil {
 		response.RestErr(c, "保存报告失败: "+err.Error())
@@ -161,31 +195,33 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 	cmd := exec.Command(loCmd, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
 	cmdOut, cmdErr := cmd.CombinedOutput()
 	if cmdErr != nil {
-		log.Printf("[libreoffice] convert failed: %v, output: %s", cmdErr, string(cmdOut))
+		slog.Error("libreoffice: convert failed", "error", cmdErr, "output", string(cmdOut))
 	} else {
 		// 转换成功，检查 PDF 是否存在
 		if _, err := os.Stat(pdfPath); err == nil {
 			finalPath = pdfPath
 			_ = os.Remove(docxPath) // 删除临时 docx
 		} else {
-			log.Printf("[libreoffice] PDF not found after convert: %s", pdfPath)
+			slog.Info("libreoffice: PDF not found after convert", "path", pdfPath)
 		}
 	}
 
-	// 9. 更新 pdfPath + pdfFlag
-	updates := map[string]interface{}{"pdf_path": finalPath, "pdf_flag": 1, "update_time": &now}
-	h.db.Table("el_tester").Where("paper_id = ?", b.PaperID).Updates(updates)
-	h.db.Table("el_candidate").Where("paper_id = ?", b.PaperID).Updates(updates)
+	// 9. 更新 pdfPath + pdfFlag（简版不覆盖 pdf_path，完整版才更新）
+	if !isSimple {
+		updates := map[string]interface{}{"pdf_path": finalPath, "pdf_flag": 1, "update_time": &now}
+		h.db.Table("el_tester").Where("paper_id = ?", b.PaperID).Updates(updates)
+		h.db.Table("el_candidate").Where("paper_id = ?", b.PaperID).Updates(updates)
+	}
 
 	fileName := filepath.Base(finalPath)
-	response.Rest(c, gin.H{"path": finalPath, "type": mbtiType, "fileName": fileName})
+	response.Rest(c, gin.H{"path": finalPath, "type": mbtiType, "fileName": fileName, "reportType": b.ReportType})
 }
 
 // GenerateReportByPaperID 异步生成报告（提交答卷后自动调用，无 gin.Context）
 func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[report-async] panic for paperId=%s: %v", paperID, r)
+			slog.Error("report-async: panic", "paperId", paperID, "recover", r)
 		}
 	}()
 
@@ -204,23 +240,14 @@ func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 	mbtiH := &MbtiHandler{db: h.db}
 	scores, mbtiType := mbtiH.calcMbtiScores(paperID)
 	if mbtiType == "" || len(mbtiType) != 4 {
-		log.Printf("[report-async] paperId=%s: MBTI type empty, skip", paperID)
+		slog.Warn("report-async: MBTI type empty", "paperId", paperID)
 		return
 	}
 
-	type testerRow struct {
-		Name        string  `gorm:"column:name"`
-		Age         *int    `gorm:"column:age"`
-		Gender      *string `gorm:"column:gender"`
-		Telephone   *string `gorm:"column:telephone"`
-		Affiliation *string `gorm:"column:affiliation"`
-		Post        *string `gorm:"column:post"`
-		ExamID      string  `gorm:"column:exam_id"`
-	}
-	var tester testerRow
+	var tester mbtiTesterRow
 	if err := h.db.Table("el_tester").Where("paper_id = ?", paperID).Take(&tester).Error; err != nil {
 		if err2 := h.db.Table("el_candidate").Where("paper_id = ?", paperID).Take(&tester).Error; err2 != nil {
-			log.Printf("[report-async] paperId=%s: tester not found", paperID)
+			slog.Warn("report-async: tester not found", "paperId", paperID)
 			return
 		}
 	}
@@ -233,7 +260,7 @@ func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 
 	templateFile := h.findTemplate(mbtiType)
 	if templateFile == "" {
-		log.Printf("[report-async] paperId=%s: template not found for %s", paperID, mbtiType)
+		slog.Warn("report-async: template not found", "paperId", paperID, "type", mbtiType)
 		return
 	}
 
@@ -275,9 +302,9 @@ func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 		}
 	}
 
-	outputBuf, err := h.processTemplate(templateFile, fields, dateStr, scores)
+	outputBuf, err := h.processTemplate(templateFile, fields, dateStr, scores, false) // async always full version
 	if err != nil {
-		log.Printf("[report-async] paperId=%s: processTemplate failed: %v", paperID, err)
+		slog.Error("report-async: processTemplate failed", "paperId", paperID, "error", err)
 		return
 	}
 
@@ -287,7 +314,7 @@ func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 	baseName := fmt.Sprintf("%s_%s_%s", tester.Name, mbtiType, now.Format("20060102150405"))
 	docxPath := filepath.Join(outDir, baseName+".docx")
 	if err := os.WriteFile(docxPath, outputBuf.Bytes(), 0o644); err != nil {
-		log.Printf("[report-async] paperId=%s: write docx failed: %v", paperID, err)
+		slog.Error("report-async: write docx failed", "paperId", paperID, "error", err)
 		return
 	}
 
@@ -301,7 +328,7 @@ func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 	}
 	cmd := exec.Command(loCmd, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
 	if cmdOut, cmdErr := cmd.CombinedOutput(); cmdErr != nil {
-		log.Printf("[report-async] paperId=%s: libreoffice failed: %v, output: %s", paperID, cmdErr, string(cmdOut))
+		slog.Error("report-async: libreoffice failed", "paperId", paperID, "error", cmdErr, "output", string(cmdOut))
 	} else if _, err := os.Stat(pdfPath); err == nil {
 		finalPath = pdfPath
 		_ = os.Remove(docxPath)
@@ -310,14 +337,74 @@ func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 	updates := map[string]interface{}{"pdf_path": finalPath, "pdf_flag": 1, "update_time": &now}
 	h.db.Table("el_tester").Where("paper_id = ?", paperID).Updates(updates)
 	h.db.Table("el_candidate").Where("paper_id = ?", paperID).Updates(updates)
-	log.Printf("[report-async] paperId=%s: generated %s", paperID, filepath.Base(finalPath))
+	slog.Info("report-async: generated", "paperId", paperID, "file", filepath.Base(finalPath))
+
+	// 同时生成简版报告
+	h.generateSimpleAsync(paperID, tester, mbtiType, scores, dateStr, now)
 }
 
-// POST /exam/api/mbti/download-report {paperId}
+// generateSimpleAsync 异步生成简版报告（完整版生成后自动调用）
+func (h *MbtiReportHandler) generateSimpleAsync(paperID string, tester mbtiTesterRow, mbtiType string, scores map[string]int, dateStr string, now time.Time) {
+	simpleTemplate := h.findTemplateInDir(h.simpleDir, mbtiType)
+	if simpleTemplate == "" {
+		slog.Warn("report-async-simple: template not found", "paperId", paperID, "type", mbtiType)
+		return
+	}
+
+	gender := ""
+	if tester.Gender != nil {
+		if *tester.Gender == "0" {
+			gender = "男"
+		} else if *tester.Gender == "1" {
+			gender = "女"
+		}
+	}
+	simpleFields := map[string]string{
+		"姓名：": tester.Name,
+		"年龄：": intToStr(tester.Age),
+		"性别：": gender,
+	}
+
+	outputBuf, err := h.processTemplate(simpleTemplate, simpleFields, dateStr, scores, true)
+	if err != nil {
+		slog.Error("report-async-simple: processTemplate failed", "paperId", paperID, "error", err)
+		return
+	}
+
+	day := now.Format("20060102")
+	outDir := filepath.Join(h.outputDir, day)
+	baseName := fmt.Sprintf("%s_%s_%s_simple", tester.Name, mbtiType, now.Format("20060102150405"))
+	docxPath := filepath.Join(outDir, baseName+".docx")
+	if err := os.WriteFile(docxPath, outputBuf.Bytes(), 0o644); err != nil {
+		slog.Error("report-async-simple: write failed", "paperId", paperID, "error", err)
+		return
+	}
+
+	// 转 PDF
+	absDocx, _ := filepath.Abs(docxPath)
+	absOutDir, _ := filepath.Abs(outDir)
+	loCmd := "libreoffice"
+	if runtime.GOOS == "windows" {
+		loCmd = `C:\Program Files\LibreOffice\program\soffice.exe`
+	}
+	cmd := exec.Command(loCmd, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
+	if cmdOut, cmdErr := cmd.CombinedOutput(); cmdErr != nil {
+		slog.Error("report-async-simple: libreoffice failed", "paperId", paperID, "error", cmdErr, "output", string(cmdOut))
+	} else {
+		pdfPath := filepath.Join(outDir, baseName+".pdf")
+		if _, err := os.Stat(pdfPath); err == nil {
+			_ = os.Remove(docxPath)
+		}
+	}
+	slog.Info("report-async-simple: generated", "paperId", paperID, "type", mbtiType)
+}
+
+// POST /exam/api/mbti/download-report {paperId, type: "full"|"simple"}
 // 下载已生成的报告文件
 func (h *MbtiReportHandler) DownloadReport(c *gin.Context) {
 	var b struct {
-		PaperID string `json:"paperId" form:"paperId"`
+		PaperID    string `json:"paperId" form:"paperId"`
+		ReportType string `json:"type" form:"type"`
 	}
 	_ = c.ShouldBind(&b)
 	if b.PaperID == "" {
@@ -333,33 +420,83 @@ func (h *MbtiReportHandler) DownloadReport(c *gin.Context) {
 		response.RestErr(c, "报告未生成")
 		return
 	}
+
+	// 简版：在同目录搜索含 _simple 的文件（因为完整版和简版时间戳可能不同）
+	if b.ReportType == "simple" {
+		dir := filepath.Dir(pdfPath)
+		// 从完整版文件名提取姓名和类型前缀（格式: 姓名_TYPE_时间戳.ext）
+		baseName := filepath.Base(pdfPath)
+		// 找到同目录下最新的 _simple 文件
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			response.RestErr(c, "报告目录不存在")
+			return
+		}
+		// 提取前缀：姓名_TYPE_
+		parts := strings.SplitN(baseName, "_", 3)
+		prefix := ""
+		if len(parts) >= 2 {
+			prefix = parts[0] + "_" + parts[1] + "_"
+		}
+		var simplePath string
+		for _, e := range entries {
+			name := e.Name()
+			if strings.Contains(name, "_simple") && (prefix == "" || strings.HasPrefix(name, prefix)) {
+				simplePath = filepath.Join(dir, name)
+			}
+		}
+		if simplePath == "" {
+			response.RestErr(c, "简版报告未生成，请先生成简版报告")
+			return
+		}
+		pdfPath = simplePath
+	}
+
 	if _, err := os.Stat(pdfPath); err != nil {
 		response.RestErr(c, "报告文件不存在")
 		return
 	}
 
 	fname := filepath.Base(pdfPath)
-	c.Header("Content-Disposition", "attachment; filename="+fname)
-	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+	c.Header("Content-Disposition", "attachment; filename="+url.QueryEscape(fname)+
+		"; filename*=UTF-8''"+url.QueryEscape(fname))
+	// 根据扩展名设置 Content-Type
+	ext := strings.ToLower(filepath.Ext(fname))
+	switch ext {
+	case ".pdf":
+		c.Header("Content-Type", "application/pdf")
+	case ".docx":
+		c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+	default:
+		c.Header("Content-Type", "application/octet-stream")
+	}
 	c.File(pdfPath)
 }
 
-// findTemplate 查找对应类型的 docx 模板
+// findTemplate 查找对应类型的完整版 docx 模板
 func (h *MbtiReportHandler) findTemplate(mbtiType string) string {
-	entries, err := os.ReadDir(h.templateDir)
+	return h.findTemplateInDir(h.templateDir, mbtiType)
+}
+
+// findTemplateInDir 在指定目录查找包含 mbtiType 的 docx 文件
+func (h *MbtiReportHandler) findTemplateInDir(dir, mbtiType string) string {
+	if dir == "" {
+		return ""
+	}
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return ""
 	}
 	for _, e := range entries {
 		if !e.IsDir() && strings.Contains(e.Name(), mbtiType) && strings.HasSuffix(e.Name(), ".docx") && !strings.HasPrefix(e.Name(), "~") {
-			return filepath.Join(h.templateDir, e.Name())
+			return filepath.Join(dir, e.Name())
 		}
 	}
 	return ""
 }
 
 // processTemplate 读取 docx 模板，替换首页字段和图表数据
-func (h *MbtiReportHandler) processTemplate(templatePath string, fields map[string]string, dateStr string, scores map[string]int) (*bytes.Buffer, error) {
+func (h *MbtiReportHandler) processTemplate(templatePath string, fields map[string]string, dateStr string, scores map[string]int, isSimple bool) (*bytes.Buffer, error) {
 	// 读取原始 docx (ZIP)
 	r, err := zip.OpenReader(templatePath)
 	if err != nil {
@@ -386,7 +523,9 @@ func (h *MbtiReportHandler) processTemplate(templatePath string, fields map[stri
 		case "word/document.xml":
 			data = h.replaceDocumentFields(data, fields, dateStr)
 		case "word/charts/chart1.xml":
-			data = h.replaceChartValues(data, scores)
+			if !isSimple { // 简版无图表，跳过替换
+				data = h.replaceChartValues(data, scores)
+			}
 		}
 
 		// 写入新 ZIP — 用 Deflate 压缩，清除 Data Descriptor 标志位
@@ -556,11 +695,15 @@ var mbtiTypes = []string{
 // GET /exam/api/mbti/templates — 列出所有模板
 func (h *MbtiReportHandler) ListTemplates(c *gin.Context) {
 	type tmplInfo struct {
-		Type     string `json:"type"`
-		FileName string `json:"fileName"`
-		Size     int64  `json:"size"`
-		ModTime  string `json:"modTime"`
-		Exists   bool   `json:"exists"`
+		Type           string `json:"type"`
+		FileName       string `json:"fileName"`
+		Size           int64  `json:"size"`
+		ModTime        string `json:"modTime"`
+		Exists         bool   `json:"exists"`
+		SimpleFileName string `json:"simpleFileName"`
+		SimpleSize     int64  `json:"simpleSize"`
+		SimpleModTime  string `json:"simpleModTime"`
+		SimpleExists   bool   `json:"simpleExists"`
 	}
 	var list []tmplInfo
 	for _, t := range mbtiTypes {
@@ -572,12 +715,21 @@ func (h *MbtiReportHandler) ListTemplates(c *gin.Context) {
 			info.Size = fi.Size()
 			info.ModTime = fi.ModTime().Format("2006-01-02 15:04:05")
 		}
+		// 简版
+		simpleName := "MBTI-SIMPLE-" + t + ".docx"
+		simpleFp := filepath.Join(h.simpleDir, simpleName)
+		info.SimpleFileName = simpleName
+		if fi, err := os.Stat(simpleFp); err == nil {
+			info.SimpleExists = true
+			info.SimpleSize = fi.Size()
+			info.SimpleModTime = fi.ModTime().Format("2006-01-02 15:04:05")
+		}
 		list = append(list, info)
 	}
 	response.Rest(c, list)
 }
 
-// GET /exam/api/mbti/templates/download/:type — 下载模板
+// GET /exam/api/mbti/templates/download/:type?variant=simple — 下载模板
 func (h *MbtiReportHandler) DownloadTemplate(c *gin.Context) {
 	mbtiType := strings.ToUpper(c.Param("type"))
 	valid := false
@@ -591,17 +743,25 @@ func (h *MbtiReportHandler) DownloadTemplate(c *gin.Context) {
 		response.RestErr(c, "无效的 MBTI 类型")
 		return
 	}
-	fp := filepath.Join(h.templateDir, "MBTI-"+mbtiType+".docx")
+	isSimple := c.Query("variant") == "simple"
+	var fp, fname string
+	if isSimple {
+		fname = "MBTI-SIMPLE-" + mbtiType + ".docx"
+		fp = filepath.Join(h.simpleDir, fname)
+	} else {
+		fname = "MBTI-" + mbtiType + ".docx"
+		fp = filepath.Join(h.templateDir, fname)
+	}
 	if _, err := os.Stat(fp); err != nil {
 		response.RestErr(c, "模板文件不存在")
 		return
 	}
-	c.Header("Content-Disposition", "attachment; filename=MBTI-"+mbtiType+".docx")
+	c.Header("Content-Disposition", "attachment; filename="+fname)
 	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 	c.File(fp)
 }
 
-// POST /exam/api/mbti/templates/upload — 上传模板（multipart: type + file）
+// POST /exam/api/mbti/templates/upload — 上传模板（multipart: type + file + variant）
 func (h *MbtiReportHandler) UploadTemplate(c *gin.Context) {
 	mbtiType := strings.ToUpper(c.PostForm("type"))
 	valid := false
@@ -628,7 +788,14 @@ func (h *MbtiReportHandler) UploadTemplate(c *gin.Context) {
 		response.RestErr(c, "文件大小不能超过 10MB")
 		return
 	}
-	dst := filepath.Join(h.templateDir, "MBTI-"+mbtiType+".docx")
+
+	isSimple := c.PostForm("variant") == "simple"
+	var dst string
+	if isSimple {
+		dst = filepath.Join(h.simpleDir, "MBTI-SIMPLE-"+mbtiType+".docx")
+	} else {
+		dst = filepath.Join(h.templateDir, "MBTI-"+mbtiType+".docx")
+	}
 	// 备份旧文件
 	if _, err := os.Stat(dst); err == nil {
 		backup := dst + ".bak"
@@ -638,6 +805,6 @@ func (h *MbtiReportHandler) UploadTemplate(c *gin.Context) {
 		response.RestErr(c, "保存文件失败: "+err.Error())
 		return
 	}
-	log.Printf("[template] uploaded MBTI-%s.docx (%d bytes)", mbtiType, file.Size)
+	slog.Info("template: uploaded", "type", mbtiType, "bytes", file.Size)
 	response.Rest(c, gin.H{"type": mbtiType, "size": file.Size})
 }

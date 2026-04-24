@@ -32,9 +32,7 @@ func (h *TesterHandler) List(c *gin.Context) {
 	if pageNum <= 0 {
 		pageNum = 1
 	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
+	pageSize = capPageSize(pageSize)
 	name := c.Query("name")
 	idNumber := c.Query("idNumber")
 	examID := c.Query("examId")

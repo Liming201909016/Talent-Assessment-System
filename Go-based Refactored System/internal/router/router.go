@@ -12,7 +12,8 @@ import (
 
 func Setup(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Recovery(), gin.Logger(), middleware.CORS())
+	r.MaxMultipartMemory = 32 << 20 // 32MB upload limit
+	r.Use(gin.Recovery(), gin.Logger(), middleware.CORS(), middleware.SecurityHeaders())
 
 	// 依赖装配
 	userRepo := repository.NewSysUserRepo(db)
@@ -309,7 +310,7 @@ func Setup(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		mbtiGrp.POST("/score", mbtiH.Score)
 
 		// MBTI 报告生成（docx 模板替换）
-		mbtiReportH := handler.NewMbtiReportHandler(db, cfg.Upload.MbtiTemplates, cfg.Upload.Path)
+		mbtiReportH := handler.NewMbtiReportHandler(db, cfg.Upload.MbtiTemplates, cfg.Upload.MbtiTemplatesSimple, cfg.Upload.Path)
 		mbtiH.SetReportHandler(mbtiReportH) // 注入报告生成器，Submit 后自动生成 PDF
 		mbtiGrp.POST("/generate-report", mbtiReportH.GenerateReport)
 		mbtiGrp.POST("/download-report", mbtiReportH.DownloadReport)
