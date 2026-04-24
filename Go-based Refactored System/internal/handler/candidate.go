@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -534,7 +533,6 @@ func (h *CandidateHandler) PdfUpload(c *gin.Context) {
 		File string `json:"file" form:"file"`
 	}
 	_ = c.ShouldBind(&b)
-	log.Printf("[pdf-upload] file=%q, contentType=%s", b.File, c.ContentType())
 	if b.File == "" {
 		response.RestErr(c, "file 为空")
 		return
@@ -545,7 +543,6 @@ func (h *CandidateHandler) PdfUpload(c *gin.Context) {
 		allowedDir = filepath.Clean("./tmp")
 	}
 	clean := filepath.Clean(b.File)
-	log.Printf("[pdf-upload] allowedDir=%q, clean=%q, hasPrefix=%v", allowedDir, clean, strings.HasPrefix(clean, allowedDir))
 	if !strings.HasPrefix(clean, allowedDir) {
 		response.RestErr(c, "文件路径不合法")
 		return

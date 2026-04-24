@@ -4,5 +4,7 @@ tmp/
 .env.local
 .env.staging
 .env.production
+configs/application-local.yml
+configs/application-production.yml
 *.exe
 *.log

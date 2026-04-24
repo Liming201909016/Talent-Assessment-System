@@ -106,17 +106,31 @@ func (h *QuHandler) Paging(c *gin.Context) {
 	q.Select("q.*").Order("CAST(REPLACE(q.content, 'V', '') AS UNSIGNED), q.update_time desc").
 		Offset((req.Current - 1) * req.Size).Limit(req.Size).Scan(&rows)
 
-	// 对齐 Java QuServiceImpl.paging：每条记录附带 answerList
+	// 对齐 Java QuServiceImpl.paging：每条记录附带 answerList + repoName
 	type quWithAnswers struct {
 		model.Qu
 		AnswerList []model.QuAnswer `json:"answerList"`
 		Sort       int              `json:"sort"`
+		RepoName   string           `json:"repoName"`
+		RepoID     string           `json:"repoId"`
 	}
 	result := make([]quWithAnswers, len(rows))
 	for i, qu := range rows {
 		result[i].Qu = qu
 		h.db.Where("qu_id = ?", qu.ID).Order("id").Find(&result[i].AnswerList)
 		result[i].Sort = i + 1
+		// 查询关联的第一个题库名称
+		var repo struct {
+			RepoID string `gorm:"column:repo_id"`
+			Title  string `gorm:"column:title"`
+		}
+		h.db.Table("el_qu_repo AS qr").
+			Joins("INNER JOIN el_repo AS rp ON rp.id = qr.repo_id").
+			Where("qr.qu_id = ?", qu.ID).
+			Select("qr.repo_id, rp.title").
+			Limit(1).Scan(&repo)
+		result[i].RepoName = repo.Title
+		result[i].RepoID = repo.RepoID
 	}
 
 	response.Rest(c, gin.H{"records": result, "total": total, "current": req.Current, "size": req.Size})

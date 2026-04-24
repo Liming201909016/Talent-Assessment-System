@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/url"
 	"os"
@@ -115,16 +116,38 @@ func (h *ExamHandler) PdfTeam(c *gin.Context) {
 	response.Rest(c, gin.H{"pdfPath": savePath})
 }
 
+// exportPRow 导出用人员行
+type exportPRow struct {
+	Name        string     `gorm:"column:name"`
+	IDNumber    string     `gorm:"column:id_number"`
+	Gender      *string    `gorm:"column:gender"`
+	Age         *int       `gorm:"column:age"`
+	Telephone   *string    `gorm:"column:telephone"`
+	Affiliation *string    `gorm:"column:affiliation"`
+	Depart      *string    `gorm:"column:depart"`
+	Post        *string    `gorm:"column:post"`
+	Degree      *string    `gorm:"column:degree"`
+	Major       *string    `gorm:"column:major"`
+	StuFlag     *int       `gorm:"column:stu_flag"`
+	UserTime    *int       `gorm:"column:user_time"`
+	PaperID     *string    `gorm:"column:paper_id"`
+	EndTime     *time.Time `gorm:"column:end_time"`
+	CreateTime  *time.Time `gorm:"column:create_time"`
+	MbtiType    *string    `gorm:"column:mbti_type"`
+	MbtiScores  *string    `gorm:"column:mbti_scores"`
+}
+
 // POST /exam/api/exam/exam/export-raw-data  {examId}
-// 对齐 Java exportRawData：导出全体测评人员原始答题数据 + 维度得分
+// 基于 Excel 模板导出全体测评人员原始答题数据 + 维度得分
 func (h *ExamHandler) ExportRawData(c *gin.Context) {
 	examID := c.PostForm("examId")
 	if examID == "" {
 		examID = c.Query("examId")
 	}
 	if examID == "" {
-		// 也尝试从 JSON body 读取
-		var b struct{ ExamID string `json:"examId"` }
+		var b struct {
+			ExamID string `json:"examId"`
+		}
 		_ = c.ShouldBindJSON(&b)
 		examID = b.ExamID
 	}
@@ -148,48 +171,502 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 	isMng := strings.HasPrefix(repoCode, "002")
 	isMbti := strings.HasPrefix(repoCode, "003")
 
-	// 取人员列表（与 tester-list 相同 schema；Java 按 is_open 分支，新系统统一）
-	type pRow struct {
-		Name        string  `gorm:"column:name"`
-		IDNumber    string  `gorm:"column:id_number"`
-		Gender      *string `gorm:"column:gender"`
-		Age         *int    `gorm:"column:age"`
-		Telephone   *string `gorm:"column:telephone"`
-		Affiliation *string `gorm:"column:affiliation"`
-		Depart      *string `gorm:"column:depart"`
-		Post        *string `gorm:"column:post"`
-		Degree      *string `gorm:"column:degree"`
-		Major       *string `gorm:"column:major"`
-		StuFlag     *int    `gorm:"column:stu_flag"`
-		UserTime    *int    `gorm:"column:user_time"`
-		PaperID     *string `gorm:"column:paper_id"`
-		EndTime     *time.Time `gorm:"column:end_time"`
-		MbtiType    *string `gorm:"column:mbti_type"`
-		MbtiScores  *string `gorm:"column:mbti_scores"`
-	}
-	var rows []pRow
+	// 取人员列表
+	var rows []exportPRow
 	isOpen := exam.IsOpen == 1
 	if isOpen {
-		// 开放考试：从 el_candidate 取人员（无 id_number, depart, mbti 列）
 		h.db.Table("el_candidate AS t").
 			Joins("LEFT JOIN el_paper AS pa ON pa.id = t.paper_id").
 			Select(`t.name, '' as id_number, t.gender, t.age, t.telephone, t.affiliation,
 				'' as depart, t.post, t.degree, t.major, t.stu_flag,
-				pa.user_time, t.paper_id, t.end_time`).
+				pa.user_time, t.paper_id, t.end_time, pa.create_time`).
 			Where("t.exam_id = ? AND (t.del_flag IS NULL OR t.del_flag = 0)", examID).
 			Order("pa.create_time DESC").
 			Scan(&rows)
 	} else {
-		// 封闭考试：从 el_tester 取人员
 		h.db.Table("el_tester AS t").
 			Joins("LEFT JOIN el_paper AS pa ON pa.id = t.paper_id").
 			Select(`t.name, t.id_number, t.gender, t.age, t.telephone, t.affiliation,
 				t.depart, t.post, t.degree, t.major, t.stu_flag,
-				pa.user_time, t.paper_id, t.end_time, t.mbti_type, t.mbti_scores`).
+				pa.user_time, t.paper_id, t.end_time, pa.create_time,
+				t.mbti_type, t.mbti_scores`).
 			Where("t.exam_id = ? AND (t.del_flag IS NULL OR t.del_flag = 0)", examID).
 			Order("pa.create_time DESC").
 			Scan(&rows)
 	}
+
+	// 尝试基于模板导出
+	templateFile := h.findExportTemplate(repoCode)
+	if templateFile != "" {
+		if isMbti {
+			h.exportMbtiByTemplate(c, exam, repoCode, templateFile, rows)
+		} else if isMng {
+			h.exportMngByTemplate(c, exam, repoCode, templateFile, rows)
+		} else {
+			h.exportPsyByTemplate(c, exam, repoCode, templateFile, rows)
+		}
+		return
+	}
+	// 无模板时退化为原始导出
+	h.exportFallback(c, exam, repoCode, isMng, isMbti, rows)
+}
+
+// findExportTemplate 查找 configs/export-templates/{repoCode}.*.xlsx
+// 如果精确匹配不到，尝试用前缀的前3位匹配（如 00302 → 003*）
+func (h *ExamHandler) findExportTemplate(repoCode string) string {
+	searchDirs := []string{"./configs/export-templates", "../configs/export-templates"}
+	// 先精确匹配 repoCode
+	for _, dir := range searchDirs {
+		pattern := filepath.Join(dir, repoCode+".*xlsx")
+		matches, err := filepath.Glob(pattern)
+		if err == nil && len(matches) > 0 {
+			log.Printf("[export] template found: %s", matches[0])
+			return matches[0]
+		}
+	}
+	// 退化到前缀匹配（如 00302 → 003）
+	if len(repoCode) >= 3 {
+		prefix := repoCode[:3]
+		for _, dir := range searchDirs {
+			pattern := filepath.Join(dir, prefix+"*.*xlsx")
+			matches, err := filepath.Glob(pattern)
+			if err == nil && len(matches) > 0 {
+				log.Printf("[export] template fallback: %s (prefix %s)", matches[0], prefix)
+				return matches[0]
+			}
+		}
+	}
+	return ""
+}
+
+// exportMbtiByTemplate 使用 MBTI 模板填充数据
+// 模板结构: Row0=标题(合并), Row1=列头, 数据从 Row2 开始
+// 列: A=日期, B=时间, C=序号, D=姓名, E=身份证号, F=性别, G=年龄, H=手机号,
+//
+//	I=单位/学校, J=部门, K=岗位, L=学历, M=专业, N=是否学生, O=答题用时, P=答题状态,
+//	Q=MBTI类型, R=外向E, S=内向I, T=感觉S, U=直觉N, V=理性T, W=感性F, X=判断J, Y=感知P
+func (h *ExamHandler) exportMbtiByTemplate(c *gin.Context, exam model.Exam,
+	repoCode, templateFile string, rows []exportPRow) {
+
+	f, err := excelize.OpenFile(templateFile)
+	if err != nil {
+		log.Printf("[export] open template %s failed: %v", templateFile, err)
+		response.RestErr(c, "打开模板失败")
+		return
+	}
+	defer f.Close()
+
+	sheet := f.GetSheetName(0)
+	// 替换标题
+	f.SetCellValue(sheet, "A1", exam.Title+"测验结果统计表")
+
+	// 删除模板中的示例数据行（Row2+）
+	existingRows, _ := f.GetRows(sheet)
+	if len(existingRows) > 2 {
+		for i := len(existingRows); i > 2; i-- {
+			f.RemoveRow(sheet, i)
+		}
+	}
+
+	// 对开放考试补充 MBTI 分数（el_candidate 表没有 mbti_type/mbti_scores 列）
+	for i := range rows {
+		if rows[i].MbtiType == nil || *rows[i].MbtiType == "" {
+			if rows[i].PaperID != nil && *rows[i].PaperID != "" && rows[i].EndTime != nil {
+				h.fillMbtiFromPaper(&rows[i])
+			}
+		}
+	}
+
+	dataStartRow := 3 // Excel row 3 (1-indexed), after title + header
+	for i, r := range rows {
+		row := dataStartRow + i
+
+		gender := formatGender(r.Gender)
+		stu := "否"
+		if r.StuFlag != nil && *r.StuFlag == 1 {
+			stu = "是"
+		}
+		status := "未测评"
+		if r.PaperID != nil && *r.PaperID != "" {
+			if r.EndTime != nil {
+				status = "已完成"
+			} else {
+				status = "进行中"
+			}
+		}
+		userTime := 0
+		if r.UserTime != nil {
+			userTime = *r.UserTime
+		}
+
+		// A=日期, B=时间
+		if r.CreateTime != nil {
+			f.SetCellValue(sheet, cellName(1, row), r.CreateTime.Format("2006-01-02"))
+			f.SetCellValue(sheet, cellName(2, row), r.CreateTime.Format("15:04:05"))
+		}
+		f.SetCellValue(sheet, cellName(3, row), i+1)                     // 序号
+		f.SetCellValue(sheet, cellName(4, row), r.Name)                  // 姓名
+		f.SetCellValue(sheet, cellName(5, row), r.IDNumber)              // 身份证号
+		f.SetCellValue(sheet, cellName(6, row), gender)                  // 性别
+		f.SetCellValue(sheet, cellName(7, row), derefInt(r.Age))         // 年龄
+		f.SetCellValue(sheet, cellName(8, row), derefStr(r.Telephone))   // 手机号
+		f.SetCellValue(sheet, cellName(9, row), derefStr(r.Affiliation)) // 单位/学校
+		f.SetCellValue(sheet, cellName(10, row), derefStr(r.Depart))     // 部门
+		f.SetCellValue(sheet, cellName(11, row), derefStr(r.Post))       // 岗位
+		f.SetCellValue(sheet, cellName(12, row), derefStr(r.Degree))     // 学历
+		f.SetCellValue(sheet, cellName(13, row), derefStr(r.Major))      // 专业
+		f.SetCellValue(sheet, cellName(14, row), stu)                    // 是否学生
+		f.SetCellValue(sheet, cellName(15, row), userTime)               // 答题用时
+		f.SetCellValue(sheet, cellName(16, row), status)                 // 答题状态
+
+		// MBTI 维度 (Q-Y, cols 17-25)
+		if r.MbtiType != nil {
+			f.SetCellValue(sheet, cellName(17, row), *r.MbtiType)
+		}
+		if r.MbtiScores != nil {
+			var ms map[string]int
+			if json.Unmarshal([]byte(*r.MbtiScores), &ms) == nil {
+				dimKeys := []string{"E", "I", "S", "N", "T", "F", "J", "P"}
+				for j, k := range dimKeys {
+					f.SetCellValue(sheet, cellName(18+j, row), ms[k])
+				}
+			}
+		}
+	}
+
+	fileName := exam.Title + "-原始数据.xlsx"
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName)+
+		"; filename*=UTF-8''"+url.QueryEscape(fileName))
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	if err := f.Write(c.Writer); err != nil {
+		log.Printf("[export] write failed: %v", err)
+	}
+}
+
+// psyScoreLevel 心理特质分数等级: ≥7 高分, 4.5~7 中分, <4.5 低分
+func psyScoreLevel(score float64) string {
+	if score >= 7 {
+		return "高分"
+	} else if score >= 4.5 {
+		return "中分"
+	}
+	return "低分"
+}
+
+// psyHealthLevel 心理健康水平（简化版）
+func psyHealthLevel(scores map[string]float64) string {
+	sum := 0.0
+	count8 := 0
+	for _, v := range scores {
+		sum += v
+		if v > 8 {
+			count8++
+		}
+	}
+	avg := sum / float64(len(scores))
+	if avg <= 7 && count8 <= 1 {
+		return "心理状态良好"
+	} else if avg <= 7 && count8 <= 3 {
+		return "心理状况较好"
+	} else if avg <= 7 && count8 <= 5 {
+		return "心理状态尚可"
+	} else if avg > 7 && count8 <= 6 {
+		return "心理状态较差"
+	}
+	return "心理状态很差"
+}
+
+// exportPsyByTemplate 心理特质模板导出（001）
+// 00101(职场版): C0日期 C1时间 C2姓名 C3身份证号 C4性别 C5年龄 C6手机号 C7单位 C8岗位 C9答题时间 C10答题数 C11健康水平 C12~C35=12维度(分+级)
+// 00102(学生版): C0日期 C1时间 C2姓名 C3身份证号 C4性别 C5年龄 C6手机号 C7学校 C8专业 C9学历 C10答题时间 C11答题数 C12健康水平 C13~C36=12维度(分+级)
+func (h *ExamHandler) exportPsyByTemplate(c *gin.Context, exam model.Exam,
+	repoCode, templateFile string, rows []exportPRow) {
+
+	f, err := excelize.OpenFile(templateFile)
+	if err != nil {
+		log.Printf("[export] open template %s failed: %v", templateFile, err)
+		response.RestErr(c, "打开模板失败")
+		return
+	}
+	defer f.Close()
+
+	sheet := f.GetSheetName(0)
+	f.SetCellValue(sheet, "A1", exam.Title+"测验结果统计表")
+
+	// 删除模板示例数据行（保留前3行: 标题+表头+维度头）
+	existingRows, _ := f.GetRows(sheet)
+	if len(existingRows) > 3 {
+		for i := len(existingRows); i > 3; i-- {
+			f.RemoveRow(sheet, i)
+		}
+	}
+
+	// 根据 repoCode 确定是职场版还是学生版
+	isStu := repoCode == "00102"
+	dims := []string{"焦虑", "抑郁", "心理失衡", "敌意", "恐惧", "身体不适", "认知衰退", "情绪化", "挫折感", "自我否定", "怀疑感", "职业倦怠"}
+
+	dataStartRow := 4 // Excel row 4 (1-indexed)
+	for i, r := range rows {
+		row := dataStartRow + i
+		gender := formatGender(r.Gender)
+		userTime := 0
+		if r.UserTime != nil {
+			userTime = *r.UserTime
+		}
+
+		// 日期 & 时间
+		if r.CreateTime != nil {
+			f.SetCellValue(sheet, cellName(1, row), r.CreateTime.Format("2006-01-02"))
+			f.SetCellValue(sheet, cellName(2, row), r.CreateTime.Format("15:04:05"))
+		}
+		f.SetCellValue(sheet, cellName(3, row), r.Name)                // 姓名
+		f.SetCellValue(sheet, cellName(4, row), r.IDNumber)            // 身份证号
+		f.SetCellValue(sheet, cellName(5, row), gender)                // 性别
+		f.SetCellValue(sheet, cellName(6, row), derefInt(r.Age))       // 年龄
+		f.SetCellValue(sheet, cellName(7, row), derefStr(r.Telephone)) // 手机号
+
+		var dimStartCol int
+		if isStu {
+			// 学生版: C7学校, C8专业, C9学历, C10答题时间, C11答题数, C12健康水平, C13+维度
+			f.SetCellValue(sheet, cellName(8, row), derefStr(r.Affiliation)) // 学校
+			f.SetCellValue(sheet, cellName(9, row), derefStr(r.Major))       // 专业
+			f.SetCellValue(sheet, cellName(10, row), derefStr(r.Degree))     // 学历
+			f.SetCellValue(sheet, cellName(11, row), fmt.Sprintf("%d 分钟", userTime))
+			f.SetCellValue(sheet, cellName(12, row), 90) // 答题数（90题固定）
+			// C13=健康水平, C14+维度
+			dimStartCol = 14
+		} else {
+			// 职场版: C7单位, C8岗位, C9答题时间, C10答题数, C11健康水平, C12+维度
+			f.SetCellValue(sheet, cellName(8, row), derefStr(r.Affiliation)) // 单位
+			f.SetCellValue(sheet, cellName(9, row), derefStr(r.Post))        // 岗位
+			f.SetCellValue(sheet, cellName(10, row), fmt.Sprintf("%d 分钟", userTime))
+			f.SetCellValue(sheet, cellName(11, row), 90) // 答题数
+			// C12=健康水平, C13+维度
+			dimStartCol = 13
+		}
+
+		// 计算维度分
+		if r.PaperID != nil && *r.PaperID != "" && r.EndTime != nil {
+			qus, err := h.queryPaperQuForScore(*r.PaperID)
+			if err == nil {
+				scores := standScore1(qus)
+				// 健康水平
+				healthCol := dimStartCol - 1
+				f.SetCellValue(sheet, cellName(healthCol, row), psyHealthLevel(scores))
+				// 12维度 × 2列(分数+等级)
+				for j, d := range dims {
+					v := scores[d]
+					f.SetCellValue(sheet, cellName(dimStartCol+j*2, row), math.Round(v*100)/100)
+					f.SetCellValue(sheet, cellName(dimStartCol+j*2+1, row), psyScoreLevel(v))
+				}
+			}
+		}
+	}
+
+	fileName := exam.Title + "-原始数据.xlsx"
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName)+
+		"; filename*=UTF-8''"+url.QueryEscape(fileName))
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	if err := f.Write(c.Writer); err != nil {
+		log.Printf("[export] write failed: %v", err)
+	}
+}
+
+// mngScoreLevel 管理特质分数等级（5级）
+func mngScoreLevel(score float64) string {
+	if score >= 4.0 {
+		return "高分"
+	} else if score >= 3.0 {
+		return "较高分"
+	} else if score >= 2.0 {
+		return "中等分"
+	} else if score >= 1.0 {
+		return "较低分"
+	}
+	return "低分"
+}
+
+// mngTotalLevel 管理特质总分等级
+func mngTotalLevel(total float64) string {
+	if total >= 48 {
+		return "高分"
+	} else if total >= 36 {
+		return "较高分"
+	} else if total >= 24 {
+		return "中等分"
+	} else if total >= 12 {
+		return "较低分"
+	}
+	return "低分"
+}
+
+// mngDiagnosis 管理特质测评诊断
+func mngDiagnosis(total float64) string {
+	if total >= 48 {
+		return "高潜管理者"
+	} else if total >= 36 {
+		return "较高潜管理者"
+	} else if total >= 24 {
+		return "中等管理者"
+	} else if total >= 12 {
+		return "低潜管理者"
+	}
+	return "非管理型"
+}
+
+// exportMngByTemplate 管理特质模板导出（002）
+// 00201/00202: C0日期 C1时间 C2姓名 C3身份证号 C4性别 C5年龄 C6手机号 C7单位 C8部门
+// C9岗位 C10职务 C11答题时间 C12答题数 C13得分等级 C14测评诊断 C15总分
+// C16~C41=13维度(分+级)
+func (h *ExamHandler) exportMngByTemplate(c *gin.Context, exam model.Exam,
+	repoCode, templateFile string, rows []exportPRow) {
+
+	f, err := excelize.OpenFile(templateFile)
+	if err != nil {
+		log.Printf("[export] open template %s failed: %v", templateFile, err)
+		response.RestErr(c, "打开模板失败")
+		return
+	}
+	defer f.Close()
+
+	sheet := f.GetSheetName(0)
+	f.SetCellValue(sheet, "A1", exam.Title+"测验结果统计表")
+
+	existingRows, _ := f.GetRows(sheet)
+	if len(existingRows) > 3 {
+		for i := len(existingRows); i > 3; i-- {
+			f.RemoveRow(sheet, i)
+		}
+	}
+
+	dims := []string{"社会性", "进取性", "领导性", "计划性", "人际敏感性", "自信心", "责任心", "学习力", "创新性", "情绪稳定性", "自律性", "决断性", "合作性"}
+
+	dataStartRow := 4
+	for i, r := range rows {
+		row := dataStartRow + i
+		gender := formatGender(r.Gender)
+		userTime := 0
+		if r.UserTime != nil {
+			userTime = *r.UserTime
+		}
+
+		if r.CreateTime != nil {
+			f.SetCellValue(sheet, cellName(1, row), r.CreateTime.Format("2006-01-02"))
+			f.SetCellValue(sheet, cellName(2, row), r.CreateTime.Format("15:04:05"))
+		}
+		f.SetCellValue(sheet, cellName(3, row), r.Name)
+		f.SetCellValue(sheet, cellName(4, row), r.IDNumber)
+		f.SetCellValue(sheet, cellName(5, row), gender)
+		f.SetCellValue(sheet, cellName(6, row), derefInt(r.Age))
+		f.SetCellValue(sheet, cellName(7, row), derefStr(r.Telephone))
+		f.SetCellValue(sheet, cellName(8, row), derefStr(r.Affiliation)) // 单位
+		f.SetCellValue(sheet, cellName(9, row), derefStr(r.Depart))      // 部门
+		f.SetCellValue(sheet, cellName(10, row), derefStr(r.Post))       // 岗位
+		f.SetCellValue(sheet, cellName(11, row), "")                     // 职务（暂无此字段）
+		f.SetCellValue(sheet, cellName(12, row), fmt.Sprintf("%d 分钟", userTime))
+		f.SetCellValue(sheet, cellName(13, row), 140) // 答题数（140题固定）
+
+		if r.PaperID != nil && *r.PaperID != "" && r.EndTime != nil {
+			qus, err := h.queryPaperQuForScore(*r.PaperID)
+			if err == nil {
+				scores := standScore2(qus)
+				// 总分
+				total := 0.0
+				for _, d := range dims {
+					total += scores[d]
+				}
+				total = math.Round(total*100) / 100
+
+				f.SetCellValue(sheet, cellName(14, row), mngTotalLevel(total)) // 得分等级
+				f.SetCellValue(sheet, cellName(15, row), mngDiagnosis(total))  // 测评诊断
+				f.SetCellValue(sheet, cellName(16, row), total)                // 总分
+
+				// 13维度 × 2列
+				for j, d := range dims {
+					v := scores[d]
+					f.SetCellValue(sheet, cellName(17+j*2, row), math.Round(v*10000)/10000)
+					f.SetCellValue(sheet, cellName(17+j*2+1, row), mngScoreLevel(v))
+				}
+			}
+		}
+	}
+
+	fileName := exam.Title + "-原始数据.xlsx"
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName)+
+		"; filename*=UTF-8''"+url.QueryEscape(fileName))
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	if err := f.Write(c.Writer); err != nil {
+		log.Printf("[export] write failed: %v", err)
+	}
+}
+
+// fillMbtiFromPaper 从 el_mbti_answer 实时计算 MBTI 分数（用于 el_candidate 没有缓存分数的场景）
+// 逻辑与 mbti.go calcMbtiScores 一致：按题号(V1~V48) mod 4 分配维度
+func (h *ExamHandler) fillMbtiFromPaper(r *exportPRow) {
+	if r.PaperID == nil {
+		return
+	}
+	type answerRow struct {
+		Content string `gorm:"column:content"` // V1~V48
+		ScoreA  int    `gorm:"column:score_a"`
+		ScoreB  int    `gorm:"column:score_b"`
+	}
+	var answers []answerRow
+	h.db.Table("el_mbti_answer AS ma").
+		Joins("INNER JOIN el_qu AS q ON q.id = ma.qu_id COLLATE utf8mb4_general_ci").
+		Where("ma.paper_id = ? AND ma.answered = 1", *r.PaperID).
+		Select("q.content, ma.score_a, ma.score_b").
+		Scan(&answers)
+
+	if len(answers) == 0 {
+		return
+	}
+
+	scores := map[string]int{"E": 0, "I": 0, "S": 0, "N": 0, "T": 0, "F": 0, "J": 0, "P": 0}
+	for _, a := range answers {
+		num := 0
+		if strings.HasPrefix(a.Content, "V") {
+			fmt.Sscanf(a.Content[1:], "%d", &num)
+		}
+		if num < 1 || num > 48 {
+			continue
+		}
+		mod := num % 4
+		switch mod {
+		case 1: // E-I
+			scores["E"] += a.ScoreA
+			scores["I"] += a.ScoreB
+		case 2: // S-N
+			scores["S"] += a.ScoreA
+			scores["N"] += a.ScoreB
+		case 3: // T-F
+			scores["T"] += a.ScoreA
+			scores["F"] += a.ScoreB
+		case 0: // J-P
+			scores["J"] += a.ScoreA
+			scores["P"] += a.ScoreB
+		}
+	}
+
+	pick := func(a, b string) string {
+		if scores[a] >= scores[b] {
+			return a
+		}
+		return b
+	}
+	mbtiType := pick("E", "I") + pick("S", "N") + pick("T", "F") + pick("J", "P")
+	r.MbtiType = &mbtiType
+	scoresJSON, _ := json.Marshal(scores)
+	s := string(scoresJSON)
+	r.MbtiScores = &s
+}
+
+// exportFallback 原始程序化导出（无模板）
+func (h *ExamHandler) exportFallback(c *gin.Context, exam model.Exam,
+	repoCode string, isMng, isMbti bool, rows []exportPRow) {
 
 	var dims []string
 	if isMbti {
@@ -224,17 +701,7 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 
 	for i, r := range rows {
 		row := i + 2
-		gender := ""
-		if r.Gender != nil {
-			switch *r.Gender {
-			case "0":
-				gender = "男"
-			case "1":
-				gender = "女"
-			default:
-				gender = *r.Gender
-			}
-		}
+		gender := formatGender(r.Gender)
 		stu := "否"
 		if r.StuFlag != nil && *r.StuFlag == 1 {
 			stu = "是"
@@ -247,16 +714,12 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 				status = "进行中"
 			}
 		}
-		ageVal := 0
-		if r.Age != nil {
-			ageVal = *r.Age
-		}
 		userTime := 0
 		if r.UserTime != nil {
 			userTime = *r.UserTime
 		}
 		baseData := []any{
-			i + 1, r.Name, r.IDNumber, gender, ageVal, derefStr(r.Telephone),
+			i + 1, r.Name, r.IDNumber, gender, derefInt(r.Age), derefStr(r.Telephone),
 			derefStr(r.Affiliation), derefStr(r.Depart), derefStr(r.Post),
 			derefStr(r.Degree), derefStr(r.Major), stu, userTime, status,
 		}
@@ -265,11 +728,9 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 			f.SetCellValue(sheet, cell, v)
 		}
 
-		// 维度分
 		dimVals := make([]any, len(dims))
 		if r.PaperID != nil && *r.PaperID != "" && r.EndTime != nil {
 			if isMbti {
-				// MBTI: 从 el_tester.mbti_type / mbti_scores 读取
 				if r.MbtiType != nil {
 					dimVals[0] = *r.MbtiType
 				}
@@ -308,7 +769,6 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 		}
 	}
 
-	// 列宽最小 3000 ≈ 12 字符
 	for i := range allHeaders {
 		col, _ := excelize.ColumnNumberToName(i + 1)
 		f.SetColWidth(sheet, col, col, 14)
@@ -316,11 +776,39 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 
 	fileName := exam.Title + "-原始数据.xlsx"
 	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Header("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName))
+	c.Header("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName)+
+		"; filename*=UTF-8''"+url.QueryEscape(fileName))
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
 	if err := f.Write(c.Writer); err != nil {
 		response.RestErr(c, err.Error())
 	}
+}
+
+// cellName 简写: col(1-based), row(1-based) → "A1"
+func cellName(col, row int) string {
+	s, _ := excelize.CoordinatesToCellName(col, row)
+	return s
+}
+
+func formatGender(g *string) string {
+	if g == nil {
+		return ""
+	}
+	switch *g {
+	case "0":
+		return "男"
+	case "1":
+		return "女"
+	default:
+		return *g
+	}
+}
+
+func derefInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // queryPaperQuForScore 与 TesterHandler.queryPaperQuWithContent 相同语义，放 ExamHandler 避免交叉依赖
