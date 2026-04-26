@@ -1,0 +1,46 @@
+{
+  // === GitHub Copilot 配置 ===
+
+  // 代码生成时自动附加的指令文件
+  "github.copilot.chat.codeGeneration.instructions": [
+    { "file": ".github/copilot-instructions.md" }
+  ],
+
+  // 代码审查时自动附加安全审查指令
+  "github.copilot.chat.reviewSelection.instructions": [
+    { "file": ".github/instructions/security-review.instructions.md" }
+  ],
+
+  // 测试生成时自动附加测试指令
+  "github.copilot.chat.testGeneration.instructions": [
+    { "file": ".github/instructions/go-test.instructions.md" }
+  ],
+
+  // === Go 开发配置 ===
+  "go.testFlags": ["-v", "-count=1"],
+  "go.coverOnSave": false,
+  "go.lintTool": "golangci-lint",
+  "go.lintOnSave": "workspace",
+
+  // === 前端开发配置 ===
+  "eslint.workingDirectories": ["Go-based Refactored System/ruoyi-ui"],
+
+  // === 文件关联 ===
+  "files.associations": {
+    "*.prompt.md": "markdown",
+    "*.instructions.md": "markdown"
+  },
+
+  // === 排除不需要搜索的目录 ===
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/bin": true,
+    "**/tmp": true,
+    "**/logs": true,
+    "**/dist": true,
+    "Legacy Java System/positive-selection-master/target": true,
+    "Legacy Java System/tools": true,
+    "scripts/test/archive": true,
+    "scripts/test/screenshots": true
+  }
+}

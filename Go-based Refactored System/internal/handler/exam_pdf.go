@@ -84,12 +84,11 @@ func (h *ExamHandler) PdfTeam(c *gin.Context) {
 		return
 	}
 
-	profile := h.cfg.Upload.Profile
-	if profile == "" {
-		profile = "./tmp/profile"
+	baseDir := h.cfg.Upload.Path
+	if baseDir == "" {
+		baseDir = "./tmp"
 	}
-	parent := filepath.Dir(profile)
-	pdfDir := filepath.Join(parent, "pdf", "team")
+	pdfDir := filepath.Join(baseDir, "pdf", "team")
 	if err := os.MkdirAll(pdfDir, 0o755); err != nil {
 		response.RestErr(c, "创建目录失败："+err.Error())
 		return

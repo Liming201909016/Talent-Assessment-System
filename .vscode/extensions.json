@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    "golang.go",
+    "dbaeumer.vscode-eslint",
+    "octref.vetur",
+    "esbenp.prettier-vscode",
+    "eamodio.gitlens"
+  ]
+}

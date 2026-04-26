@@ -431,14 +431,11 @@ func (h *TesterHandler) PdfPersistence(c *gin.Context) {
 	ts = strings.ReplaceAll(ts, ".", "")
 	day := time.Now().Format("20060102")
 
-	profile := h.cfg.Upload.Profile
-	if profile == "" {
-		profile = h.cfg.Upload.Path
+	baseDir := h.cfg.Upload.Path
+	if baseDir == "" {
+		baseDir = "./tmp"
 	}
-	if profile == "" {
-		profile = "./tmp"
-	}
-	pdfDir := filepath.Join(filepath.Dir(profile), "pdf", day)
+	pdfDir := filepath.Join(baseDir, "pdf", day)
 	if err := os.MkdirAll(pdfDir, 0o755); err != nil {
 		response.AjaxErr(c, err.Error())
 		return
@@ -470,6 +467,8 @@ func (h *TesterHandler) PdfPersistence(c *gin.Context) {
 		response.AjaxErr(c, "pdf存储失败")
 		return
 	}
+	// 异步压缩 PDF（ghostscript），不阻塞响应
+	go compressPDF(saved)
 
 	te.PdfPath = &saved
 	one := 1

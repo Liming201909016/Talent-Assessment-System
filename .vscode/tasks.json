@@ -1,0 +1,94 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Go: Build",
+      "type": "shell",
+      "command": "cd 'Go-based Refactored System'; go build -o bin/server.exe ./cmd/server",
+      "group": "build",
+      "problemMatcher": ["$go"],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Go: Test All",
+      "type": "shell",
+      "command": "cd 'Go-based Refactored System'; go test ./... -v -count=1",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Go: Test Coverage",
+      "type": "shell",
+      "command": "cd 'Go-based Refactored System'; go test ./... -coverprofile=coverage.out; go tool cover -html=coverage.out -o coverage.html",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Go: Lint",
+      "type": "shell",
+      "command": "cd 'Go-based Refactored System'; golangci-lint run ./...",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Test: API Quick Regression (chain-batch)",
+      "type": "shell",
+      "command": "node scripts/test/chain-batch.js",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Test: Business Rules (51 items)",
+      "type": "shell",
+      "command": "node scripts/test/business-rules-test.js",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Test: Requirements (R01-R12)",
+      "type": "shell",
+      "command": "node scripts/test/requirement-tests.js",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Test: Browser E2E (40 items)",
+      "type": "shell",
+      "command": "node scripts/test/browser-e2e-v2.js",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Test: Screenshot Chain (HTML report)",
+      "type": "shell",
+      "command": "node scripts/test/screenshot-chain-test.js",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Test: Full Regression (7 suites)",
+      "type": "shell",
+      "command": "node scripts/test/chain-batch.js; node scripts/test/business-rules-test.js; node scripts/test/exam-fields-test.js; node scripts/test/requirement-tests.js; node scripts/test/browser-e2e-v2.js; node scripts/test/exam-form-candidate-test.js; node scripts/test/screenshot-chain-test.js",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Frontend: Dev Server",
+      "type": "shell",
+      "command": "cd 'Go-based Refactored System/ruoyi-ui'; npm run dev",
+      "isBackground": true,
+      "group": "none",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}

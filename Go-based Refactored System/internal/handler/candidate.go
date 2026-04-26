@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -485,18 +486,19 @@ func (h *CandidateHandler) PdfPersistence(c *gin.Context) {
 
 	ts := time.Now().Format("20060102150405000")
 	day := time.Now().Format("20060102")
-	profile := h.cfg.Upload.Profile
-	if profile == "" {
-		profile = h.cfg.Upload.Path
+	baseDir := h.cfg.Upload.Path
+	if baseDir == "" {
+		baseDir = "./tmp"
 	}
-	if profile == "" {
-		profile = "./tmp"
+	pdfDir := filepath.Join(baseDir, "pdf", day)
+	if err := os.MkdirAll(pdfDir, 0o755); err != nil {
+		response.RestErr(c, "创建PDF目录失败")
+		return
 	}
-	pdfDir := filepath.Join(filepath.Dir(profile), "pdf", day)
-	_ = os.MkdirAll(pdfDir, 0o755)
 	fname := fmt.Sprintf("%s_%s_%s.pdf", name, title, ts)
 	saved := filepath.Join(pdfDir, fname)
 
+	var saved_ok bool
 	for _, fh := range files {
 		src, err := fh.Open()
 		if err != nil {
@@ -510,7 +512,14 @@ func (h *CandidateHandler) PdfPersistence(c *gin.Context) {
 		io.Copy(dst, src)
 		src.Close()
 		dst.Close()
+		saved_ok = true
 	}
+	if !saved_ok {
+		response.RestErr(c, "PDF文件保存失败")
+		return
+	}
+	// 异步压缩 PDF（ghostscript），不阻塞响应
+	go compressPDF(saved)
 	one := 1
 	now := time.Now()
 	ca.PdfPath = &saved
@@ -533,8 +542,9 @@ func (h *CandidateHandler) PdfUpload(c *gin.Context) {
 		File string `json:"file" form:"file"`
 	}
 	_ = c.ShouldBind(&b)
+	slog.Info("pdf-upload", "file", b.File, "content-type", c.ContentType())
 	if b.File == "" {
-		response.RestErr(c, "file 为空")
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "file 为空"})
 		return
 	}
 	// 安全检查：仅允许服务器上传目录下的文件
@@ -544,12 +554,13 @@ func (h *CandidateHandler) PdfUpload(c *gin.Context) {
 	}
 	clean := filepath.Clean(b.File)
 	if !strings.HasPrefix(clean, allowedDir) {
-		response.RestErr(c, "文件路径不合法")
+		slog.Warn("pdf-upload: path rejected", "file", clean, "allowed", allowedDir)
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "报告文件不在当前服务器，请重新生成报告"})
 		return
 	}
 	f, err := os.Open(clean)
 	if err != nil {
-		response.RestErr(c, "文件不存在")
+		c.JSON(http.StatusNotFound, gin.H{"code": 1, "msg": "报告文件不存在，请重新生成报告"})
 		return
 	}
 	defer f.Close()

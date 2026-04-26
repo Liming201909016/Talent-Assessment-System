@@ -521,17 +521,26 @@ func (h *MbtiReportHandler) processTemplate(templatePath string, fields map[stri
 
 		switch f.Name {
 		case "word/document.xml":
-			data = h.replaceDocumentFields(data, fields, dateStr)
+			if isSimple {
+				data = h.replaceDocumentFieldsSimple(data, fields, dateStr)
+			} else {
+				data = h.replaceDocumentFields(data, fields, dateStr)
+			}
 		case "word/charts/chart1.xml":
-			if !isSimple { // 简版无图表，跳过替换
+			if !isSimple {
 				data = h.replaceChartValues(data, scores)
 			}
 		}
 
-		// 写入新 ZIP — 用 Deflate 压缩，清除 Data Descriptor 标志位
+		// 写入新 ZIP
+		// 目录条目(以/结尾)用 Store，文件条目用 Deflate
+		method := zip.Deflate
+		if strings.HasSuffix(f.Name, "/") || len(data) == 0 {
+			method = zip.Store
+		}
 		header := &zip.FileHeader{
 			Name:   f.Name,
-			Method: zip.Deflate,
+			Method: method,
 		}
 		writer, err := w.CreateHeader(header)
 		if err != nil {
@@ -548,7 +557,42 @@ func (h *MbtiReportHandler) processTemplate(templatePath string, fields map[stri
 	return buf, nil
 }
 
-// replaceDocumentFields 在 document.xml 中替换首页字段值
+// replaceDocumentFieldsSimple 简版模板的字段替换
+// 简版模板结构：标签后跟一个带下划线样式的空格占位 <w:t>
+// 策略：替换值 + 去掉下划线样式
+func (h *MbtiReportHandler) replaceDocumentFieldsSimple(data []byte, fields map[string]string, dateStr string) []byte {
+	content := string(data)
+
+	// 逐个替换（每次替换后重新查找，避免索引偏移）
+	for label, value := range fields {
+		idx := strings.Index(content, label+"</w:t>")
+		if idx < 0 {
+			continue
+		}
+		afterLabel := content[idx+len(label)+len("</w:t>"):]
+		// 找到下一个 <w:t...>内容</w:t>
+		reT := regexp.MustCompile(`(<w:t[^>]*>)([^<]*)(</w:t>)`)
+		matchT := reT.FindStringSubmatchIndex(afterLabel)
+		if matchT != nil {
+			// 有值 → 替换内容；无值 → 清空为空格
+			fillValue := value
+			if fillValue == "" {
+				fillValue = "  "
+			}
+			// 只替换文本内容，不修改模板格式（保留下划线等样式）
+			replaced := afterLabel[:matchT[4]] + fillValue + afterLabel[matchT[5]:]
+			content = content[:idx+len(label)+len("</w:t>")] + replaced
+		}
+	}
+
+	// 替换日期（兼容 X月X日 和 XX月XX日），只替换文本不改格式
+	re := regexp.MustCompile(`2025年X+月X+日`)
+	content = re.ReplaceAllString(content, dateStr)
+
+	return []byte(content)
+}
+
+// replaceDocumentFields 在 document.xml 中替换首页字段值（完整版）
 // 模板 XML 结构：每个字段在独立的 <w:p> 段落中
 // 策略：有值 → 替换占位符并去掉下划线；无值 → 删除整个段落（隐藏该字段）
 func (h *MbtiReportHandler) replaceDocumentFields(data []byte, fields map[string]string, dateStr string) []byte {
