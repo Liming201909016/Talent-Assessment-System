@@ -31,4 +31,8 @@ const (
 	CaptchaKey    = "captcha_codes:"
 	SysConfigKey  = "sys_config:"
 	SysDictKey    = "sys_dict:"
+	// FB-015: 登录失败次数计数器（按用户名）
+	LoginFailKey = "login_fail:"
+	// FB-016: 验证码已使用标记（防重放）
+	CaptchaUsedKey = "captcha_used:"
 )

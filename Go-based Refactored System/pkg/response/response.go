@@ -2,6 +2,7 @@ package response
 
 import (
 	"net/http"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
 )
@@ -63,5 +64,9 @@ type TableData struct {
 }
 
 func Table(c *gin.Context, rows any, total int64) {
+	// 确保 rows 序列化为 [] 而非 null（nil slice 在 JSON 中输出 null，前端 .slice() 会报错）
+	if rows == nil || (reflect.TypeOf(rows).Kind() == reflect.Slice && reflect.ValueOf(rows).IsNil()) {
+		rows = []struct{}{}
+	}
 	c.JSON(http.StatusOK, TableData{Code: 200, Msg: "查询成功", Rows: rows, Total: total})
 }

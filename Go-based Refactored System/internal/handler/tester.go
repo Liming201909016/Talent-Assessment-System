@@ -116,7 +116,7 @@ func (h *TesterHandler) List(c *gin.Context) {
 			return db
 		}).
 		Select("t.id, t.paper_id, t.exam_id, t.id_number, t.name, t.age, t.gender, t.password, t.telephone, t.affiliation, t.depart, t.post, t.degree, t.major, t.stu_flag, t.status, t.del_flag, t.end_time, t.pdf_path, t.pdf_flag, t.update_time, COALESCE(pa.create_time, t.create_time) AS create_time, pa.user_time, ea.title, rp.code AS repo_code").
-		Order("t.create_time desc").
+		Order("COALESCE(pa.create_time, t.create_time) desc").
 		Offset((pageNum - 1) * pageSize).Limit(pageSize).
 		Scan(&rows)
 	// 填充 answerNum

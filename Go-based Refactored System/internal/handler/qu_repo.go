@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -74,7 +75,9 @@ func (h *RepoHandler) List(c *gin.Context) {
 func (h *RepoHandler) Detail(c *gin.Context) {
 	id := c.Query("id")
 	if id == "" {
-		var b struct{ ID string `json:"id"` }
+		var b struct {
+			ID string `json:"id"`
+		}
 		_ = c.ShouldBindJSON(&b)
 		id = b.ID
 	}
@@ -119,7 +122,23 @@ func (h *RepoHandler) Remove(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
-	if err := h.db.Model(&quRepo{}).Where("id IN ?", b.IDs).Delete(&quRepo{}).Error; err != nil {
+
+	// FB-024: 删除题库前检查是否被 exam 引用
+	var examRefCount int64
+	h.db.Table("el_exam_repo").Where("repo_id IN ?", b.IDs).Count(&examRefCount)
+	if examRefCount > 0 {
+		response.RestErr(c, fmt.Sprintf("无法删除：被 %d 个考试引用，请先移除考试中的题库关联", examRefCount))
+		return
+	}
+
+	// FB-025: 删除题库时同时清理题目-题库关联（el_qu_repo），避免孤儿数据
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&quRepo{}).Where("id IN ?", b.IDs).Delete(&quRepo{}).Error; err != nil {
+			return err
+		}
+		// 清理关联表
+		return tx.Table("el_qu_repo").Where("repo_id IN ?", b.IDs).Delete(nil).Error
+	}); err != nil {
 		response.RestErr(c, err.Error())
 		return
 	}
@@ -152,7 +171,9 @@ func (h *RepoHandler) BatchAction(c *gin.Context) {
 	} else {
 		// 添加：对每个 quId 先删旧关联再重建
 		for _, qid := range b.QuIDs {
-			var qu struct{ QuType int `gorm:"column:qu_type"` }
+			var qu struct {
+				QuType int `gorm:"column:qu_type"`
+			}
 			h.db.Table("el_qu").Where("id = ?", qid).Select("qu_type").Take(&qu)
 			h.db.Where("qu_id = ?", qid).Delete(&quRepoRow{})
 			for _, rid := range b.RepoIDs {

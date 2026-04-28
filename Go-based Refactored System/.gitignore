@@ -8,3 +8,11 @@ configs/application-local.yml
 configs/application-production.yml
 *.exe
 *.log
+
+# Go test artifacts
+coverage.out
+coverage.html
+
+# Frontend test artifacts
+ruoyi-ui/coverage/
+ruoyi-ui/.vitest-cache/

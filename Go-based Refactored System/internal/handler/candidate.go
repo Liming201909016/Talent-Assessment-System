@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"archive/zip"
@@ -193,6 +193,8 @@ func (h *CandidateHandler) Remove(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
+	// FB-012: 物理删除前先清理 PDF 文件，避免磁盘泄漏
+	h.cleanupCandidatePdfFiles(ids)
 	h.db.Where("id IN ?", ids).Delete(&Candidate{})
 	response.Rest(c, 1)
 }
@@ -204,8 +206,37 @@ func (h *CandidateHandler) Logistic(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
-	h.db.Model(&Candidate{}).Where("id IN ?", ids).Update("del_flag", 1)
+	// FB-012: 软删除时也清理 PDF 文件（已删除的用户不应再有报告）
+	// 同时清空 pdf_path/pdf_flag，避免后续被 isPdfPathOwned 错误识别为有效
+	h.cleanupCandidatePdfFiles(ids)
+	h.db.Model(&Candidate{}).Where("id IN ?", ids).Updates(map[string]interface{}{
+		"del_flag": 1, "pdf_path": "", "pdf_flag": 0,
+	})
 	response.Rest(c, 1)
+}
+
+// cleanupCandidatePdfFiles FB-012: 删除考生时清理对应的 PDF 文件
+// 仅删除位于上传目录下的文件（双重保护，防恶意路径）
+func (h *CandidateHandler) cleanupCandidatePdfFiles(ids []string) {
+	allowedBase := filepath.Clean(h.cfg.Upload.Path)
+	if allowedBase == "" || allowedBase == "." {
+		allowedBase = filepath.Clean("./tmp")
+	}
+	var paths []string
+	h.db.Model(&Candidate{}).
+		Where("id IN ? AND pdf_path IS NOT NULL AND pdf_path != ''", ids).
+		Pluck("pdf_path", &paths)
+	for _, p := range paths {
+		clean := filepath.Clean(p)
+		if !strings.HasPrefix(clean, allowedBase) {
+			slog.Warn("cleanup-pdf: skip (outside allowed dir)", "path", clean)
+			continue
+		}
+		if err := os.Remove(clean); err != nil && !os.IsNotExist(err) {
+			slog.Warn("cleanup-pdf: remove failed", "path", clean, "err", err)
+		}
+	}
+	slog.Info("cleanup-pdf: removed", "count", len(paths))
 }
 
 // DELETE /exam/api/candidate/logicDeletePdfByIds/:ids
@@ -471,7 +502,17 @@ func (h *CandidateHandler) PdfPersistence(c *gin.Context) {
 		useTester = true
 	}
 	if ca.PdfPath != nil && *ca.PdfPath != "" {
-		_ = os.Remove(*ca.PdfPath)
+		// FB-014 加固：删除前校验路径在 allowedDir 内（防被注入的恶意路径）
+		oldPath := filepath.Clean(*ca.PdfPath)
+		allowedBase := filepath.Clean(h.cfg.Upload.Path)
+		if allowedBase == "" || allowedBase == "." {
+			allowedBase = filepath.Clean("./tmp")
+		}
+		if strings.HasPrefix(oldPath, allowedBase) {
+			_ = os.Remove(oldPath)
+		} else {
+			slog.Warn("pdf-persistence: skip remove (path outside allowed dir)", "path", oldPath)
+		}
 	}
 	var name, title string
 	tbl := "el_candidate"
@@ -547,15 +588,50 @@ func (h *CandidateHandler) PdfUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "file 为空"})
 		return
 	}
-	// 安全检查：仅允许服务器上传目录下的文件
+
+	// 兼容 Java 旧路径：DB 中残留的 c:/wwwroot/home/pdf/... 实际在 {LegacyPdfRoot}/c:/wwwroot/...
+	// 例如客户服务器 39.106.61.48 上 Java 进程 CWD=/root/deploy6/，
+	// Java 把 "c:/wwwroot/home/pdf/x.pdf" 当相对路径写入 /root/deploy6/c:/wwwroot/home/pdf/x.pdf
+	// 配置 legacyPdfRoot=/root/deploy6 后，Go 能读取这些旧文件
+	originalFile := b.File
+	mappedFile := b.File
+	isLegacy := false
+	if h.cfg.Upload.LegacyPdfRoot != "" {
+		if strings.HasPrefix(b.File, "c:/") || strings.HasPrefix(b.File, "C:/") ||
+			strings.HasPrefix(b.File, "c:\\") || strings.HasPrefix(b.File, "C:\\") {
+			// Windows 风格路径：拼接到 LegacyPdfRoot 下
+			mappedFile = filepath.Join(h.cfg.Upload.LegacyPdfRoot, b.File)
+			isLegacy = true
+		} else if strings.HasPrefix(b.File, "/home/pdf/") {
+			// 老 Linux 路径模式
+			mappedFile = filepath.Join(h.cfg.Upload.LegacyPdfRoot, b.File)
+			isLegacy = true
+		}
+	}
+
+	// 安全检查 1：仅允许服务器上传目录或 LegacyPdfRoot 下的文件（防路径穿越）
 	allowedDir := filepath.Clean(h.cfg.Upload.Path)
 	if allowedDir == "" || allowedDir == "." {
 		allowedDir = filepath.Clean("./tmp")
 	}
-	clean := filepath.Clean(b.File)
-	if !strings.HasPrefix(clean, allowedDir) {
-		slog.Warn("pdf-upload: path rejected", "file", clean, "allowed", allowedDir)
+	clean := filepath.Clean(mappedFile)
+	pathOk := strings.HasPrefix(clean, allowedDir)
+	if !pathOk && isLegacy && h.cfg.Upload.LegacyPdfRoot != "" {
+		legacyRoot := filepath.Clean(h.cfg.Upload.LegacyPdfRoot)
+		pathOk = strings.HasPrefix(clean, legacyRoot)
+	}
+	if !pathOk {
+		slog.Warn("pdf-upload: path rejected (traversal)", "file", clean, "allowed", allowedDir, "legacy", h.cfg.Upload.LegacyPdfRoot)
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "报告文件不在当前服务器，请重新生成报告"})
+		return
+	}
+	// FB-014: 安全检查 2 — 防越权
+	// 路径必须在 el_candidate 或 el_tester 的 pdf_path 字段中存在
+	// 否则任何人知道路径就能下载（即使路径合法）
+	// 注意：DB 中存的是原始路径（如 c:/wwwroot/...），不是映射后路径
+	if !h.isPdfPathOwned(originalFile) {
+		slog.Warn("pdf-upload: path not registered (unauthorized)", "file", originalFile)
+		c.JSON(http.StatusForbidden, gin.H{"code": 1, "msg": "无权下载此报告"})
 		return
 	}
 	f, err := os.Open(clean)
@@ -569,6 +645,26 @@ func (h *CandidateHandler) PdfUpload(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(fname))
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
 	http.ServeContent(c.Writer, c.Request, fname, time.Now(), f)
+}
+
+// isPdfPathOwned 检查路径是否被某个 candidate 或 tester 记录持有
+// FB-014: 防止越权下载任意 PDF 文件
+// 注：路径在 DB 中必须完全匹配（避免子串匹配攻击）
+func (h *CandidateHandler) isPdfPathOwned(cleanPath string) bool {
+	// 兼容 Windows / Unix 路径
+	candidates := []string{cleanPath, filepath.ToSlash(cleanPath), strings.ReplaceAll(cleanPath, "/", "\\")}
+	var count int64
+	for _, p := range candidates {
+		h.db.Table("el_candidate").Where("pdf_path = ?", p).Count(&count)
+		if count > 0 {
+			return true
+		}
+		h.db.Table("el_tester").Where("pdf_path = ?", p).Count(&count)
+		if count > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // POST /exam/api/candidate/batch-download
@@ -593,17 +689,35 @@ func (h *CandidateHandler) BatchDownload(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
 	zw := zip.NewWriter(c.Writer)
 	defer zw.Close()
+	// FB-014 + 加固：即使路径来自 DB，也再次校验在 allowedDir 内
+	allowedDir := filepath.Clean(h.cfg.Upload.Path)
+	if allowedDir == "" || allowedDir == "." {
+		allowedDir = filepath.Clean("./tmp")
+	}
+	skipped := 0
 	for _, p := range paths {
-		f, err := os.Open(p)
-		if err != nil {
+		clean := filepath.Clean(p)
+		if !strings.HasPrefix(clean, allowedDir) {
+			slog.Warn("batch-download: path rejected", "file", clean)
+			skipped++
 			continue
 		}
-		w, err := zw.Create(filepath.Base(p))
+		f, err := os.Open(clean)
+		if err != nil {
+			skipped++
+			continue
+		}
+		w, err := zw.Create(filepath.Base(clean))
 		if err != nil {
 			f.Close()
+			skipped++
 			continue
 		}
 		io.Copy(w, f)
 		f.Close()
+	}
+	// FB-013: 如果有跳过的文件，记日志（前端可在响应 header 提示）
+	if skipped > 0 {
+		slog.Info("batch-download: some files skipped", "skipped", skipped, "total", len(paths))
 	}
 }

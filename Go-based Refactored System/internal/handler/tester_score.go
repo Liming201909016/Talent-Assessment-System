@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"archive/zip"
@@ -526,6 +526,30 @@ func (h *TesterHandler) LoginForm(c *gin.Context) {
 	if b.Password != te.Password {
 		response.AjaxErr(c, "密码错误")
 		return
+	}
+
+	// 7.1 修复：考试已过期 / 未开始 / 已禁用 → 拒绝登录
+	// el_exam.state: 0=未开始, 1=ENABLE 进行中, 2=OVERDUE 已过期, 3=禁用
+	examID := b.ExamID
+	if examID == "" && te.ExamID != nil {
+		examID = *te.ExamID
+	}
+	if examID != "" {
+		var examState int
+		var endTime *time.Time
+		h.db.Table("el_exam").Where("id = ?", examID).Select("state, end_time").Row().Scan(&examState, &endTime)
+		if examState == 2 {
+			response.AjaxErr(c, "考试已过期")
+			return
+		}
+		if examState == 3 {
+			response.AjaxErr(c, "考试已禁用")
+			return
+		}
+		if endTime != nil && endTime.Before(time.Now()) {
+			response.AjaxErr(c, "考试已过期")
+			return
+		}
 	}
 	// 更新 el_tester 的 update_time 和 exam_id（与 Java 一致）
 	now := time.Now()

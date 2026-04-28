@@ -77,19 +77,41 @@ type LoginReq struct {
 }
 
 // Login 校验验证码 + 用户密码，生成 JWT 并持久化 LoginUser
+//
+// FB-015: 增加登录失败次数限制
+//   - 同一用户名连续失败 5 次 → 锁定 15 分钟
+//   - 锁定期间任何登录请求都直接拒绝
 func (s *AuthService) Login(ctx context.Context, req LoginReq, r *http.Request) (token string, err error) {
+	// FB-015: 先检查失败次数（按用户名）
+	if req.Username != "" {
+		failKey := redisx.LoginFailKey + req.Username
+		failCount, _ := redisx.Client.Get(ctx, failKey).Int()
+		if failCount >= LoginMaxFailures {
+			return "", errors.New("登录失败次数过多，请 15 分钟后再试")
+		}
+	}
+
 	if err := s.ValidateCaptcha(ctx, req.Code, req.UUID); err != nil {
+		s.recordLoginFailure(ctx, req.Username)
 		return "", err
 	}
 	u, err := s.userRepo.FindByUsername(req.Username)
 	if err != nil {
-		return "", errors.New("用户不存在")
+		s.recordLoginFailure(ctx, req.Username)
+		// FB-015 加固：不区分"用户不存在"和"密码错误"，避免泄露用户名是否存在
+		return "", errors.New("用户名或密码错误")
 	}
 	if u.Status == "1" {
 		return "", errors.New("对不起，您的账号已停用")
 	}
 	if !CompareBCrypt(u.Password, req.Password) {
+		s.recordLoginFailure(ctx, req.Username)
 		return "", errors.New("用户名或密码错误")
+	}
+
+	// 登录成功，清除失败计数
+	if req.Username != "" {
+		redisx.Client.Del(ctx, redisx.LoginFailKey+req.Username)
 	}
 
 	_ = s.userRepo.UpdateLogin(u.UserID, clientIP(r))
@@ -116,6 +138,25 @@ func (s *AuthService) Login(ctx context.Context, req LoginReq, r *http.Request) 
 	}
 	claims := map[string]any{s.cfg.Jwt.LoginUserKey: tokUUID}
 	return jwtpkg.Create(s.cfg.Jwt.Secret, claims)
+}
+
+// LoginMaxFailures FB-015: 登录失败最大次数（达到后锁定）
+const LoginMaxFailures = 5
+
+// LoginFailureLockDuration FB-015: 失败计数器有效期 = 锁定时长
+const LoginFailureLockDuration = 15 * time.Minute
+
+// recordLoginFailure 记录登录失败，达到 LoginMaxFailures 触发锁定
+func (s *AuthService) recordLoginFailure(ctx context.Context, username string) {
+	if username == "" {
+		return
+	}
+	key := redisx.LoginFailKey + username
+	cnt, _ := redisx.Client.Incr(ctx, key).Result()
+	if cnt == 1 {
+		// 首次失败，设置过期时间
+		redisx.Client.Expire(ctx, key, LoginFailureLockDuration)
+	}
 }
 
 func (s *AuthService) storeLoginUser(ctx context.Context, lu *model.LoginUser) error {

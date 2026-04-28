@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"strconv"
@@ -28,6 +28,7 @@ type quPagingReq struct {
 	Level   interface{} `json:"level"`
 	Params  struct {
 		Content string      `json:"content"`
+		RepoID  string      `json:"repoId"`
 		RepoIds []string    `json:"repoIds"`
 		QuType  interface{} `json:"quType"`
 	} `json:"params"`
@@ -68,6 +69,9 @@ func (h *QuHandler) Paging(c *gin.Context) {
 		content = req.Params.Content
 	}
 	repoID := req.RepoID
+	if repoID == "" {
+		repoID = req.Params.RepoID
+	}
 	if repoID == "" && len(req.Params.RepoIds) > 0 {
 		repoID = req.Params.RepoIds[0]
 	}

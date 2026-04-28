@@ -43,6 +43,10 @@ type UploadCfg struct {
 	MbtiTemplates       string `mapstructure:"mbtiTemplates"`
 	MbtiTemplatesSimple string `mapstructure:"mbtiTemplatesSimple"`
 	ExportTemplates     string `mapstructure:"exportTemplates"`
+	// LegacyPdfRoot 旧 Java 系统的 PDF 实际根目录（绝对路径）
+	// 用于将 DB 中残留的旧路径（如 c:/wwwroot/home/pdf/...）映射到 Linux 实际位置
+	// 例如：客户服务器 /root/deploy6/c:/wwwroot/home  → 配置为 /root/deploy6
+	LegacyPdfRoot string `mapstructure:"legacyPdfRoot"`
 }
 
 type Config struct {

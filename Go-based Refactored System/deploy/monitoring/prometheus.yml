@@ -1,0 +1,43 @@
+# Prometheus 配置 - Talent Assessment 监控
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: 'talent-assessment'
+    env: 'production'
+
+scrape_configs:
+  # 1. Prometheus 自监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 2. Node Exporter (主机系统指标)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node_exporter:9100']
+        labels:
+          instance: 'talent-assessment-prod'
+
+  # 3. Blackbox HTTP 健康检查（黑盒）
+  - job_name: 'blackbox_http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - 'http://host.docker.internal/'                         # 前端首页
+        - 'http://host.docker.internal/prod-api/captchaImage'    # API 健康
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox_exporter:9115
+
+  # 注释：Go 应用层指标待后续添加 /metrics endpoint
+  # - job_name: 'talent_assessment_go'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:8092']
+  #   metrics_path: '/metrics'

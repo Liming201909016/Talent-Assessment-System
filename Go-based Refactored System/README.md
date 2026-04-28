@@ -60,3 +60,36 @@ deploy/                   Dockerfile / nginx.conf / compose
 ```
 
 详见 `docs/` 中的迁移报告。
+
+## 测试与质量
+
+| 命令 | 用途 |
+|------|------|
+| `make test` 或 `go test ./...` | 运行所有 Go 单元测试 |
+| `make test-pkg` | 仅 pkg 层测试 |
+| `make coverage` | 生成 HTML 覆盖率报告 |
+| `make lint` | golangci-lint 静态分析 |
+| `cd ruoyi-ui && npm test` | 前端 Vitest 单元测试 |
+| `node scripts/test/chain-batch.js` | API 集成测试（需本地环境） |
+| `node scripts/test/ux-chain-runner.js D` | 业务链 + 多专家点评（需浏览器环境） |
+
+VS Code 中：`Ctrl+Shift+P` → `Tasks: Run Task` → 选择测试任务。
+
+## 团队协作
+
+新成员入职先读：
+
+- [docs/team-onboarding.md](../docs/team-onboarding.md) — 30 分钟上手
+- [.github/copilot-instructions.md](../.github/copilot-instructions.md) — Copilot 工作规则
+- [docs/project-memory.md](../docs/project-memory.md) — 项目知识库
+
+测试质量管理：
+
+- [docs/business-branches.md](../docs/business-branches.md) — 业务条件分支矩阵
+- [docs/regression-tests.md](../docs/regression-tests.md) — 回归测试 backlog
+- [docs/coverage-history.md](../docs/coverage-history.md) — 覆盖率趋势
+- [docs/user-feedback-log.md](../docs/user-feedback-log.md) — 用户反馈追踪
+
+交付准备：
+
+- [docs/demo-checklist.md](../docs/demo-checklist.md) — 客户演示前检查清单

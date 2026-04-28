@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/model"
 	"github.com/talent-assessment/refactored/internal/service"
@@ -57,6 +59,14 @@ func (h *AuthHandler) GetRouters(c *gin.Context) {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
-	_ = h.svc.Logout(c.Request.Context(), c.GetHeader("Authorization"))
+	// 8.5 修复：捕获 Logout 错误并记日志
+	// 即使 Redis 删除失败也返回成功（前端清除本地 token 即可）
+	// 但服务端必须记录失败以便审计
+	if err := h.svc.Logout(c.Request.Context(), c.GetHeader("Authorization")); err != nil {
+		slog.Warn("logout: token revocation failed",
+			"err", err,
+			"clientIP", c.ClientIP(),
+			"userAgent", c.Request.Header.Get("User-Agent"))
+	}
 	response.AjaxOK(c, nil)
 }

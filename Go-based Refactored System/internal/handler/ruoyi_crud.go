@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/talent-assessment/refactored/internal/model"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -67,12 +68,16 @@ func (h *RuoYiSystemHandler) UserAdd(c *gin.Context) {
 		return
 	}
 	pwd := b.Password
-	if pwd == "" { pwd = "123456" }
+	if pwd == "" {
+		pwd = "123456"
+	}
 	hashed, _ := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
 
 	now := time.Now()
 	st := "0"
-	if b.Status == "1" { st = "1" }
+	if b.Status == "1" {
+		st = "1"
+	}
 	// sys_user.user_id 是 auto_increment，不需要手动指定
 	insertData := map[string]any{
 		"user_name": b.UserName, "nick_name": b.NickName, "real_name": b.NickName,
@@ -80,7 +85,9 @@ func (h *RuoYiSystemHandler) UserAdd(c *gin.Context) {
 		"create_time": now, "update_time": now,
 	}
 	// dept_id 是 bigint，空字符串会导致 MySQL 报错
-	if b.DeptId != "" { insertData["dept_id"] = b.DeptId }
+	if b.DeptId != "" {
+		insertData["dept_id"] = b.DeptId
+	}
 	result := h.db.Table("sys_user").Create(insertData)
 	if result.Error != nil {
 		response.AjaxErr(c, result.Error.Error())
@@ -111,11 +118,17 @@ func (h *RuoYiSystemHandler) UserEdit(c *gin.Context) {
 	}
 	now := time.Now()
 	updates := map[string]any{"update_time": now}
-	if b.NickName != "" { updates["real_name"] = b.NickName }
-	if b.DeptId != "" { updates["depart_id"] = b.DeptId }
+	if b.NickName != "" {
+		updates["real_name"] = b.NickName
+	}
+	if b.DeptId != "" {
+		updates["depart_id"] = b.DeptId
+	}
 	if b.Status != "" {
 		st := 0
-		if b.Status == "1" { st = 1 }
+		if b.Status == "1" {
+			st = 1
+		}
 		updates["state"] = st
 	}
 	h.db.Table("sys_user").Where("user_id = ?", b.UserId).Updates(updates)
@@ -132,6 +145,25 @@ func (h *RuoYiSystemHandler) UserEdit(c *gin.Context) {
 
 func (h *RuoYiSystemHandler) UserDelete(c *gin.Context) {
 	ids := strings.Split(c.Param("ids"), ",")
+	// FB-026: 保护 admin 账号（user_id=1）不可被删除
+	for _, id := range ids {
+		if id == "1" {
+			response.AjaxErr(c, "不允许删除超级管理员")
+			return
+		}
+	}
+	// FB-027: 不允许删除自己
+	if lu, ok := c.Get("loginUser"); ok {
+		if user, ok := lu.(*model.LoginUser); ok && user != nil {
+			currentID := strconv.FormatInt(user.UserID, 10)
+			for _, id := range ids {
+				if id == currentID {
+					response.AjaxErr(c, "不允许删除当前登录用户")
+					return
+				}
+			}
+		}
+	}
 	h.db.Table("sys_user").Where("user_id IN ?", ids).Delete(nil)
 	h.db.Table("sys_user_role").Where("user_id IN ?", ids).Delete(nil)
 	response.AjaxOK(c, nil)
@@ -143,8 +175,15 @@ func (h *RuoYiSystemHandler) UserChangeStatus(c *gin.Context) {
 		Status string `json:"status"`
 	}
 	_ = c.ShouldBindJSON(&b)
+	// FB-028: 不允许禁用 admin
+	if b.UserId == "1" && b.Status == "1" {
+		response.AjaxErr(c, "不允许禁用超级管理员")
+		return
+	}
 	st := 0
-	if b.Status == "1" { st = 1 }
+	if b.Status == "1" {
+		st = 1
+	}
 	h.db.Table("sys_user").Where("user_id = ?", b.UserId).Update("state", st)
 	response.AjaxOK(c, nil)
 }
@@ -155,7 +194,23 @@ func (h *RuoYiSystemHandler) UserResetPwd(c *gin.Context) {
 		Password string `json:"password"`
 	}
 	_ = c.ShouldBindJSON(&b)
-	if b.Password == "" { b.Password = "123456" }
+	// FB-029: 限制 admin 密码仅 admin 本人能改
+	if b.UserId == "1" {
+		if lu, ok := c.Get("loginUser"); ok {
+			if user, ok := lu.(*model.LoginUser); ok && user != nil && user.UserID != 1 {
+				response.AjaxErr(c, "只有超级管理员本人能修改其密码")
+				return
+			}
+		}
+	}
+	// FB-030: 拒绝弱密码
+	if b.Password == "" {
+		b.Password = "Cp@1234"
+	}
+	if len(b.Password) < 8 {
+		response.AjaxErr(c, "密码长度不能少于 8 位")
+		return
+	}
 	hashed, _ := bcrypt.GenerateFromPassword([]byte(b.Password), bcrypt.DefaultCost)
 	h.db.Table("sys_user").Where("user_id = ?", b.UserId).Update("password", string(hashed))
 	response.AjaxOK(c, nil)
@@ -215,6 +270,13 @@ func (h *RuoYiSystemHandler) RoleEdit(c *gin.Context) {
 
 func (h *RuoYiSystemHandler) RoleDelete(c *gin.Context) {
 	ids := strings.Split(c.Param("roleIds"), ",")
+	// FB-031: 保护 admin 角色（role_id=1）不可被删除
+	for _, id := range ids {
+		if id == "1" {
+			response.AjaxErr(c, "不允许删除超级管理员角色")
+			return
+		}
+	}
 	h.db.Table("sys_role").Where("role_id IN ?", ids).Update("del_flag", "2")
 	h.db.Table("sys_role_menu").Where("role_id IN ?", ids).Delete(nil)
 	response.AjaxOK(c, nil)

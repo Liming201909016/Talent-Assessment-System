@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"strconv"
@@ -423,10 +424,23 @@ func (h *ExamHandler) Delete(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
+
+	// FB-021: 删除前检查是否有关联数据，避免孤儿
+	// 业务规则：有 tester / candidate / paper 关联的 exam 不可直接删
+	var testerCount, candidateCount, paperCount int64
+	h.db.Table("el_tester").Where("exam_id IN ? AND (del_flag IS NULL OR del_flag = '0')", b.IDs).Count(&testerCount)
+	h.db.Table("el_candidate").Where("exam_id IN ? AND (del_flag IS NULL OR del_flag = '0' OR del_flag = 0)", b.IDs).Count(&candidateCount)
+	h.db.Table("el_paper").Where("exam_id IN ?", b.IDs).Count(&paperCount)
+	if testerCount > 0 || candidateCount > 0 || paperCount > 0 {
+		response.RestErr(c, fmt.Sprintf("无法删除：含 %d 个测评者、%d 个考生、%d 份试卷。请先清理关联数据", testerCount, candidateCount, paperCount))
+		return
+	}
+
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id IN ?", b.IDs).Delete(&model.Exam{}).Error; err != nil {
 			return err
 		}
+		// 配置型关联表（无业务数据），可一并删除
 		tx.Where("exam_id IN ?", b.IDs).Delete(&model.ExamRepo{})
 		tx.Where("exam_id IN ?", b.IDs).Delete(&model.ExamDepart{})
 		return nil

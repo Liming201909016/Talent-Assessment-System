@@ -1,0 +1,85 @@
+version: '3'
+
+# 极轻量监控栈（方案 A）
+# - Prometheus: 收集指标
+# - Node Exporter: 系统级指标（CPU/内存/磁盘/网络）
+# - Blackbox Exporter: HTTP 健康检查（黑盒探测）
+# - Grafana: 可视化
+#
+# 部署：
+#   scp deploy/monitoring/* /opt/monitoring/
+#   cd /opt/monitoring && docker compose up -d
+#
+# 访问：
+#   Prometheus: http://20.200.136.133:9090
+#   Grafana:    http://20.200.136.133:3000  (admin/admin)
+#
+# 提供的指标：
+#   - 系统：CPU/内存/磁盘/网络/负载
+#   - 应用：HTTP 200 ratio / 响应时间 / 可达性
+#   - 不需要修改 Go 代码
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks: [monitoring]
+
+  node_exporter:
+    image: prom/node-exporter:v1.7.0
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks: [monitoring]
+
+  blackbox_exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    restart: unless-stopped
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox.yml:/config/blackbox.yml:ro
+    command:
+      - '--config.file=/config/blackbox.yml'
+    networks: [monitoring]
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    networks: [monitoring]
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  monitoring:
+    driver: bridge

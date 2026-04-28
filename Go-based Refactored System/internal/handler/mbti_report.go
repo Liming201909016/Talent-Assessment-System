@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/pkg/response"
@@ -560,29 +561,79 @@ func (h *MbtiReportHandler) processTemplate(templatePath string, fields map[stri
 // replaceDocumentFieldsSimple 简版模板的字段替换
 // 简版模板结构：标签后跟一个带下划线样式的空格占位 <w:t>
 // 策略：替换值 + 去掉下划线样式
+//
+// 兼容标签被 Word 拆分到多个 <w:r> run 的情况（例如"姓名"和"："分两段）
 func (h *MbtiReportHandler) replaceDocumentFieldsSimple(data []byte, fields map[string]string, dateStr string) []byte {
 	content := string(data)
 
-	// 逐个替换（每次替换后重新查找，避免索引偏移）
 	for label, value := range fields {
+		// 先尝试整体匹配 "label</w:t>"
 		idx := strings.Index(content, label+"</w:t>")
-		if idx < 0 {
+		searchStart := -1
+		if idx >= 0 {
+			searchStart = idx + len(label) + len("</w:t>")
+		} else {
+			// 拆分匹配：label 可能被多个 <w:r>...<w:t> 拆开（如"姓名" + "："分两段）
+			// 策略：找 label 第一个字符的位置，然后用正则跳过中间标签校验剩余字符
+			labelRunes := []rune(label)
+			if len(labelRunes) < 2 {
+				continue
+			}
+			// 找 label 首字符所在 <w:t>
+			firstChar := string(labelRunes[0])
+			pos := 0
+			for {
+				p := strings.Index(content[pos:], firstChar)
+				if p < 0 {
+					break
+				}
+				absPos := pos + p
+				// 检查是否在 <w:t>...</w:t> 中（粗略：往前 50 字符内有 <w:t）
+				lookback := absPos - 50
+				if lookback < 0 {
+					lookback = 0
+				}
+				if !strings.Contains(content[lookback:absPos], "<w:t") {
+					pos = absPos + 1
+					continue
+				}
+				// 从 absPos 开始，提取后续 200 字符内的纯文本（剥离 XML 标签），看是否能拼出完整 label
+				tail := content[absPos:]
+				if len(tail) > 1000 {
+					tail = tail[:1000]
+				}
+				stripped := stripXmlTags(tail)
+				if strings.HasPrefix(stripped, label) {
+					// 找到了 label 末尾在原 XML 中的位置
+					endIdx := findLabelEndInXml(tail, label)
+					if endIdx > 0 {
+						searchStart = absPos + endIdx
+						break
+					}
+				}
+				pos = absPos + 1
+			}
+		}
+
+		if searchStart < 0 {
 			continue
 		}
-		afterLabel := content[idx+len(label)+len("</w:t>"):]
-		// 找到下一个 <w:t...>内容</w:t>
+
+		// 在 searchStart 之后找下一个 <w:t...>内容</w:t> 作为占位符
+		afterLabel := content[searchStart:]
 		reT := regexp.MustCompile(`(<w:t[^>]*>)([^<]*)(</w:t>)`)
 		matchT := reT.FindStringSubmatchIndex(afterLabel)
-		if matchT != nil {
-			// 有值 → 替换内容；无值 → 清空为空格
-			fillValue := value
-			if fillValue == "" {
-				fillValue = "  "
-			}
-			// 只替换文本内容，不修改模板格式（保留下划线等样式）
-			replaced := afterLabel[:matchT[4]] + fillValue + afterLabel[matchT[5]:]
-			content = content[:idx+len(label)+len("</w:t>")] + replaced
+		if matchT == nil {
+			continue
 		}
+
+		fillValue := value
+		if fillValue == "" {
+			fillValue = "  "
+		}
+		// 只替换文本内容，不修改模板格式（保留下划线等样式）
+		replaced := afterLabel[:matchT[4]] + fillValue + afterLabel[matchT[5]:]
+		content = content[:searchStart] + replaced
 	}
 
 	// 替换日期（兼容 X月X日 和 XX月XX日），只替换文本不改格式
@@ -590,6 +641,47 @@ func (h *MbtiReportHandler) replaceDocumentFieldsSimple(data []byte, fields map[
 	content = re.ReplaceAllString(content, dateStr)
 
 	return []byte(content)
+}
+
+// stripXmlTags 简单剥离 XML 标签，只保留文本内容
+func stripXmlTags(s string) string {
+	re := regexp.MustCompile(`<[^>]+>`)
+	return re.ReplaceAllString(s, "")
+}
+
+// findLabelEndInXml 在 XML 片段中找到 label 文本结束后的 XML 偏移
+// 例如 label="姓名："，XML="姓名</w:t>...<w:t>：</w:t>..."，返回 "</w:t>" 之后的位置
+func findLabelEndInXml(xmlStr, label string) int {
+	labelPos := 0
+	labelRunes := []rune(label)
+	i := 0
+	for i < len(xmlStr) && labelPos < len(labelRunes) {
+		// 跳过 XML 标签
+		if xmlStr[i] == '<' {
+			closeIdx := strings.Index(xmlStr[i:], ">")
+			if closeIdx < 0 {
+				return -1
+			}
+			i += closeIdx + 1
+			continue
+		}
+		// 比较一个 rune
+		r, sz := utf8.DecodeRuneInString(xmlStr[i:])
+		if r == labelRunes[labelPos] {
+			labelPos++
+			i += sz
+		} else {
+			return -1
+		}
+	}
+	if labelPos < len(labelRunes) {
+		return -1
+	}
+	// 找到 label 末尾，跳过紧随其后的 </w:t>
+	if strings.HasPrefix(xmlStr[i:], "</w:t>") {
+		i += len("</w:t>")
+	}
+	return i
 }
 
 // replaceDocumentFields 在 document.xml 中替换首页字段值（完整版）

@@ -61,23 +61,57 @@ func (h *PaperHandler) Paging(c *gin.Context) {
 	if req.Size <= 0 {
 		req.Size = 10
 	}
-	q := h.db.Model(&model.Paper{})
-	if req.Params.Title != "" {
-		q = q.Where("title like ?", "%"+req.Params.Title+"%")
+	// Build WHERE conditions (shared between count and list)
+	applyWhere := func(q *gorm.DB) *gorm.DB {
+		if req.Params.Title != "" {
+			q = q.Where("p.title like ?", "%"+req.Params.Title+"%")
+		}
+		if req.Params.ExamID != "" {
+			q = q.Where("p.exam_id = ?", req.Params.ExamID)
+		}
+		if req.Params.UserID != "" {
+			q = q.Where("p.user_id = ?", req.Params.UserID)
+		}
+		if st := toIntPtr(req.Params.State); st != nil {
+			q = q.Where("p.state = ?", *st)
+		}
+		return q
 	}
-	if req.Params.ExamID != "" {
-		q = q.Where("exam_id = ?", req.Params.ExamID)
-	}
-	if req.Params.UserID != "" {
-		q = q.Where("user_id = ?", req.Params.UserID)
-	}
-	if st := toIntPtr(req.Params.State); st != nil {
-		q = q.Where("state = ?", *st)
-	}
+
 	var total int64
-	q.Count(&total)
-	var rows []model.Paper
-	q.Order("update_time desc").
+	applyWhere(h.db.Table("el_paper AS p")).Count(&total)
+
+	type paperRow struct {
+		ID               string     `json:"id"`
+		UserID           string     `json:"userId"`
+		DepartID         string     `json:"departId"`
+		ExamID           string     `json:"examId"`
+		Title            string     `json:"title"`
+		TotalTime        int        `json:"totalTime"`
+		UserTime         int        `json:"userTime"`
+		TotalScore       int        `json:"totalScore"`
+		QualifyScore     int        `json:"qualifyScore"`
+		ObjScore         int        `json:"objScore"`
+		SubjScore        int        `json:"subjScore"`
+		UserScore        int        `json:"userScore"`
+		HasSaq           int8       `json:"hasSaq"`
+		State            int        `json:"state"`
+		CreateTime       *time.Time `json:"createTime"`
+		UpdateTime       *time.Time `json:"updateTime"`
+		LimitTime        *time.Time `json:"limitTime"`
+		UserIDDictText   string     `gorm:"column:userId_dictText" json:"userId_dictText"`
+		DepartIDDictText string     `gorm:"column:departId_dictText" json:"departId_dictText"`
+	}
+	var rows []paperRow
+	applyWhere(h.db.Table("el_paper AS p").
+		Select(`p.id, p.user_id, p.depart_id, p.exam_id, p.title, p.total_time, p.user_time,
+			p.total_score, p.qualify_score, p.obj_score, p.subj_score, p.user_score,
+			p.has_saq, p.state, p.create_time, p.update_time, p.limit_time,
+			COALESCE(c.name, t.name, '') AS userId_dictText,
+			COALESCE(t.depart, '') AS departId_dictText`).
+		Joins("LEFT JOIN el_candidate c ON c.paper_id = p.id").
+		Joins("LEFT JOIN el_tester t ON t.paper_id = p.id")).
+		Order("p.update_time desc").
 		Offset((req.Current - 1) * req.Size).Limit(req.Size).Find(&rows)
 	response.Rest(c, gin.H{
 		"records": rows, "total": total,
@@ -133,6 +167,8 @@ func (h *PaperHandler) Save(c *gin.Context) {
 }
 
 // POST /exam/api/paper/paper/delete {ids:[]}
+// 级联删除：el_paper_qu_answer → el_paper_qu → el_paper
+// 同时清空 el_candidate / el_tester 中对应的 paper_id（让考生/测评者重新答题）
 func (h *PaperHandler) Delete(c *gin.Context) {
 	var b struct {
 		IDs []string `json:"ids"`
@@ -142,7 +178,33 @@ func (h *PaperHandler) Delete(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
-	if err := h.db.Where("id IN ?", b.IDs).Delete(&model.Paper{}).Error; err != nil {
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 1. 删除答案记录
+		if err := tx.Exec("DELETE FROM el_paper_qu_answer WHERE paper_id IN ?", b.IDs).Error; err != nil {
+			return err
+		}
+		// 2. 删除题目记录
+		if err := tx.Exec("DELETE FROM el_paper_qu WHERE paper_id IN ?", b.IDs).Error; err != nil {
+			return err
+		}
+		// 3. 删除 MBTI 答题记录
+		if err := tx.Exec("DELETE FROM el_mbti_answer WHERE paper_id IN ?", b.IDs).Error; err != nil {
+			return err
+		}
+		// 4. 清空考生/测评者的 paper_id 关联（保留人员档案）
+		if err := tx.Exec("UPDATE el_candidate SET paper_id=NULL, end_time=NULL, pdf_path=NULL, pdf_flag=0 WHERE paper_id IN ?", b.IDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("UPDATE el_tester SET paper_id=NULL, end_time=NULL, pdf_path=NULL, pdf_flag=0 WHERE paper_id IN ?", b.IDs).Error; err != nil {
+			return err
+		}
+		// 5. 删除 paper 主记录
+		if err := tx.Where("id IN ?", b.IDs).Delete(&model.Paper{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		response.RestErr(c, err.Error())
 		return
 	}
@@ -476,6 +538,25 @@ func (h *PaperHandler) FillAnswer(c *gin.Context) {
 	// 未作答 → 直接返回
 	if len(b.Answers) == 0 && strings.TrimSpace(b.Answer) == "" {
 		response.Rest(c, true)
+		return
+	}
+
+	// FB-022: 校验 paper 状态 — 已交卷不允许修改答案
+	var paperState int
+	if err := h.db.Table("el_paper").Where("id = ?", b.PaperID).Select("state").Row().Scan(&paperState); err != nil {
+		response.RestErr(c, "试卷不存在")
+		return
+	}
+	if paperState != paperStateING {
+		response.RestErr(c, "试卷已交卷或状态不允许修改")
+		return
+	}
+
+	// FB-023: 校验 quId 是否属于该 paperID 对应试卷的题库（同 FB-009 mbti 同类问题）
+	var quInPaper int64
+	h.db.Table("el_paper_qu").Where("paper_id = ? AND qu_id = ?", b.PaperID, b.QuID).Count(&quInPaper)
+	if quInPaper == 0 {
+		response.RestErr(c, "题目不属于此试卷")
 		return
 	}
 

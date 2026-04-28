@@ -74,6 +74,22 @@
       "presentation": { "reveal": "always", "panel": "shared" }
     },
     {
+      "label": "UX: Scan Page Operations",
+      "type": "shell",
+      "command": "node scripts/test/page-operation-scanner.js ${input:pagePath}",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "UX: Run Chain + Expert Review",
+      "type": "shell",
+      "command": "node scripts/test/ux-chain-runner.js ${input:chainId}",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
       "label": "Test: Full Regression (7 suites)",
       "type": "shell",
       "command": "node scripts/test/chain-batch.js; node scripts/test/business-rules-test.js; node scripts/test/exam-fields-test.js; node scripts/test/requirement-tests.js; node scripts/test/browser-e2e-v2.js; node scripts/test/exam-form-candidate-test.js; node scripts/test/screenshot-chain-test.js",
@@ -89,6 +105,46 @@
       "group": "none",
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Frontend: Vitest (run once)",
+      "type": "shell",
+      "command": "cd 'Go-based Refactored System/ruoyi-ui'; npm test",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Frontend: Vitest (watch)",
+      "type": "shell",
+      "command": "cd 'Go-based Refactored System/ruoyi-ui'; npm run test:watch",
+      "isBackground": true,
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Frontend: Vitest Coverage",
+      "type": "shell",
+      "command": "cd 'Go-based Refactored System/ruoyi-ui'; npm run test:coverage",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "pagePath",
+      "type": "promptString",
+      "description": "页面路径 (如 /#/exam/exam)",
+      "default": "/#/index"
+    },
+    {
+      "id": "chainId",
+      "type": "pickString",
+      "description": "选择业务链",
+      "options": ["A", "B", "D", "F"],
+      "default": "A"
     }
   ]
 }
