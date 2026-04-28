@@ -44,6 +44,8 @@ var anonymousPrefixes = []string{
 
 	// 测评者登录
 	"/exam/api/tester/login",
+	// FB-033: 测评者按身份证号查询（preview 页加载考生信息用）
+	"/exam/api/tester/idNumber/",
 
 	// 考生（开放模式）
 	"/exam/api/candidate/save",
