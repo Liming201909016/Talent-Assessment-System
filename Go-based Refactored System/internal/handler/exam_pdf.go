@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -145,6 +148,697 @@ type exportPRow struct {
 	CreateTime  *time.Time `gorm:"column:create_time"`
 	MbtiType    *string    `gorm:"column:mbti_type"`
 	MbtiScores  *string    `gorm:"column:mbti_scores"`
+}
+
+// POST /exam/api/exam/exam/export-raw-answers {examId}
+// 导出考生逐题答题原始记录（按考生→题号排序）
+// 列：考生ID、姓名、手机号、身份证号、题号、题目内容、考生答案、是否答对、得分
+//
+// 安全：
+//   - 仅管理员/拥有 exam:list 权限的用户可导出
+//   - 手机号、身份证号自动脱敏（仅显示后 4 位 + ****）
+//   - 操作记录到 sys_oper_log
+func (h *ExamHandler) ExportRawAnswers(c *gin.Context) {
+	// === 权限校验 (#6) ===
+	luVal, ok := c.Get("loginUser")
+	if !ok {
+		response.AjaxUnauthorized(c, "")
+		return
+	}
+	lu, _ := luVal.(*model.LoginUser)
+	if lu == nil {
+		response.AjaxUnauthorized(c, "")
+		return
+	}
+	// 超级管理员或具有相关权限
+	isAdmin := lu.UserID == 1
+	hasPerm := isAdmin
+	if !isAdmin {
+		for _, p := range lu.Permissions {
+			if p == "*:*:*" || p == "exam:list" || p == "exam:export" {
+				hasPerm = true
+				break
+			}
+		}
+	}
+	if !hasPerm {
+		response.Ajax(c, 403, "无权导出原始答题记录", nil)
+		return
+	}
+
+	examID := c.PostForm("examId")
+	if examID == "" {
+		examID = c.Query("examId")
+	}
+	if examID == "" {
+		var b struct {
+			ExamID string `json:"examId"`
+		}
+		_ = c.ShouldBindJSON(&b)
+		examID = b.ExamID
+	}
+	if examID == "" {
+		response.RestErr(c, "examId 为空")
+		return
+	}
+	var exam model.Exam
+	if err := h.db.Where("id = ?", examID).First(&exam).Error; err != nil {
+		response.RestErr(c, "考试不存在")
+		return
+	}
+	h.exportRawAnswersWide(c, lu, isAdmin, exam)
+}
+
+// exportRawAnswersWide 按客户模板（260429）输出宽格式：
+// A=考生ID, B=姓名, C=手机号, D..= 1题得分..N题得分, 后续 = 维度得分
+// 题数 N 按试卷实际题数（按 sort 升序）；维度按 repoCode：
+//   - 001 → 12 维（standScore1）
+//   - 002 → 13 维（standScore2）
+//   - 003 (MBTI) → 4 维（E/I/S/N/T/F/J/P 四对，取 aggregateMbtiScores 各 8 个 score）
+//   - 其他 → 不输出维度列
+func (h *ExamHandler) exportRawAnswersWide(c *gin.Context, lu *model.LoginUser, isAdmin bool, exam model.Exam) {
+	examID := exam.ID
+
+	// 1) 题库 code + id（取首个，与已有逻辑一致）
+	var repoCode string
+	var repoID string
+	h.db.Table("el_exam_repo er").
+		Joins("INNER JOIN el_repo r ON r.id = er.repo_id").
+		Where("er.exam_id = ?", examID).
+		Limit(1).
+		Select("r.code, r.id").
+		Row().Scan(&repoCode, &repoID)
+	isMbti := strings.HasPrefix(repoCode, "003")
+
+	// 2) 考生列表
+	type personRow struct {
+		ID        string  `gorm:"column:id"`
+		Name      string  `gorm:"column:name"`
+		Telephone *string `gorm:"column:telephone"`
+		PaperID   *string `gorm:"column:paper_id"`
+	}
+	var persons []personRow
+	if exam.IsOpen == 1 {
+		h.db.Table("el_candidate").
+			Select("id, name, telephone, paper_id").
+			Where("exam_id = ? AND (del_flag IS NULL OR del_flag = 0 OR del_flag = '0')", examID).
+			Order("name ASC, id ASC").
+			Scan(&persons)
+	} else {
+		h.db.Table("el_tester").
+			Select("id, name, telephone, paper_id").
+			Where("exam_id = ? AND (del_flag IS NULL OR del_flag = '0')", examID).
+			Order("name ASC, id ASC").
+			Scan(&persons)
+	}
+
+	// 3) 收集所有 paperId，统计题数（取最大 sort 作为列数）
+	paperIDs := make([]string, 0, len(persons))
+	for _, p := range persons {
+		if p.PaperID != nil && *p.PaperID != "" {
+			paperIDs = append(paperIDs, *p.PaperID)
+		}
+	}
+	quCount := 0
+	if len(paperIDs) > 0 && repoID != "" {
+		// 题号 = el_qu_repo.sort（题库内题目编号，1-based，与题库管理界面"题目编号"列一致）
+		var maxSort int
+		h.db.Table("el_qu_repo").
+			Where("repo_id = ?", repoID).
+			Select("COALESCE(MAX(sort), 0)").
+			Row().Scan(&maxSort)
+		quCount = maxSort
+	}
+	// MBTI: 兜底从 el_mbti_answer 算（题号从 V1..VN 解析）
+	if isMbti && quCount == 0 && len(paperIDs) > 0 {
+		type mr struct {
+			Content string `gorm:"column:content"`
+		}
+		var ms []mr
+		h.db.Table("el_mbti_answer ma").
+			Joins("INNER JOIN el_qu eq ON eq.id COLLATE utf8mb4_general_ci = ma.qu_id").
+			Where("ma.paper_id IN ?", paperIDs).
+			Select("DISTINCT eq.content AS content").
+			Scan(&ms)
+		for _, m := range ms {
+			if n := parseMbtiQuNum(m.Content); n > quCount {
+				quCount = n
+			}
+		}
+	}
+
+	// 4) 维度名（决定后续列）
+	var dimNames []string
+	switch {
+	case strings.HasPrefix(repoCode, "001"):
+		dimNames = []string{"焦虑", "抑郁", "心理失衡", "敌意", "恐惧", "身体不适", "认知衰退", "情绪化", "挫折感", "自我否定", "怀疑感", "职业倦怠"}
+	case strings.HasPrefix(repoCode, "002"):
+		dimNames = []string{"社会性", "进取性", "领导性", "计划性", "人际敏感性", "自信心", "责任心", "学习力", "创新性", "情绪稳定性", "自律性", "决断性", "合作性"}
+	case isMbti:
+		dimNames = []string{"E", "I", "S", "N", "T", "F", "J", "P"}
+	}
+
+	// 5) 生成 Excel
+	f := excelize.NewFile()
+	defer f.Close()
+	sheet := "原始答题"
+	idx, _ := f.NewSheet(sheet)
+	f.DeleteSheet("Sheet1")
+	f.SetActiveSheet(idx)
+
+	// 表头
+	headers := make([]string, 0, 3+quCount+len(dimNames))
+	headers = append(headers, "考生ID", "姓名", "手机号")
+	for i := 1; i <= quCount; i++ {
+		headers = append(headers, strconv.Itoa(i))
+	}
+	headers = append(headers, dimNames...)
+
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Family: "微软雅黑", Size: 11, Bold: true, Color: "FFFFFF"},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"4169E1"}, Pattern: 1},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
+	})
+	for i, hd := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, cell, hd)
+	}
+	if len(headers) > 0 {
+		lastCol, _ := excelize.ColumnNumberToName(len(headers))
+		f.SetCellStyle(sheet, "A1", lastCol+"1", headerStyle)
+	}
+	// 列宽
+	f.SetColWidth(sheet, "A", "A", 14)
+	f.SetColWidth(sheet, "B", "B", 10)
+	f.SetColWidth(sheet, "C", "C", 14)
+	if quCount > 0 {
+		startCol, _ := excelize.ColumnNumberToName(4)
+		endCol, _ := excelize.ColumnNumberToName(3 + quCount)
+		f.SetColWidth(sheet, startCol, endCol, 5)
+	}
+	if len(dimNames) > 0 {
+		startCol, _ := excelize.ColumnNumberToName(4 + quCount)
+		endCol, _ := excelize.ColumnNumberToName(3 + quCount + len(dimNames))
+		f.SetColWidth(sheet, startCol, endCol, 9)
+	}
+
+	// 6) 数据行
+	for i, p := range persons {
+		row := i + 2
+		tel := derefStr(p.Telephone)
+		if !isAdmin {
+			tel = maskPhone(tel)
+		}
+		f.SetCellValue(sheet, mustCell(1, row), p.ID)
+		f.SetCellValue(sheet, mustCell(2, row), p.Name)
+		f.SetCellValue(sheet, mustCell(3, row), tel)
+
+		if p.PaperID == nil || *p.PaperID == "" {
+			continue
+		}
+
+		// 6.1 题目得分（按题库编号 qu_repo.sort 列位）
+		// 不同题库取分字段不同：
+		//   001 (心理特质): is_right 存"考生选择 0/1"，actual_score 始终=1（仅表示题目分值），需导出 is_right
+		//   002 (管理特质): actual_score 存"考生选项分 1~5"
+		//   其他: 默认 actual_score
+		type pqRow struct {
+			QuRepoSort  int  `gorm:"column:qu_repo_sort"`
+			ActualScore int  `gorm:"column:actual_score"`
+			IsRight     int8 `gorm:"column:is_right"`
+		}
+		var pqs []pqRow
+		if repoID != "" {
+			h.db.Table("el_paper_qu pq").
+				Joins("INNER JOIN el_qu_repo qr ON qr.qu_id = pq.qu_id AND qr.repo_id = ?", repoID).
+				Where("pq.paper_id = ?", *p.PaperID).
+				Select("qr.sort AS qu_repo_sort, pq.actual_score, pq.is_right").
+				Scan(&pqs)
+		}
+		usePsy := strings.HasPrefix(repoCode, "001")
+		for _, pq := range pqs {
+			// qu_repo.sort 1-based → 列号 = 3 + sort
+			if pq.QuRepoSort < 1 || pq.QuRepoSort > quCount {
+				continue
+			}
+			col := 3 + pq.QuRepoSort
+			var v int
+			if usePsy {
+				v = int(pq.IsRight)
+			} else {
+				v = pq.ActualScore
+			}
+			f.SetCellValue(sheet, mustCell(col, row), v)
+		}
+
+		// 6.2 MBTI 题目得分（覆盖 el_mbti_answer，记 score_a）
+		if isMbti {
+			type maRow struct {
+				QuID    string `gorm:"column:qu_id"`
+				Content string `gorm:"column:content"`
+				ScoreA  int    `gorm:"column:score_a"`
+			}
+			var mas []maRow
+			h.db.Table("el_mbti_answer ma").
+				Joins("INNER JOIN el_qu eq ON eq.id COLLATE utf8mb4_general_ci = ma.qu_id").
+				Where("ma.paper_id = ?", *p.PaperID).
+				Select("ma.qu_id, eq.content, ma.score_a").
+				Scan(&mas)
+			for _, m := range mas {
+				n := parseMbtiQuNum(m.Content)
+				if n < 1 || n > quCount {
+					continue
+				}
+				f.SetCellValue(sheet, mustCell(3+n, row), m.ScoreA)
+			}
+		}
+
+		// 6.3 维度得分
+		if len(dimNames) > 0 {
+			dimStartCol := 4 + quCount
+			switch {
+			case strings.HasPrefix(repoCode, "001"):
+				qus, err := queryPaperQuContent(h.db, *p.PaperID)
+				if err == nil {
+					sc := standScore1(qus)
+					for j, d := range dimNames {
+						v := sc[d]
+						f.SetCellValue(sheet, mustCell(dimStartCol+j, row), math.Round(v*100)/100)
+					}
+				}
+			case strings.HasPrefix(repoCode, "002"):
+				qus, err := queryPaperQuContent(h.db, *p.PaperID)
+				if err == nil {
+					sc := standScore2(qus)
+					for j, d := range dimNames {
+						v := sc[d]
+						f.SetCellValue(sheet, mustCell(dimStartCol+j, row), math.Round(v*10000)/10000)
+					}
+				}
+			case isMbti:
+				type maRow2 struct {
+					QuID    string `gorm:"column:qu_id"`
+					Content string `gorm:"column:content"`
+					ScoreA  int    `gorm:"column:score_a"`
+					ScoreB  int    `gorm:"column:score_b"`
+				}
+				var mas []maRow2
+				h.db.Table("el_mbti_answer ma").
+					Joins("INNER JOIN el_qu eq ON eq.id COLLATE utf8mb4_general_ci = ma.qu_id").
+					Where("ma.paper_id = ?", *p.PaperID).
+					Select("ma.qu_id, eq.content, ma.score_a, ma.score_b").
+					Scan(&mas)
+				rows := make([]mbtiAnswerRow, 0, len(mas))
+				for _, m := range mas {
+					rows = append(rows, mbtiAnswerRow{Content: m.Content, ScoreA: m.ScoreA, ScoreB: m.ScoreB})
+				}
+				dims, _, _ := aggregateMbtiScores(rows)
+				for j, d := range dimNames {
+					f.SetCellValue(sheet, mustCell(dimStartCol+j, row), dims[d])
+				}
+			}
+		}
+	}
+
+	// 7) 输出
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		slog.Error("export-raw-answers: build xlsx failed", "error", err)
+		response.RestErr(c, "生成 Excel 失败："+err.Error())
+		_ = h.recordOperLog(c, lu, exam, len(persons), 1, err.Error())
+		return
+	}
+	fileName := exam.Title + "-原始答题记录.xlsx"
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName)+
+		"; filename*=UTF-8''"+url.QueryEscape(fileName))
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	c.Header("Content-Length", strconv.Itoa(buf.Len()))
+	if _, err := c.Writer.Write(buf.Bytes()); err != nil {
+		slog.Error("export-raw-answers: write response failed", "error", err)
+	}
+	_ = h.recordOperLog(c, lu, exam, len(persons), 0, "")
+}
+
+// mustCell 包装 CoordinatesToCellName，错误退化为 A1（防御）
+func mustCell(col, row int) string {
+	cell, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		return "A1"
+	}
+	return cell
+}
+
+// _legacyExportRawAnswers 旧版（长格式）已弃用，保留下方代码不再使用。
+func (h *ExamHandler) _legacyExportRawAnswers(c *gin.Context, lu *model.LoginUser, isAdmin bool, exam model.Exam) {
+	examID := exam.ID
+	_ = examID
+	// 一次性 JOIN 查询所有考生的所有题目和答案
+	type answerRow struct {
+		PersonID    string  `gorm:"column:person_id"`
+		Name        string  `gorm:"column:name"`
+		Telephone   *string `gorm:"column:telephone"`
+		IDNumber    *string `gorm:"column:id_number"`
+		PaperID     string  `gorm:"column:paper_id"`
+		Sort        int     `gorm:"column:sort"`
+		QuContent   string  `gorm:"column:qu_content"`
+		QuType      int     `gorm:"column:qu_type"`
+		Answered    int8    `gorm:"column:answered"`
+		Answer      string  `gorm:"column:answer"`
+		IsRight     int8    `gorm:"column:is_right"`
+		ActualScore int     `gorm:"column:actual_score"`
+		Score       int     `gorm:"column:score"`
+	}
+
+	var rows []answerRow
+	isOpen := exam.IsOpen == 1
+
+	// 检测是否为 MBTI 测评
+	var repoCode string
+	h.db.Table("el_exam_repo er").
+		Joins("INNER JOIN el_repo r ON r.id = er.repo_id").
+		Where("er.exam_id = ?", examID).
+		Limit(1).
+		Pluck("r.code", &repoCode)
+	isMbti := strings.HasPrefix(repoCode, "003")
+
+	// del_flag 兼容子句（int 0、'0'、NULL 三种都视为未删除）(#9)
+	delFlagOK := "(c.del_flag IS NULL OR c.del_flag = 0 OR c.del_flag = '0')"
+	delFlagOKT := "(t.del_flag IS NULL OR t.del_flag = 0 OR t.del_flag = '0')"
+
+	// 1. 普通题目（el_paper_qu）— 所有测评类型都会有
+	if isOpen {
+		h.db.Table("el_candidate AS c").
+			Select(`c.id AS person_id, c.name, c.telephone, '' AS id_number, c.paper_id,
+				pq.sort, eq.content AS qu_content, pq.qu_type, pq.answered,
+				pq.answer, pq.is_right, pq.actual_score, pq.score`).
+			Joins("INNER JOIN el_paper_qu AS pq ON pq.paper_id = c.paper_id").
+			Joins("INNER JOIN el_qu AS eq ON eq.id = pq.qu_id").
+			Where("c.exam_id = ? AND c.paper_id IS NOT NULL AND c.paper_id != '' AND "+delFlagOK, examID).
+			Order("c.name ASC, c.id ASC, pq.sort ASC").
+			Scan(&rows)
+	} else {
+		h.db.Table("el_tester AS t").
+			Select(`t.id AS person_id, t.name, t.telephone, t.id_number, t.paper_id,
+				pq.sort, eq.content AS qu_content, pq.qu_type, pq.answered,
+				pq.answer, pq.is_right, pq.actual_score, pq.score`).
+			Joins("INNER JOIN el_paper_qu AS pq ON pq.paper_id = t.paper_id").
+			Joins("INNER JOIN el_qu AS eq ON eq.id = pq.qu_id").
+			Where("t.exam_id = ? AND t.paper_id IS NOT NULL AND t.paper_id != '' AND "+delFlagOKT, examID).
+			Order("t.name ASC, t.id ASC, pq.sort ASC").
+			Scan(&rows)
+	}
+
+	// 2. MBTI 增量数据（el_mbti_answer）— 仅 003 题库
+	if isMbti {
+		type mbtiRow struct {
+			PersonID  string  `gorm:"column:person_id"`
+			Name      string  `gorm:"column:name"`
+			Telephone *string `gorm:"column:telephone"`
+			IDNumber  *string `gorm:"column:id_number"`
+			PaperID   string  `gorm:"column:paper_id"`
+			QuID      string  `gorm:"column:qu_id"`
+			QuContent string  `gorm:"column:qu_content"`
+			ScoreA    int     `gorm:"column:score_a"`
+			ScoreB    int     `gorm:"column:score_b"`
+			Answered  int8    `gorm:"column:answered"`
+		}
+		var mbtiRows []mbtiRow
+		if isOpen {
+			h.db.Table("el_candidate AS c").
+				Select(`c.id AS person_id, c.name, c.telephone, '' AS id_number, c.paper_id,
+					ma.qu_id, eq.content AS qu_content, ma.score_a, ma.score_b, ma.answered`).
+				Joins("INNER JOIN el_mbti_answer AS ma ON ma.paper_id = c.paper_id").
+				Joins("INNER JOIN el_qu AS eq ON eq.id COLLATE utf8mb4_general_ci = ma.qu_id").
+				Where("c.exam_id = ? AND c.paper_id IS NOT NULL AND c.paper_id != '' AND "+delFlagOK, examID).
+				Order("c.name ASC, c.id ASC, eq.content ASC").
+				Scan(&mbtiRows)
+		} else {
+			h.db.Table("el_tester AS t").
+				Select(`t.id AS person_id, t.name, t.telephone, t.id_number, t.paper_id,
+					ma.qu_id, eq.content AS qu_content, ma.score_a, ma.score_b, ma.answered`).
+				Joins("INNER JOIN el_mbti_answer AS ma ON ma.paper_id = t.paper_id").
+				Joins("INNER JOIN el_qu AS eq ON eq.id COLLATE utf8mb4_general_ci = ma.qu_id").
+				Where("t.exam_id = ? AND t.paper_id IS NOT NULL AND t.paper_id != '' AND "+delFlagOKT, examID).
+				Order("t.name ASC, t.id ASC, eq.content ASC").
+				Scan(&mbtiRows)
+		}
+
+		// 批量加载题目选项
+		quIDSet := map[string]bool{}
+		for _, r := range mbtiRows {
+			quIDSet[r.QuID] = true
+		}
+		quIDs := make([]string, 0, len(quIDSet))
+		for id := range quIDSet {
+			quIDs = append(quIDs, id)
+		}
+		type quAnswerRow struct {
+			QuID    string `gorm:"column:qu_id"`
+			Content string `gorm:"column:content"`
+		}
+		var quAnswers []quAnswerRow
+		if len(quIDs) > 0 {
+			h.db.Table("el_qu_answer").
+				Where("qu_id IN ?", quIDs).
+				Select("qu_id, content").
+				Scan(&quAnswers)
+		}
+		answerByQu := map[string][]string{}
+		for _, qa := range quAnswers {
+			answerByQu[qa.QuID] = append(answerByQu[qa.QuID], qa.Content)
+		}
+
+		for _, m := range mbtiRows {
+			opts := answerByQu[m.QuID]
+			optA, optB := "", ""
+			if len(opts) >= 1 {
+				optA = opts[0]
+			}
+			if len(opts) >= 2 {
+				optB = opts[1]
+			}
+			// 解析题号 V1-V48 → 1-48 (#3 防御：非 V 开头或解析失败保持 0)
+			sortNum := parseMbtiQuNum(m.QuContent)
+			selected := ""
+			if m.Answered == 1 {
+				if m.ScoreA > m.ScoreB {
+					selected = fmt.Sprintf("A (%d/%d)", m.ScoreA, m.ScoreB)
+				} else if m.ScoreB > m.ScoreA {
+					selected = fmt.Sprintf("B (%d/%d)", m.ScoreA, m.ScoreB)
+				} else {
+					selected = fmt.Sprintf("(平分 %d/%d)", m.ScoreA, m.ScoreB)
+				}
+			} else {
+				selected = "(未作答)"
+			}
+			rows = append(rows, answerRow{
+				PersonID:    m.PersonID,
+				Name:        m.Name,
+				Telephone:   m.Telephone,
+				IDNumber:    m.IDNumber,
+				PaperID:     m.PaperID,
+				Sort:        sortNum,
+				QuContent:   fmt.Sprintf("%s | A: %s | B: %s", m.QuContent, optA, optB),
+				QuType:      5,
+				Answered:    m.Answered,
+				Answer:      selected,
+				IsRight:     0,
+				ActualScore: m.ScoreA + m.ScoreB,
+				Score:       0,
+			})
+		}
+	}
+
+	// 统一排序：按姓名 → 考生ID → 题号（保证 MBTI 行也参与排序）
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Name != rows[j].Name {
+			return rows[i].Name < rows[j].Name
+		}
+		if rows[i].PersonID != rows[j].PersonID {
+			return rows[i].PersonID < rows[j].PersonID
+		}
+		return rows[i].Sort < rows[j].Sort
+	})
+
+	// 生成 Excel
+	f := excelize.NewFile()
+	defer f.Close()
+	sheet := "原始答题记录"
+	idx, _ := f.NewSheet(sheet)
+	f.DeleteSheet("Sheet1")
+	f.SetActiveSheet(idx)
+
+	headers := []string{"考生ID", "姓名", "手机号", "身份证号", "试卷ID", "题号", "题型", "题目内容", "考生答案", "是否答对", "实得分", "题目满分"}
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Family: "微软雅黑", Size: 11, Bold: true, Color: "FFFFFF"},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"4169E1"}, Pattern: 1},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+	})
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, cell, h)
+	}
+	lastCol, _ := excelize.ColumnNumberToName(len(headers))
+	f.SetCellStyle(sheet, "A1", lastCol+"1", headerStyle)
+
+	// 列宽
+	widths := []float64{20, 12, 14, 20, 20, 6, 6, 50, 30, 8, 8, 8}
+	for i, w := range widths {
+		col, _ := excelize.ColumnNumberToName(i + 1)
+		f.SetColWidth(sheet, col, col, w)
+	}
+
+	// 数据行（手机号/身份证脱敏 #1，但超管全量显示）
+	for i, r := range rows {
+		row := i + 2
+		quTypeText := quTypeName(r.QuType)
+		isRightText := "—"
+		if r.Answered == 1 {
+			if r.IsRight == 1 {
+				isRightText = "是"
+			} else {
+				isRightText = "否"
+			}
+		}
+		answer := r.Answer
+		if r.Answered != 1 {
+			answer = "(未作答)"
+		}
+		tel := derefStr(r.Telephone)
+		idn := derefStr(r.IDNumber)
+		if !isAdmin {
+			tel = maskPhone(tel)
+			idn = maskIDNumber(idn)
+		}
+		values := []any{
+			r.PersonID,
+			r.Name,
+			tel,
+			idn,
+			r.PaperID,
+			r.Sort,
+			quTypeText,
+			r.QuContent,
+			answer,
+			isRightText,
+			r.ActualScore,
+			r.Score,
+		}
+		for j, v := range values {
+			cell, _ := excelize.CoordinatesToCellName(j+1, row)
+			f.SetCellValue(sheet, cell, v)
+		}
+	}
+
+	// 先写入 buffer 再返回（#5 避免错误时返回半截文件）
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		slog.Error("export-raw-answers: build xlsx failed", "error", err)
+		response.RestErr(c, "生成 Excel 失败："+err.Error())
+		_ = h.recordOperLog(c, lu, exam, len(rows), 1, err.Error())
+		return
+	}
+
+	fileName := exam.Title + "-原始答题记录.xlsx"
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName)+
+		"; filename*=UTF-8''"+url.QueryEscape(fileName))
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	c.Header("Content-Length", strconv.Itoa(buf.Len()))
+	if _, err := c.Writer.Write(buf.Bytes()); err != nil {
+		slog.Error("export-raw-answers: write response failed", "error", err)
+	}
+
+	// 操作日志（#7）
+	_ = h.recordOperLog(c, lu, exam, len(rows), 0, "")
+}
+
+// parseMbtiQuNum 从题目内容（如 V1, V48）解析数字编号；解析失败返回 0
+func parseMbtiQuNum(content string) int {
+	if !strings.HasPrefix(content, "V") || len(content) < 2 {
+		return 0
+	}
+	n := 0
+	if _, err := fmt.Sscanf(content[1:], "%d", &n); err != nil {
+		return 0
+	}
+	if n < 0 || n > 9999 {
+		return 0
+	}
+	return n
+}
+
+// maskPhone 手机号脱敏：138****5678
+func maskPhone(s string) string {
+	if len(s) < 7 {
+		return s
+	}
+	r := []rune(s)
+	if len(r) < 11 {
+		return s
+	}
+	return string(r[:3]) + "****" + string(r[len(r)-4:])
+}
+
+// maskIDNumber 身份证号脱敏：保留前 6 位（行政区划）和后 4 位
+func maskIDNumber(s string) string {
+	r := []rune(s)
+	if len(r) < 12 {
+		return s
+	}
+	return string(r[:6]) + strings.Repeat("*", len(r)-10) + string(r[len(r)-4:])
+}
+
+// recordOperLog 写入 sys_oper_log（#7）
+func (h *ExamHandler) recordOperLog(c *gin.Context, lu *model.LoginUser, exam model.Exam, rowCount int, status int, errMsg string) error {
+	now := time.Now()
+	param := fmt.Sprintf(`{"examId":"%s","examTitle":"%s","rowCount":%d}`,
+		exam.ID, exam.Title, rowCount)
+	if len(param) > 1900 {
+		param = param[:1900]
+	}
+	if len(errMsg) > 1900 {
+		errMsg = errMsg[:1900]
+	}
+	username := ""
+	if lu.User != nil {
+		username = lu.User.UserName
+	}
+	row := map[string]interface{}{
+		"title":          "测评导出原始答题",
+		"business_type":  3, // 3=查询/导出
+		"method":         "ExamHandler.ExportRawAnswers",
+		"request_method": "POST",
+		"operator_type":  1, // 1=后台用户
+		"oper_name":      username,
+		"oper_url":       c.Request.URL.Path,
+		"oper_ip":        c.ClientIP(),
+		"oper_param":     param,
+		"json_result":    "",
+		"status":         status,
+		"error_msg":      errMsg,
+		"oper_time":      &now,
+	}
+	return h.db.Table("sys_oper_log").Create(&row).Error
+}
+
+// quTypeName 题型枚举映射
+func quTypeName(t int) string {
+	switch t {
+	case 1:
+		return "单选"
+	case 2:
+		return "多选"
+	case 3:
+		return "判断"
+	case 4:
+		return "简答"
+	case 5:
+		return "MBTI"
+	default:
+		return fmt.Sprintf("类型%d", t)
+	}
 }
 
 // POST /exam/api/exam/exam/export-raw-data  {examId}
@@ -839,13 +1533,260 @@ func capPageSize(size int) int {
 
 // queryPaperQuContent 统一的试卷题目查询（消除 3 处重复）
 // 被 tester_score.go, candidate.go, exam_pdf.go 共用
+//
+// content 字段语义：以"题库编号"(el_qu_repo.sort) 为准生成 V{n}，
+// 而非直接取 el_qu.content（题目文本编码）。
+// 原因：心理量表公式中的 V1..V90 指题库编号；目前 4 个题库 V编码 == 题库编号 (1:1)，
+// 但代码语义上以 qu_repo.sort 为准更严谨。
 func queryPaperQuContent(db *gorm.DB, paperID string) ([]paperQuContent, error) {
-	var rows []paperQuContent
+	type row struct {
+		Sort        int  `gorm:"column:sort"`
+		IsRight     int8 `gorm:"column:is_right"`
+		Answered    int8 `gorm:"column:answered"`
+		ActualScore int  `gorm:"column:actual_score"`
+	}
+	var raws []row
 	err := db.Table("el_paper_qu AS pq").
-		Select("eq.content AS content, pq.is_right AS is_right, pq.answered AS answered, pq.actual_score AS actual_score").
-		Joins("LEFT JOIN el_qu AS eq ON pq.qu_id = eq.id").
+		Select("qr.sort AS sort, pq.is_right AS is_right, pq.answered AS answered, pq.actual_score AS actual_score").
+		Joins("INNER JOIN el_paper p ON p.id = pq.paper_id").
+		Joins("INNER JOIN el_exam_repo er ON er.exam_id = p.exam_id").
+		Joins("INNER JOIN el_qu_repo qr ON qr.qu_id = pq.qu_id AND qr.repo_id = er.repo_id").
 		Where("pq.paper_id = ?", paperID).
-		Order("pq.sort ASC").
-		Find(&rows).Error
-	return rows, err
+		Order("qr.sort ASC").
+		Find(&raws).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]paperQuContent, 0, len(raws))
+	for _, r := range raws {
+		out = append(out, paperQuContent{
+			Content:     fmt.Sprintf("V%d", r.Sort),
+			IsRight:     r.IsRight,
+			Answered:    r.Answered,
+			ActualScore: r.ActualScore,
+		})
+	}
+	return out, nil
+}
+
+// GET /exam/api/exam/exam/answer-detail?paperId=xxx
+// 返回某个考生的逐题答题详情：题号 + 选项 + 考生选了哪个
+//
+// 权限：管理员或拥有 exam:list / exam:export
+// 数据源：el_paper_qu_answer (含 checked 标记)
+func (h *ExamHandler) AnswerDetail(c *gin.Context) {
+	luVal, _ := c.Get("loginUser")
+	lu, _ := luVal.(*model.LoginUser)
+	if lu == nil {
+		response.AjaxUnauthorized(c, "")
+		return
+	}
+	isAdmin := lu.UserID == 1
+	if !isAdmin {
+		ok := false
+		for _, p := range lu.Permissions {
+			if p == "*:*:*" || p == "exam:list" || p == "exam:export" {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			response.Ajax(c, 403, "无权查看", nil)
+			return
+		}
+	}
+
+	paperID := c.Query("paperId")
+	if paperID == "" {
+		response.RestErr(c, "paperId 为空")
+		return
+	}
+
+	// 1) paper + 考生 + 题库
+	type paperInfo struct {
+		ExamID    string  `gorm:"column:exam_id"`
+		Title     string  `gorm:"column:title"`
+		RepoID    string  `gorm:"column:repo_id"`
+		RepoCode  string  `gorm:"column:repo_code"`
+		RepoTitle string  `gorm:"column:repo_title"`
+		IsOpen    int8    `gorm:"column:is_open"`
+		Name      string  `gorm:"column:name"`
+		Telephone *string `gorm:"column:telephone"`
+	}
+	var pi paperInfo
+	// candidate 兜底 tester
+	row := h.db.Table("el_paper p").
+		Joins("LEFT JOIN el_exam e ON e.id = p.exam_id").
+		Joins("LEFT JOIN el_exam_repo er ON er.exam_id = e.id").
+		Joins("LEFT JOIN el_repo r ON r.id = er.repo_id").
+		Joins("LEFT JOIN el_candidate c ON c.paper_id = p.id").
+		Where("p.id = ?", paperID).
+		Limit(1).
+		Select(`p.exam_id, e.title, r.id AS repo_id, r.code AS repo_code, r.title AS repo_title,
+			COALESCE(e.is_open, 0) AS is_open, c.name, c.telephone`).
+		Take(&pi)
+	if row.Error != nil || pi.Name == "" {
+		// 兜底 tester
+		_ = h.db.Table("el_paper p").
+			Joins("LEFT JOIN el_exam e ON e.id = p.exam_id").
+			Joins("LEFT JOIN el_exam_repo er ON er.exam_id = e.id").
+			Joins("LEFT JOIN el_repo r ON r.id = er.repo_id").
+			Joins("LEFT JOIN el_tester t ON t.paper_id = p.id").
+			Where("p.id = ?", paperID).
+			Limit(1).
+			Select(`p.exam_id, e.title, r.id AS repo_id, r.code AS repo_code, r.title AS repo_title,
+				COALESCE(e.is_open, 0) AS is_open, t.name, t.telephone`).
+			Take(&pi).Error
+	}
+	if pi.ExamID == "" {
+		response.RestErr(c, "试卷不存在")
+		return
+	}
+
+	// 2) 题目 + 题号 (qu_repo.sort)
+	type qrow struct {
+		QuID    string `gorm:"column:qu_id"`
+		QuSort  int    `gorm:"column:qu_sort"`
+		Content string `gorm:"column:content"`
+		Title   string `gorm:"column:title"`
+	}
+	var qrows []qrow
+	q := h.db.Table("el_paper_qu pq").
+		Joins("INNER JOIN el_qu eq ON eq.id = pq.qu_id").
+		Where("pq.paper_id = ?", paperID).
+		Select("pq.qu_id, eq.content, COALESCE(eq.title,'') AS title")
+	if pi.RepoID != "" {
+		q = q.Joins("INNER JOIN el_qu_repo qr ON qr.qu_id = pq.qu_id AND qr.repo_id = ?", pi.RepoID).
+			Select("pq.qu_id, qr.sort AS qu_sort, eq.content, COALESCE(eq.title,'') AS title").
+			Order("qr.sort ASC")
+	} else {
+		q = q.Order("pq.sort ASC")
+	}
+	q.Scan(&qrows)
+
+	// 3) 选项 + checked （一次查全，按 qu_id 分组）
+	quIDs := make([]string, 0, len(qrows))
+	for _, r := range qrows {
+		quIDs = append(quIDs, r.QuID)
+	}
+	type pqaRow struct {
+		QuID     string `gorm:"column:qu_id"`
+		AnswerID string `gorm:"column:answer_id"`
+		Abc      string `gorm:"column:abc"`
+		IsRight  int8   `gorm:"column:is_right"`
+		Checked  int8   `gorm:"column:checked"`
+		Sort     int    `gorm:"column:sort"`
+	}
+	var pqas []pqaRow
+	if len(quIDs) > 0 {
+		h.db.Table("el_paper_qu_answer").
+			Where("paper_id = ? AND qu_id IN ?", paperID, quIDs).
+			Select("qu_id, answer_id, abc, is_right, checked, sort").
+			Order("sort ASC").
+			Scan(&pqas)
+	}
+	// 选项内容（从 el_qu_answer 拿）
+	ansIDs := make([]string, 0, len(pqas))
+	for _, a := range pqas {
+		ansIDs = append(ansIDs, a.AnswerID)
+	}
+	type ansRow struct {
+		ID      string `gorm:"column:id"`
+		Content string `gorm:"column:content"`
+	}
+	var ans []ansRow
+	if len(ansIDs) > 0 {
+		h.db.Table("el_qu_answer").Where("id IN ?", ansIDs).Select("id, content").Scan(&ans)
+	}
+	ansMap := make(map[string]string, len(ans))
+	for _, a := range ans {
+		ansMap[a.ID] = a.Content
+	}
+
+	// 4) 组装响应
+	type optionDTO struct {
+		Abc     string `json:"abc"`
+		Content string `json:"content"`
+		IsRight int8   `json:"isRight"`
+		Checked int8   `json:"checked"`
+		Score   int    `json:"score"` // MBTI: 考生分配给该选项的分数 (0~10)
+	}
+	type qDTO struct {
+		Sort    int         `json:"sort"`
+		VCode   string      `json:"vCode"`
+		Title   string      `json:"title"`
+		Options []optionDTO `json:"options"`
+	}
+	optsByQu := make(map[string][]optionDTO)
+	for _, a := range pqas {
+		optsByQu[a.QuID] = append(optsByQu[a.QuID], optionDTO{
+			Abc:     a.Abc,
+			Content: ansMap[a.AnswerID],
+			IsRight: a.IsRight,
+			Checked: a.Checked,
+		})
+	}
+
+	// 4.1) MBTI 题库：覆盖 score (从 el_mbti_answer 取 score_a/score_b)
+	isMbti := strings.HasPrefix(pi.RepoCode, "003")
+	if isMbti && len(quIDs) > 0 {
+		type maRow struct {
+			QuID     string `gorm:"column:qu_id"`
+			ScoreA   int    `gorm:"column:score_a"`
+			ScoreB   int    `gorm:"column:score_b"`
+			Answered int8   `gorm:"column:answered"`
+		}
+		var mas []maRow
+		h.db.Table("el_mbti_answer").
+			Where("paper_id = ? AND qu_id IN ?", paperID, quIDs).
+			Select("qu_id, score_a, score_b, answered").
+			Scan(&mas)
+		mbtiByQu := make(map[string]maRow, len(mas))
+		for _, m := range mas {
+			mbtiByQu[m.QuID] = m
+		}
+		// 重新组装：按 mbti score 给两个选项填 score 和 checked（score 大的视为已选）
+		for _, r := range qrows {
+			m, ok := mbtiByQu[r.QuID]
+			opts := optsByQu[r.QuID]
+			if !ok || len(opts) < 2 {
+				continue
+			}
+			opts[0].Score = m.ScoreA
+			opts[1].Score = m.ScoreB
+			if m.Answered == 1 {
+				opts[0].Checked = 0
+				opts[1].Checked = 0
+				if m.ScoreA > m.ScoreB {
+					opts[0].Checked = 1
+				} else if m.ScoreB > m.ScoreA {
+					opts[1].Checked = 1
+				}
+				// 平分：两个都不标 checked
+			}
+			optsByQu[r.QuID] = opts
+		}
+	}
+
+	questions := make([]qDTO, 0, len(qrows))
+	for _, r := range qrows {
+		questions = append(questions, qDTO{
+			Sort:    r.QuSort,
+			VCode:   r.Content,
+			Title:   r.Title,
+			Options: optsByQu[r.QuID],
+		})
+	}
+
+	response.AjaxOK(c, gin.H{
+		"paperId":   paperID,
+		"examId":    pi.ExamID,
+		"examTitle": pi.Title,
+		"repoCode":  pi.RepoCode,
+		"repoTitle": pi.RepoTitle,
+		"isMbti":    isMbti,
+		"name":      pi.Name,
+		"telephone": derefStr(pi.Telephone),
+		"questions": questions,
+	})
 }

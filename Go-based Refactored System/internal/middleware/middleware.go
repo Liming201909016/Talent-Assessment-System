@@ -90,10 +90,21 @@ func IsAnonymous(path string) bool {
 	return path == "/login" || path == "/logout" || path == "/register" || path == "/captchaImage" || path == "/health"
 }
 
+// IsAnonymousMethod 按 method+path 匹配的匿名端点（对齐 Java /exam/** 整段匿名）
+// 仅放行考生答题流程必经的 PUT，避免管理后台接口暴露
+func IsAnonymousMethod(method, path string) bool {
+	// preview.vue 点击"开始测评"会 PUT /exam/api/tester 写回 paperId
+	// Java SecurityConfig 中 /exam/** 整段匿名，Go 在此对齐
+	if method == "PUT" && path == "/exam/api/tester" {
+		return true
+	}
+	return false
+}
+
 // JWT 中间件
 func JWT(cfg *config.Config, auth *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if IsAnonymous(c.Request.URL.Path) {
+		if IsAnonymous(c.Request.URL.Path) || IsAnonymousMethod(c.Request.Method, c.Request.URL.Path) {
 			c.Next()
 			return
 		}

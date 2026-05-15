@@ -279,7 +279,9 @@ func (h *PaperHandler) createPaperTx(exam *model.Exam) (string, error) {
 				q = q.Where("a.`level` = ?", exam.Level)
 			}
 			var list []model.Qu
-			if err := q.Select("a.*").Order("RAND()").Limit(count).Find(&list).Error; err != nil {
+			// 心理量表（001/002/003）需严格按题库编号顺序，不能随机
+			// 用 b.sort 排序保证考生答题顺序 = 题库管理界面"题目编号"顺序
+			if err := q.Select("a.*").Order("b.sort ASC").Limit(count).Find(&list).Error; err != nil {
 				return err
 			}
 			for _, qu := range list {
@@ -351,12 +353,19 @@ func (h *PaperHandler) createPaperTx(exam *model.Exam) (string, error) {
 				return err
 			}
 			if len(answers) == 2 {
+				// 两个选项的 A/B 分配：
+				//   - 若两个选项的 is_right 不同（如 001 心理特质）：is_right=1 的为 A，is_right=0 的为 B
+				//   - 若两个选项的 is_right 相同（如 003 MBTI 两个都是 0）：按 answers 数组顺序分 A/B
+				sameIsRight := answers[0].IsRight == answers[1].IsRight
 				for j, a := range answers {
-					ii := 1
-					if a.IsRight == 1 {
+					var ii int
+					if sameIsRight {
+						ii = j
+					} else if a.IsRight == 1 {
 						ii = 0
+					} else {
+						ii = 1
 					}
-					_ = j
 					pqa := model.PaperQuAnswer{
 						ID:       strconv.FormatInt(baseID+int64(10000+i*100+j), 10),
 						PaperID:  paperID,

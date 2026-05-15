@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -47,12 +48,14 @@ type mbtiTesterRow struct {
 	ExamID      string  `gorm:"column:exam_id"`
 }
 
-// POST /exam/api/mbti/generate-report {paperId, type: "full"|"simple"}
+// POST /exam/api/mbti/generate-report {paperId, type: "full"|"simple", force?: bool}
 // 根据 MBTI 类型选择 docx 模板 → 替换首页字段 + 图表数据 → 存文件 → 返回下载路径
+// type=simple 时若已有 simple 文件，默认直接返回（cached:true）；force=true 则删旧重建。
 func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 	var b struct {
 		PaperID    string `json:"paperId"`
-		ReportType string `json:"type"` // "full"(默认) 或 "simple"
+		ReportType string `json:"type"`  // "full"(默认) 或 "simple"
+		Force      bool   `json:"force"` // 强制重新生成，跳过缓存
 	}
 	_ = c.ShouldBindJSON(&b)
 	if b.PaperID == "" {
@@ -87,6 +90,50 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 
 	// 4. 判断报告类型
 	isSimple := b.ReportType == "simple"
+
+	// 4.1 简版幂等：若 PDF 同目录已有 _simple 文件，直接返回（避免 LibreOffice 重复转换）
+	// force=true 时跳过缓存：删除旧 simple 文件后继续重生成。
+	if isSimple {
+		var existingFull string
+		h.db.Table("el_candidate").Where("paper_id = ?", b.PaperID).Pluck("pdf_path", &existingFull)
+		if existingFull == "" {
+			h.db.Table("el_tester").Where("paper_id = ?", b.PaperID).Pluck("pdf_path", &existingFull)
+		}
+		if existingFull != "" {
+			if existingSimple := findSimpleReport(existingFull); existingSimple != "" {
+				if _, statErr := os.Stat(existingSimple); statErr == nil {
+					if b.Force {
+						// 强制重生成：删除旧的同前缀 simple 文件
+						dir := filepath.Dir(existingFull)
+						base := filepath.Base(existingFull)
+						parts := strings.SplitN(base, "_", 3)
+						prefix := ""
+						if len(parts) >= 2 {
+							prefix = parts[0] + "_" + parts[1] + "_"
+						}
+						if prefix != "" {
+							entries, _ := os.ReadDir(dir)
+							for _, e := range entries {
+								name := e.Name()
+								if strings.HasPrefix(name, prefix) && strings.Contains(name, "_simple") {
+									_ = os.Remove(filepath.Join(dir, name))
+								}
+							}
+						}
+					} else {
+						response.Rest(c, gin.H{
+							"path":       existingSimple,
+							"type":       mbtiType,
+							"fileName":   filepath.Base(existingSimple),
+							"reportType": "simple",
+							"cached":     true,
+						})
+						return
+					}
+				}
+			}
+		}
+	}
 
 	// 5. 选择模板文件
 	var templateFile string
@@ -170,8 +217,25 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 	}
 
 	// 8. 保存 docx 文件
+	// 简版与完整版放同目录，方便 findSimpleReport 按前缀查找
 	day := now.Format("20060102")
 	outDir := filepath.Join(h.outputDir, day)
+	if isSimple {
+		var existingFull string
+		h.db.Table("el_candidate").Where("paper_id = ?", b.PaperID).Pluck("pdf_path", &existingFull)
+		if existingFull == "" {
+			h.db.Table("el_tester").Where("paper_id = ?", b.PaperID).Pluck("pdf_path", &existingFull)
+		}
+		if existingFull != "" {
+			fullDir := filepath.Dir(existingFull)
+			// 路径校验：必须在 outputDir 内
+			absOut, _ := filepath.Abs(h.outputDir)
+			absFull, _ := filepath.Abs(fullDir)
+			if strings.HasPrefix(absFull, absOut) {
+				outDir = fullDir
+			}
+		}
+	}
 	_ = os.MkdirAll(outDir, 0o755)
 	suffix := ""
 	if isSimple {
@@ -184,27 +248,11 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 		return
 	}
 
-	// 8. docx → PDF（通过 LibreOffice 转换）
-	absDocx, _ := filepath.Abs(docxPath)
-	absOutDir, _ := filepath.Abs(outDir)
-	pdfPath := filepath.Join(outDir, baseName+".pdf")
+	// 8. docx → PDF（通过 LibreOffice 转换，全局锁顺序化）
 	finalPath := docxPath // 默认返回 docx
-	loCmd := "libreoffice"
-	if runtime.GOOS == "windows" {
-		loCmd = `C:\Program Files\LibreOffice\program\soffice.exe`
-	}
-	cmd := exec.Command(loCmd, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
-	cmdOut, cmdErr := cmd.CombinedOutput()
-	if cmdErr != nil {
-		slog.Error("libreoffice: convert failed", "error", cmdErr, "output", string(cmdOut))
-	} else {
-		// 转换成功，检查 PDF 是否存在
-		if _, err := os.Stat(pdfPath); err == nil {
-			finalPath = pdfPath
-			_ = os.Remove(docxPath) // 删除临时 docx
-		} else {
-			slog.Info("libreoffice: PDF not found after convert", "path", pdfPath)
-		}
+	if pdfRet, convErr := convertDocxToPdf(docxPath, outDir); convErr == nil {
+		finalPath = pdfRet
+		_ = os.Remove(docxPath) // 删除临时 docx
 	}
 
 	// 9. 更新 pdfPath + pdfFlag（简版不覆盖 pdf_path，完整版才更新）
@@ -319,20 +367,12 @@ func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 		return
 	}
 
-	absDocx, _ := filepath.Abs(docxPath)
-	absOutDir, _ := filepath.Abs(outDir)
-	pdfPath := filepath.Join(outDir, baseName+".pdf")
 	finalPath := docxPath
-	loCmd := "libreoffice"
-	if runtime.GOOS == "windows" {
-		loCmd = `C:\Program Files\LibreOffice\program\soffice.exe`
-	}
-	cmd := exec.Command(loCmd, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
-	if cmdOut, cmdErr := cmd.CombinedOutput(); cmdErr != nil {
-		slog.Error("report-async: libreoffice failed", "paperId", paperID, "error", cmdErr, "output", string(cmdOut))
-	} else if _, err := os.Stat(pdfPath); err == nil {
-		finalPath = pdfPath
+	if pdfRet, convErr := convertDocxToPdf(docxPath, outDir); convErr == nil {
+		finalPath = pdfRet
 		_ = os.Remove(docxPath)
+	} else {
+		slog.Error("report-async: libreoffice failed", "paperId", paperID, "error", convErr)
 	}
 
 	updates := map[string]interface{}{"pdf_path": finalPath, "pdf_flag": 1, "update_time": &now}
@@ -381,21 +421,12 @@ func (h *MbtiReportHandler) generateSimpleAsync(paperID string, tester mbtiTeste
 		return
 	}
 
-	// 转 PDF
-	absDocx, _ := filepath.Abs(docxPath)
-	absOutDir, _ := filepath.Abs(outDir)
-	loCmd := "libreoffice"
-	if runtime.GOOS == "windows" {
-		loCmd = `C:\Program Files\LibreOffice\program\soffice.exe`
-	}
-	cmd := exec.Command(loCmd, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
-	if cmdOut, cmdErr := cmd.CombinedOutput(); cmdErr != nil {
-		slog.Error("report-async-simple: libreoffice failed", "paperId", paperID, "error", cmdErr, "output", string(cmdOut))
+	// 转 PDF（全局锁，避免并发冲突）
+	if pdfRet, convErr := convertDocxToPdf(docxPath, outDir); convErr == nil {
+		_ = os.Remove(docxPath)
+		_ = pdfRet
 	} else {
-		pdfPath := filepath.Join(outDir, baseName+".pdf")
-		if _, err := os.Stat(pdfPath); err == nil {
-			_ = os.Remove(docxPath)
-		}
+		slog.Error("report-async-simple: libreoffice failed", "paperId", paperID, "error", convErr)
 	}
 	slog.Info("report-async-simple: generated", "paperId", paperID, "type", mbtiType)
 }
@@ -636,9 +667,10 @@ func (h *MbtiReportHandler) replaceDocumentFieldsSimple(data []byte, fields map[
 		content = content[:searchStart] + replaced
 	}
 
-	// 替换日期（兼容 X月X日 和 XX月XX日），只替换文本不改格式
-	re := regexp.MustCompile(`2025年X+月X+日`)
-	content = re.ReplaceAllString(content, dateStr)
+	// 替换日期占位符
+	// 模板原文是 "2025年XX月XX日"，但被 Word 拆到多个 <w:t> run，简单正则无法匹配。
+	// 用 replaceDocxDate 跨标签拼接文本匹配后整段替换。
+	content = replaceDocxDate(content, dateStr)
 
 	return []byte(content)
 }
@@ -647,6 +679,84 @@ func (h *MbtiReportHandler) replaceDocumentFieldsSimple(data []byte, fields map[
 func stripXmlTags(s string) string {
 	re := regexp.MustCompile(`<[^>]+>`)
 	return re.ReplaceAllString(s, "")
+}
+
+// replaceDocxDate 替换 docx 中的日期占位符（兼容跨 <w:t> run 拆分）。
+//
+// 模板原文形如 "2025年XX月XX日"，但 Word 常把它拆到多个 <w:t> run（年/XX/月/XX/日 各一个）。
+// 策略：
+//  1. 用正则找出所有 <w:t>...</w:t> 块；
+//  2. 寻找第一个包含 "20\d\d" 的块作为起点；
+//  3. 把该块及其后 8 个 <w:t> 块的文本拼接，剥离 XML 后用 \d{4}年X+月X+日 匹配；
+//  4. 命中后：把第一个 <w:t> 内容替换为 dateStr，其余命中范围内的 <w:t> 内容清空。
+//
+// 这种做法保留了首个 run 的字体/下划线样式，与原占位符位置/格式一致。
+func replaceDocxDate(content, dateStr string) string {
+	wt := regexp.MustCompile(`<w:t[^>]*>([^<]*)</w:t>`)
+	matches := wt.FindAllStringSubmatchIndex(content, -1)
+	if len(matches) == 0 {
+		return content
+	}
+	dateRe := regexp.MustCompile(`\d{4}年X+月X+日`)
+
+	// 输出 buffer：按原文复制，命中范围按规则改写
+	var b strings.Builder
+	last := 0
+	i := 0
+	for i < len(matches) {
+		m := matches[i]
+		txt := content[m[2]:m[3]]
+		if !regexp.MustCompile(`20\d{2}`).MatchString(txt) {
+			i++
+			continue
+		}
+		// 拼接 i..i+8 的文本
+		joinEnd := i + 9
+		if joinEnd > len(matches) {
+			joinEnd = len(matches)
+		}
+		var sb strings.Builder
+		for j := i; j < joinEnd; j++ {
+			sb.WriteString(content[matches[j][2]:matches[j][3]])
+		}
+		joined := sb.String()
+		loc := dateRe.FindStringIndex(joined)
+		if loc == nil {
+			i++
+			continue
+		}
+		// 找出命中跨越的 run 范围 [i, k]
+		// loc[0] = 0（必须从 i 开始）；找出 k 使前缀长度刚好 ≥ loc[1]
+		acc := 0
+		k := i
+		for j := i; j < joinEnd; j++ {
+			acc += matches[j][3] - matches[j][2]
+			if acc >= loc[1] {
+				k = j
+				break
+			}
+			k = j
+		}
+		// 写出 last..matches[i][2]
+		b.WriteString(content[last:matches[i][2]])
+		b.WriteString(dateStr)
+		// 跳到 matches[i][3]
+		cursor := matches[i][3]
+		// 对 i+1..k 的每个 <w:t>，复制其前缀（XML 标签等）+ 空文本 + </w:t>
+		for j := i + 1; j <= k; j++ {
+			// 复制 cursor..matches[j][2]（中间的 XML 结构）
+			b.WriteString(content[cursor:matches[j][2]])
+			// 文本清空
+			cursor = matches[j][3]
+		}
+		// 推进
+		last = cursor
+		i = k + 1
+	}
+	if last < len(content) {
+		b.WriteString(content[last:])
+	}
+	return b.String()
 }
 
 // findLabelEndInXml 在 XML 片段中找到 label 文本结束后的 XML 偏移
@@ -727,9 +837,8 @@ func (h *MbtiReportHandler) replaceDocumentFields(data []byte, fields map[string
 		}
 	}
 
-	// 替换报告日期
-	re := regexp.MustCompile(`2025年X月X日`)
-	content = re.ReplaceAllString(content, dateStr)
+	// 替换报告日期（兼容跨 <w:t> run 拆分，与简版一致）
+	content = replaceDocxDate(content, dateStr)
 
 	return []byte(content)
 }
@@ -943,4 +1052,42 @@ func (h *MbtiReportHandler) UploadTemplate(c *gin.Context) {
 	}
 	slog.Info("template: uploaded", "type", mbtiType, "bytes", file.Size)
 	response.Rest(c, gin.H{"type": mbtiType, "size": file.Size})
+}
+
+// loMutex ȫ������LibreOffice ��֧�ֲ���ͬʱ�򿪣����� user profile���������ᱨ javaldx ʧ�ܡ�
+// ���� docx��pdf ת���Ŷ�ִ�С�
+var loMutex sync.Mutex
+
+// convertDocxToPdf �� LibreOffice �� docx ת pdf�����������ļ�·����
+// ת��ʧ��ʱ����ԭ docx ·�������ף���
+//
+// �� -env:UserInstallation ��ÿ��ת������ profile Ŀ¼��������ʷ lock �ļ��������ţ�
+// ͬʱ��ȫ�� mutex ��֤��������LO �Բ�֧����ȫ������ʹ profile ��ͬ����
+func convertDocxToPdf(docxPath, outDir string) (string, error) {
+loMutex.Lock()
+defer loMutex.Unlock()
+
+loCmd := "libreoffice"
+if runtime.GOOS == "windows" {
+loCmd = `C:\Program Files\LibreOffice\program\soffice.exe`
+}
+absDocx, _ := filepath.Abs(docxPath)
+absOutDir, _ := filepath.Abs(outDir)
+// ���� profile��ÿ�����Ŀ¼��ת���겻ɾ���� fontconfig cache ���ü�����������
+profile := filepath.Join(os.TempDir(), "lo-profile-"+filepath.Base(docxPath))
+envArg := "-env:UserInstallation=file://" + profile
+cmd := exec.Command(loCmd, envArg, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
+out, err := cmd.CombinedOutput()
+if err != nil {
+slog.Error("libreoffice: convert failed", "docx", docxPath, "error", err, "output", string(out))
+return docxPath, err
+}
+base := filepath.Base(docxPath)
+pdfName := base[:len(base)-len(filepath.Ext(base))] + ".pdf"
+pdfPath := filepath.Join(outDir, pdfName)
+if _, statErr := os.Stat(pdfPath); statErr != nil {
+slog.Info("libreoffice: PDF not found after convert", "path", pdfPath)
+return docxPath, statErr
+}
+return pdfPath, nil
 }

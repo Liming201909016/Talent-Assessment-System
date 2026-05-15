@@ -20,13 +20,13 @@ func main() {
 	database := db.Init(cfg.Mysql.DSN, cfg.Mysql.MaxOpen, cfg.Mysql.MaxIdle)
 	redisx.Init(cfg.Redis.Addr, cfg.Redis.DB, cfg.Redis.Password)
 
-	r := router.Setup(cfg, database)
+	r, shutdown := router.Setup(cfg, database)
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      r,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: 120 * time.Second, // 给 chromedp 报告生成留足时间（page timeout 默认 60s）
 	}
 
 	go func() {
@@ -40,4 +40,5 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 	log.Println("[server] shutting down")
+	shutdown()
 }

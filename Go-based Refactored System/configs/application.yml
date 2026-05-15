@@ -31,3 +31,14 @@ upload:
   mbtiTemplates: "./deploy/mbti-templates"
   mbtiTemplatesSimple: "./deploy/mbti-templates-simple"
   exportTemplates: "./configs/export-templates"
+
+# 后端 PDF 生成（chromedp + Chrome headless）
+# 启用后管理端"批量生成报告"等走后端，不再依赖前端 html2canvas
+pdfgen:
+  enabled: false                       # 默认关闭，环境配置中按需开启
+  chromePath: /usr/bin/google-chrome
+  poolSize: 2
+  pageTimeoutMs: 45000
+  reportBaseURL: http://127.0.0.1
+  maxBatch: 100
+  internalToken: ""                    # 留空 = 启动时随机生成

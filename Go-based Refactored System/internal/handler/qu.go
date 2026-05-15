@@ -122,16 +122,21 @@ func (h *QuHandler) Paging(c *gin.Context) {
 		h.db.Where("qu_id = ?", qu.ID).Order("id").Find(&result[i].AnswerList)
 		result[i].Sort = i + 1
 		// 查询关联的第一个题库名称
+		// 用 LEFT JOIN：题库被删后 qu_repo 行还在，title 为 NULL
 		var repo struct {
 			RepoID string `gorm:"column:repo_id"`
 			Title  string `gorm:"column:title"`
 		}
 		h.db.Table("el_qu_repo AS qr").
-			Joins("INNER JOIN el_repo AS rp ON rp.id = qr.repo_id").
+			Joins("LEFT JOIN el_repo AS rp ON rp.id = qr.repo_id").
 			Where("qr.qu_id = ?", qu.ID).
 			Select("qr.repo_id, rp.title").
 			Limit(1).Scan(&repo)
-		result[i].RepoName = repo.Title
+		if repo.RepoID != "" && repo.Title == "" {
+			result[i].RepoName = "[已删题库:" + repo.RepoID + "]"
+		} else {
+			result[i].RepoName = repo.Title
+		}
 		result[i].RepoID = repo.RepoID
 	}
 
@@ -162,6 +167,11 @@ func (h *QuHandler) Detail(c *gin.Context) {
 	// 关联题库
 	var repoIDs []string
 	h.db.Model(&model.QuRepo{}).Where("qu_id = ?", id).Pluck("repo_id", &repoIDs)
+	// 取首个题库的 code（用于前端按题库类型显示不同字段）
+	var repoCode string
+	if len(repoIDs) > 0 {
+		h.db.Model(&model.Repo{}).Where("id = ?", repoIDs[0]).Pluck("code", &repoCode)
+	}
 	// 对齐 Java：返回扁平对象（前端 form.vue 直接读 data.content / data.answerList）
 	response.Rest(c, gin.H{
 		"id":         qu.ID,
@@ -176,6 +186,7 @@ func (h *QuHandler) Detail(c *gin.Context) {
 		"updateTime": qu.UpdateTime,
 		"answerList": answers,
 		"repoIds":    repoIDs,
+		"repoCode":   repoCode,
 	})
 }
 

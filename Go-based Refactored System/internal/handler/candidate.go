@@ -240,14 +240,61 @@ func (h *CandidateHandler) cleanupCandidatePdfFiles(ids []string) {
 }
 
 // DELETE /exam/api/candidate/logicDeletePdfByIds/:ids
+// V-005 / D-014 修复 (2026-05-11):
+// 旧实现仅 UPDATE pdf_flag=0，磁盘文件与 pdf_path 字段都不动
+//
+//	→ 管理员看到"未生成"标签但二次下载会拿到旧文件 / 磁盘越来越大
+//
+// 新实现：先删除磁盘 PDF 文件 → 同步清空 pdf_path/pdf_flag
+// 同时兼容封闭测评者（el_tester）记录
 func (h *CandidateHandler) LogicDeletePdfByIds(c *gin.Context) {
 	ids := splitCsv(c.Param("ids"))
 	if len(ids) == 0 {
 		response.RestErr(c, "ids 为空")
 		return
 	}
-	h.db.Model(&Candidate{}).Where("id IN ?", ids).Update("pdf_flag", 0)
+	// 1. 优先按 candidate 处理（开放测评）
+	h.cleanupCandidatePdfFiles(ids)
+	caRes := h.db.Table("el_candidate").Where("id IN ?", ids).Updates(map[string]interface{}{
+		"pdf_path": "",
+		"pdf_flag": 0,
+	})
+	caAffected := caRes.RowsAffected
+	// 2. 兜底兼容封闭测评者（el_tester）— 与 candidate 主键不冲突时安全
+	h.cleanupTesterPdfFiles(ids)
+	tRes := h.db.Table("el_tester").Where("id IN ?", ids).Updates(map[string]interface{}{
+		"pdf_path": "",
+		"pdf_flag": 0,
+	})
+	tAffected := tRes.RowsAffected
+	slog.Info("logic-delete-pdf",
+		"ids", len(ids), "candidateAffected", caAffected, "testerAffected", tAffected)
 	response.Rest(c, 1)
+}
+
+// cleanupTesterPdfFiles 与 cleanupCandidatePdfFiles 同语义，仅表名不同
+func (h *CandidateHandler) cleanupTesterPdfFiles(ids []string) {
+	allowedBase := filepath.Clean(h.cfg.Upload.Path)
+	if allowedBase == "" || allowedBase == "." {
+		allowedBase = filepath.Clean("./tmp")
+	}
+	var paths []string
+	h.db.Table("el_tester").
+		Where("id IN ? AND pdf_path IS NOT NULL AND pdf_path != ''", ids).
+		Pluck("pdf_path", &paths)
+	for _, p := range paths {
+		clean := filepath.Clean(p)
+		if !strings.HasPrefix(clean, allowedBase) {
+			slog.Warn("cleanup-tester-pdf: skip (outside allowed dir)", "path", clean)
+			continue
+		}
+		if err := os.Remove(clean); err != nil && !os.IsNotExist(err) {
+			slog.Warn("cleanup-tester-pdf: remove failed", "path", clean, "err", err)
+		}
+	}
+	if len(paths) > 0 {
+		slog.Info("cleanup-tester-pdf: removed", "count", len(paths))
+	}
 }
 
 // POST /exam/api/candidate/info
@@ -377,6 +424,18 @@ func (h *CandidateHandler) StandScoreCandidate(c *gin.Context) {
 	if b.PaperID == "" {
 		response.RestErr(c, "paperId 为空")
 		return
+	}
+	// 若 repoCode 未传，从 paper → exam → repo 反查
+	if b.RepoCode == "" {
+		var code string
+		h.db.Table("el_paper p").
+			Select("r.code").
+			Joins("LEFT JOIN el_exam_repo er ON er.exam_id = p.exam_id").
+			Joins("LEFT JOIN el_repo r ON er.repo_id = r.id").
+			Where("p.id = ?", b.PaperID).
+			Limit(1).
+			Scan(&code)
+		b.RepoCode = code
 	}
 	rows, err := queryPaperQuContent(h.db, b.PaperID)
 	if err != nil {

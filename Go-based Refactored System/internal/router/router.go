@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func Setup(cfg *config.Config, db *gorm.DB) *gin.Engine {
+func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 	r := gin.New()
 	r.MaxMultipartMemory = 32 << 20 // 32MB upload limit
 	r.Use(gin.Recovery(), gin.Logger(), middleware.CORS(), middleware.SecurityHeaders())
@@ -50,6 +50,8 @@ func Setup(cfg *config.Config, db *gorm.DB) *gin.Engine {
 
 	// 字典
 	r.GET("/system/dict/data/type/:dictType", dictH.DataByType)
+	// 批量字典聚合（一次调用拿多个字典，减少前端 N 次 RTT）
+	r.POST("/system/dict/data/batch", dictH.BatchData)
 
 	// system.* 占位 — RuoYi admin framework CRUD
 	sys := r.Group("/system")
@@ -227,6 +229,10 @@ func Setup(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		examGrp.POST("/pdf-upload", examH.PdfUpload)
 		examGrp.POST("/export-raw-data", examH.ExportRawData)
 		examGrp.GET("/export-raw-data", examH.ExportRawData)
+		examGrp.POST("/export-raw-answers", examH.ExportRawAnswers)
+		examGrp.GET("/export-raw-answers", examH.ExportRawAnswers)
+		examGrp.GET("/answer-detail", examH.AnswerDetail)
+		examGrp.POST("/generate-report", examH.GenerateReport)
 		examGrp.POST("/review-paging", examH.ReviewPaging)
 	}
 
@@ -314,6 +320,7 @@ func Setup(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		mbtiH.SetReportHandler(mbtiReportH) // 注入报告生成器，Submit 后自动生成 PDF
 		mbtiGrp.POST("/generate-report", mbtiReportH.GenerateReport)
 		mbtiGrp.POST("/download-report", mbtiReportH.DownloadReport)
+		mbtiGrp.POST("/batch-download-simple", mbtiReportH.BatchDownloadSimple)
 
 		// 模板管理
 		mbtiGrp.GET("/templates", mbtiReportH.ListTemplates)
@@ -371,7 +378,11 @@ func Setup(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	stubGroup(api, "/user/repo", []string{"paging", "list", "detail", "save", "delete"})
 	stubGroup(api, "/user/wrong-book", []string{"paging", "list", "detail", "delete"})
 
-	return r
+	// shutdown 钩子：关闭 chromedp pool 等资源
+	shutdown := func() {
+		examH.Close()
+	}
+	return r, shutdown
 }
 
 func stubGroup(g *gin.RouterGroup, prefix string, actions []string) {

@@ -42,5 +42,11 @@
     "Legacy Java System/tools": true,
     "scripts/test/archive": true,
     "scripts/test/screenshots": true
+  },
+  "chat.tools.terminal.autoApprove": {
+    "/^cd 'Go-based Refactored System\\\\ruoyi-ui'; npm run build:prod 2>&1 \\| Select-Object -Last 40$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }

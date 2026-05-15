@@ -43,6 +43,19 @@ func (h *TesterHandler) StandScore(c *gin.Context) {
 		return
 	}
 
+	// 若 repoCode 未传，从 paper → exam → repo 反查（与 candidate.StandScoreCandidate 一致）
+	if b.RepoCode == "" {
+		var code string
+		h.db.Table("el_paper p").
+			Select("r.code").
+			Joins("LEFT JOIN el_exam_repo er ON er.exam_id = p.exam_id").
+			Joins("LEFT JOIN el_repo r ON er.repo_id = r.id").
+			Where("p.id = ?", b.PaperID).
+			Limit(1).
+			Scan(&code)
+		b.RepoCode = code
+	}
+
 	// 读取所有题目（paper_qu 关联 qu.content）
 	rows, err := queryPaperQuContent(h.db, b.PaperID)
 	if err != nil {
@@ -83,6 +96,8 @@ func standScore1(rows []paperQuContent) map[string]float64 {
 		St   float64
 	}{
 		{"焦虑", "1-V1+1-V36+V41+V56+1-V61+V81+1-V15", 2.295, 1.367},
+		// 抑郁: V77 公式方向与 Excel 模板（260428）一致；之前曾被误改为 +V77，
+		// 真相是客户 Excel 中"高分"答题与数据库不同（同名异人），公式本身正确。
 		{"抑郁", "V12+V26+V38+1-V49+V70+1-V77+1-V86+V21", 4.513, 1.479},
 		{"心理失衡", "1-V11+1-V31+1-V47+V57+V75+V84+1-V19", 3.266, 1.448},
 		{"敌意", "V3+V35+V46+V54+V63+1-V78+V14", 3.274, 1.287},
@@ -139,7 +154,7 @@ func standScore2(rows []paperQuContent) map[string]float64 {
 		{"学习力", "(6-V8+V22+V36+V49+6-V64+V79+V93+6-V100+V109+V122+6-V135)/11.0"},
 		{"创新性", "(6-V9+V23+V37+6-V51+V67+6-V80+V95+V110+V123+6-V136)/10.0"},
 		{"情绪稳定性", "(V10+V24+V38+V52+V68+V82+V96+6-V111+6-V124+6-V137)/10.0"},
-		{"自律性", "(V11+6-V25+V39+V53+6-V69+V84+6-V97+V112+6-V125+V138)/10.0"},
+		{"自律性", "(V11+6-V25+V39+V53+6-V69+V84+6-V97+6-V112+V125+V138)/10.0"},
 		{"决断性", "(6-V12+V26+V35+V40+V54+V62+V70+V85+V98+V113+V126+V139)/12.0"},
 		{"合作性", "(V13+V27+V41+V55+V71+V86+V99+6-V114+V127+6-V140)/10.0"},
 	}

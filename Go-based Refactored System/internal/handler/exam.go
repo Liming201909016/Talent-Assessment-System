@@ -6,23 +6,71 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/config"
 	"github.com/talent-assessment/refactored/internal/model"
+	"github.com/talent-assessment/refactored/pkg/pdfgen"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"gorm.io/gorm"
 )
 
 // ExamHandler 对应 /exam/api/exam/exam/*
 type ExamHandler struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db      *gorm.DB
+	cfg     *config.Config
+	pdfPool *pdfgen.Pool // 可为 nil（pdfgen.enabled=false 时）
+
+	// R4: 全局熔断 - 连续失败超阈值则在冷却窗口内不重试
+	cbMu              sync.Mutex
+	cbConsecutiveFail int
+	cbOpenUntil       time.Time
 }
 
 func NewExamHandler(db *gorm.DB, cfg *config.Config) *ExamHandler {
-	return &ExamHandler{db: db, cfg: cfg}
+	h := &ExamHandler{db: db, cfg: cfg}
+	if cfg.PdfGen.Enabled {
+		p, err := pdfgen.NewPool(cfg.PdfGen.ChromePath, cfg.PdfGen.PoolSize)
+		if err != nil {
+			slog.Error("[exam] pdfgen pool init failed", "error", err)
+		} else {
+			h.pdfPool = p
+			slog.Info("[exam] pdfgen pool ready", "size", cfg.PdfGen.PoolSize)
+		}
+		// R5: 幂等添加 pdf_partial 列（标记前端数据未完全加载就生成的 PDF）
+		ensurePdfPartialColumn(db)
+	}
+	return h
+}
+
+// ensurePdfPartialColumn 幂等 ALTER TABLE 添加 pdf_partial 列。
+// MySQL 8.0+ 支持 IF NOT EXISTS；老版本会失败但忽略（已存在时报错也无害）。
+func ensurePdfPartialColumn(db *gorm.DB) {
+	for _, tbl := range []string{"el_candidate", "el_tester"} {
+		// 先查是否已存在
+		var count int64
+		db.Raw(`SELECT COUNT(*) FROM information_schema.COLUMNS
+				WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'pdf_partial'`, tbl).
+			Scan(&count)
+		if count > 0 {
+			continue
+		}
+		sql := "ALTER TABLE " + tbl + " ADD COLUMN pdf_partial TINYINT NOT NULL DEFAULT 0 COMMENT '1=报告生成时数据不完整'"
+		if err := db.Exec(sql).Error; err != nil {
+			slog.Warn("[exam] add pdf_partial column failed", "table", tbl, "error", err)
+		} else {
+			slog.Info("[exam] added pdf_partial column", "table", tbl)
+		}
+	}
+}
+
+// Close 关闭后端资源（chromedp pool 等）。由 main 在收到 SIGTERM 后调用。
+func (h *ExamHandler) Close() {
+	if h.pdfPool != nil {
+		h.pdfPool.Close()
+	}
 }
 
 type examPagingReq struct {
