@@ -252,7 +252,10 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 	finalPath := docxPath // 默认返回 docx
 	if pdfRet, convErr := convertDocxToPdf(docxPath, outDir); convErr == nil {
 		finalPath = pdfRet
-		_ = os.Remove(docxPath) // 删除临时 docx
+		// FB-040 调试：临时保留 docx 便于检查 XML 结构（生产/上线前需删除此 ENV 检查）
+		if os.Getenv("MBTI_KEEP_DOCX") != "1" {
+			_ = os.Remove(docxPath)
+		}
 	}
 
 	// 9. 更新 pdfPath + pdfFlag（简版不覆盖 pdf_path，完整版才更新）
@@ -664,6 +667,9 @@ func (h *MbtiReportHandler) replaceDocumentFieldsSimple(data []byte, fields map[
 		}
 		// 只替换文本内容，不修改模板格式（保留下划线等样式）
 		replaced := afterLabel[:matchT[4]] + fillValue + afterLabel[matchT[5]:]
+		// FB-040: 同理在 value 所在 <w:r> 范围内 strip w14:* 3D 效果，
+		// 防止替换后的中文字符在 PDF 中显示豆腐块
+		replaced = stripStyleInValueRun(replaced, fillValue)
 		content = content[:searchStart] + replaced
 	}
 
@@ -671,6 +677,8 @@ func (h *MbtiReportHandler) replaceDocumentFieldsSimple(data []byte, fields map[
 	// 模板原文是 "2025年XX月XX日"，但被 Word 拆到多个 <w:t> run，简单正则无法匹配。
 	// 用 replaceDocxDate 跨标签拼接文本匹配后整段替换。
 	content = replaceDocxDate(content, dateStr)
+	// FB-040: 同样需要 strip w14:* 效果，避免新日期字符显示豆腐块
+	content = stripW14InRunsContaining(content, dateStr)
 
 	return []byte(content)
 }
@@ -679,6 +687,146 @@ func (h *MbtiReportHandler) replaceDocumentFieldsSimple(data []byte, fields map[
 func stripXmlTags(s string) string {
 	re := regexp.MustCompile(`<[^>]+>`)
 	return re.ReplaceAllString(s, "")
+}
+
+// w14Re 用于 FB-040 修复：移除 Word 2010+ 的 3D 文字效果标签
+//
+// 模板 value 占位符的 <w:rPr> 通常包含：
+//   - <w14:textFill>...</w14:textFill>   （3D 立体填充色）
+//   - <w14:props3d ...><w14:bevelT .../></w14:props3d>  （3D 斜面/凸出效果）
+//
+// LibreOffice 在 docx→PDF 转换时，遇到这些 w14:* 效果会把字体作为独立子集嵌入，
+// 但只包含模板原文出现过的字符 glyph；替换后的新字符 glyph 没被加入子集，
+// 渲染时显示 .notdef（豆腐块 □）。
+//
+// 修复：在 value 替换后的局部 XML 范围内移除这两类标签即可（保留字体/颜色/大小等
+// 其他样式）。标题/段落正文等未参与替换的 run 不受影响，3D 效果保留。
+var (
+	w14TextFillRe = regexp.MustCompile(`<w14:textFill>[\s\S]*?</w14:textFill>`)
+	// 顺序很关键：先匹配"开+内容+闭"成对结构；自闭合标签用 [^>]*/> 严格匹配，
+	// 不能用 [^/]*/> 因为会贪婪吃掉子元素 bevelT 的 /> 导致只删开标签留闭标签
+	w14Props3dRe = regexp.MustCompile(`<w14:props3d[^>]*>[\s\S]*?</w14:props3d>|<w14:props3d[^>]*/>`)
+)
+
+// stripW14Effects 在给定 XML 片段中移除 w14:textFill + w14:props3d 标签
+func stripW14Effects(xmlFrag string) string {
+	xmlFrag = w14TextFillRe.ReplaceAllString(xmlFrag, "")
+	xmlFrag = w14Props3dRe.ReplaceAllString(xmlFrag, "")
+	return xmlFrag
+}
+
+// normalizeRiskyReportFonts 将模板中高风险/不可用字体族统一替换为稳定 CJK 字体。
+//
+// 线上观测：完整版正文仍有静态段落使用 "汉仪雅酷黑 75W" 等字体。
+// Linux/LibreOffice 环境下这些字体会触发不稳定子集嵌入，表现为文本提取正常但渲染成方框。
+// 这里在生成阶段把常见风险字体族替换为 Noto Sans CJK SC，作为最终兜底。
+func normalizeRiskyReportFonts(xmlFrag string) string {
+	replacements := [][2]string{
+		{"汉仪雅酷黑 75W", "Noto Sans CJK SC"},
+		{"汉仪雅酷黑", "Noto Sans CJK SC"},
+		{"HYYakuHei-GEW", "Noto Sans CJK SC"},
+		{"HYYakuHei", "Noto Sans CJK SC"},
+	}
+	for _, pair := range replacements {
+		xmlFrag = strings.ReplaceAll(xmlFrag, pair[0], pair[1])
+	}
+	return stabilizeEastAsiaHintOnlyFonts(xmlFrag)
+}
+
+var rFontsTagRe = regexp.MustCompile(`<w:rFonts\b[^>]*/>`)
+
+// stabilizeEastAsiaHintOnlyFonts 为只有 w:hint="eastAsia"、没有显式字体族的 run 补齐稳定字体。
+//
+// 生产复验发现：ESTP 模板中 "功利型"、"凭借" 等正文 run 的 rFonts 只有
+// <w:rFonts w:hint="eastAsia"/>。LibreOffice 在 Linux 上会为这类 run 选用不稳定
+// fallback/subset，导致少数中文 glyph 渲染成方框；文本层仍可提取，容易误判。
+// 仅补齐这种 "hint only" 标签，避免影响模板中已显式指定的图标/标题/项目符号字体。
+func stabilizeEastAsiaHintOnlyFonts(xmlFrag string) string {
+	return rFontsTagRe.ReplaceAllStringFunc(xmlFrag, func(tag string) string {
+		if !strings.Contains(tag, `w:hint="eastAsia"`) {
+			return tag
+		}
+		if strings.Contains(tag, `w:ascii=`) || strings.Contains(tag, `w:hAnsi=`) || strings.Contains(tag, `w:eastAsia=`) || strings.Contains(tag, `w:cs=`) {
+			return tag
+		}
+		return `<w:rFonts w:hint="eastAsia" w:ascii="Noto Sans CJK SC" w:hAnsi="Noto Sans CJK SC" w:eastAsia="Noto Sans CJK SC" w:cs="Noto Sans CJK SC"/>`
+	})
+}
+
+// coverValueRPr 是 MBTI 封面 value run 的稳定最小样式。
+//
+// FB-040: 模板原 value run 带 Word 2010+ w14 3D 效果和中文字体名，LibreOffice 24.x
+// 在 docx→PDF 时会生成缺 glyph 的字体子集，导致替换后的姓名/性别等显示为 □。
+// staging 实测：只把 value run 的 rPr 换成 Noto Sans CJK SC 最小样式，PDF 渲染正常，
+// 且不影响标题/背景/正文其他样式。
+const coverValueRPr = `<w:rPr><w:rFonts w:hint="eastAsia" w:ascii="Noto Sans CJK SC" w:hAnsi="Noto Sans CJK SC" w:eastAsia="Noto Sans CJK SC"/><w:color w:val="75BD42"/><w:sz w:val="30"/><w:szCs w:val="30"/></w:rPr>`
+
+var rPrRe = regexp.MustCompile(`<w:rPr>[\s\S]*?</w:rPr>`)
+
+func applyCoverValueRPr(run string) string {
+	run = stripW14Effects(run)
+	if rPrRe.MatchString(run) {
+		return rPrRe.ReplaceAllString(run, coverValueRPr)
+	}
+	insertAt := strings.Index(run, ">") + 1
+	if insertAt <= 0 {
+		return run
+	}
+	return run[:insertAt] + coverValueRPr + run[insertAt:]
+}
+
+// stripStyleInValueRun 仅在含 needle 文本的第一个 <w:r>...</w:r> 内：
+//  1. 去除 w14:textFill + w14:props3d 3D 效果（FB-040）
+//  2. 将整个 <w:rPr>...</w:rPr> 替换为已验证的 Noto Sans CJK SC 最小样式
+//
+// 必须严格限定在该 <w:r> 范围内，否则会影响后续段落的样式声明导致 docx 无法打开。
+//
+// FB-040: LibreOffice 24.x on Linux 在处理模板复杂 rPr + 子集嵌入时存在 bug，
+// 替换后的中文字符 + 部分 ASCII 字符的 glyph 子集缺失，PDF 渲染显示豆腐块 □。
+func stripStyleInValueRun(content, needle string) string {
+	if needle == "" {
+		return content
+	}
+	// 找到含 needle 的第一个 <w:r>...</w:r> 块
+	reRun := regexp.MustCompile(`<w:r[^>]*>[\s\S]*?</w:r>`)
+	first := -1
+	matches := reRun.FindAllStringIndex(content, -1)
+	for _, m := range matches {
+		run := content[m[0]:m[1]]
+		if strings.Contains(run, ">"+needle+"<") || strings.Contains(run, needle) {
+			first = m[0]
+			break
+		}
+	}
+	if first < 0 {
+		return content
+	}
+	end := matches[0][1]
+	for _, m := range matches {
+		if m[0] == first {
+			end = m[1]
+			break
+		}
+	}
+	runText := content[first:end]
+	cleaned := applyCoverValueRPr(runText)
+	return content[:first] + cleaned + content[end:]
+}
+
+// stripW14InRunsContaining 在含 needle 文本的 <w:r>...</w:r> 块内应用封面 value 最小样式。
+// 用于 FB-040：日期替换后保留了原 <w:r>，其 <w:rPr> 仍含 3D 效果，
+// 需事后清理那些 run，避免新插入的日期字符（6/1/9 等）显示豆腐块。
+func stripW14InRunsContaining(content, needle string) string {
+	if needle == "" {
+		return content
+	}
+	reRun := regexp.MustCompile(`<w:r[^>]*>[\s\S]*?</w:r>`)
+	return reRun.ReplaceAllStringFunc(content, func(run string) string {
+		if !strings.Contains(run, needle) {
+			return run
+		}
+		return applyCoverValueRPr(run)
+	})
 }
 
 // replaceDocxDate 替换 docx 中的日期占位符（兼容跨 <w:t> run 拆分）。
@@ -703,10 +851,15 @@ func replaceDocxDate(content, dateStr string) string {
 	var b strings.Builder
 	last := 0
 	i := 0
+	// FB-040 修复：原 regex `20\d{2}` 会误匹配电话号码等含 "20XX" 子串的 <w:t>，
+	// 把电话号码所在 run 当成日期 placeholder 并写入 dateStr，导致联系方式字段被覆盖。
+	// 收紧为：<w:t> 文本必须以 "2025"、"2026" 等 4 位年份开头，且紧接 "年"（可能跨 run，
+	// 但首 run 至少包含年份）；如果整段就是 "2025年X月X日"，直接全文匹配。
+	dateStartRe := regexp.MustCompile(`^(20\d{2}|2\s*0\s*\d{2})年?$|^20\d{2}年`)
 	for i < len(matches) {
 		m := matches[i]
 		txt := content[m[2]:m[3]]
-		if !regexp.MustCompile(`20\d{2}`).MatchString(txt) {
+		if !dateStartRe.MatchString(txt) {
 			i++
 			continue
 		}
@@ -794,6 +947,54 @@ func findLabelEndInXml(xmlStr, label string) int {
 	return i
 }
 
+// locateLabelEnd 在 docx XML 中定位 label 文本结束后的位置（即可开始查找占位符 <w:t> 的位置）。
+//
+// 兼容两种情况：
+//  1. label 完整在一个 <w:t> 内 → 直接 strings.Index(content, label+"</w:t>")。
+//  2. label 被 Word 拆到多个 <w:r>/<w:t> run（如"姓名"和"："分两段，常见于编辑历史/字体切换） →
+//     在 content 中扫描 label 首字符所在 <w:t>，提取后续片段剥离 XML 标签后看是否能拼出完整 label，
+//     命中则用 findLabelEndInXml 求出 label 末尾在原 XML 中的偏移。
+//
+// 返回 -1 表示未找到。FB-040 引入：之前完整版 replaceDocumentFields 只有 case 1，
+// 当模板 label 被 Word 拆 run 时 strings.Index 失败 → 整段封面字段既不填值也不删段，
+// 结果模板里残留的空白下划线占位符显示出来 → 用户看到"个人信息为空白"。
+func locateLabelEnd(content, label string) int {
+	if idx := strings.Index(content, label+"</w:t>"); idx >= 0 {
+		return idx + len(label) + len("</w:t>")
+	}
+	labelRunes := []rune(label)
+	if len(labelRunes) < 2 {
+		return -1
+	}
+	firstChar := string(labelRunes[0])
+	pos := 0
+	for {
+		p := strings.Index(content[pos:], firstChar)
+		if p < 0 {
+			return -1
+		}
+		absPos := pos + p
+		lookback := absPos - 50
+		if lookback < 0 {
+			lookback = 0
+		}
+		if !strings.Contains(content[lookback:absPos], "<w:t") {
+			pos = absPos + 1
+			continue
+		}
+		tail := content[absPos:]
+		if len(tail) > 1000 {
+			tail = tail[:1000]
+		}
+		if strings.HasPrefix(stripXmlTags(tail), label) {
+			if endIdx := findLabelEndInXml(tail, label); endIdx > 0 {
+				return absPos + endIdx
+			}
+		}
+		pos = absPos + 1
+	}
+}
+
 // replaceDocumentFields 在 document.xml 中替换首页字段值（完整版）
 // 模板 XML 结构：每个字段在独立的 <w:p> 段落中
 // 策略：有值 → 替换占位符并去掉下划线；无值 → 删除整个段落（隐藏该字段）
@@ -801,44 +1002,59 @@ func (h *MbtiReportHandler) replaceDocumentFields(data []byte, fields map[string
 	content := string(data)
 
 	for label, value := range fields {
-		idx := strings.Index(content, label+"</w:t>")
-		if idx < 0 {
+		// FB-040: 使用 locateLabelEnd 兼容 label 被 Word 拆分到多个 <w:r>/<w:t> 的情况。
+		labelEnd := locateLabelEnd(content, label)
+		if labelEnd < 0 {
 			continue
 		}
+		// 段落删除时需要一个 label 起点（用于反向找 <w:p）。
+		// 对 case 1: labelEnd-len("</w:t>")-len(label) 即首字符位置；
+		// 对 case 2: 同样近似可用（locateLabelEnd 返回 label 末尾 + 可能的 </w:t>）。
+		// 这里只用 labelEnd 反向找 <w:p，足够稳定。
 
 		if value == "" {
 			// 无值：删除包含该标签的整个 <w:p>...</w:p> 段落
-			pStart := strings.LastIndex(content[:idx], "<w:p ")
-			pStart2 := strings.LastIndex(content[:idx], "<w:p>")
+			pStart := strings.LastIndex(content[:labelEnd], "<w:p ")
+			pStart2 := strings.LastIndex(content[:labelEnd], "<w:p>")
 			if pStart2 > pStart {
 				pStart = pStart2
 			}
 			if pStart < 0 {
 				continue
 			}
-			pEnd := strings.Index(content[idx:], "</w:p>")
+			pEnd := strings.Index(content[labelEnd:], "</w:p>")
 			if pEnd < 0 {
 				continue
 			}
-			pEnd = idx + pEnd + len("</w:p>")
+			pEnd = labelEnd + pEnd + len("</w:p>")
 			content = content[:pStart] + content[pEnd:]
 			continue
 		}
 
 		// 有值：替换占位符内容为值，去掉下划线样式
-		afterLabel := content[idx+len(label)+len("</w:t>"):]
+		afterLabel := content[labelEnd:]
 		reT := regexp.MustCompile(`(<w:t[^>]*>)([^<]*)(</w:t>)`)
 		matchT := reT.FindStringSubmatch(afterLabel)
 		if matchT != nil {
 			newT := matchT[1] + value + matchT[3]
 			rebuilt := strings.Replace(afterLabel, matchT[0], newT, 1)
-			rebuilt = strings.Replace(rebuilt, `<w:u w:val="single"/>`, "", 1)
-			content = content[:idx+len(label)+len("</w:t>")] + rebuilt
+			// 局部去下划线：只在新写入的 <w:t> 所在 <w:r> 范围内移除
+			// FB-040: w14:* 3D 效果同理 — 只能在当前 value 的 <w:r> 范围内剥离，
+			// 否则会破坏后续段落的样式声明导致 docx 无法打开
+			rebuilt = stripStyleInValueRun(rebuilt, value)
+			content = content[:labelEnd] + rebuilt
 		}
 	}
 
 	// 替换报告日期（兼容跨 <w:t> run 拆分，与简版一致）
 	content = replaceDocxDate(content, dateStr)
+	// FB-040: 日期 run 也含 w14 3D 效果，复用同一修复逻辑去除。
+	content = stripW14InRunsContaining(content, dateStr)
+	// FB-042: 完整版模板的正文静态段落也可能带有 w14 特效，
+	// 这里对整个 document.xml 再做一次全局降级，避免正文残留字体子集缺 glyph。
+	content = stripW14Effects(content)
+	// FB-043: 进一步把高风险字体族替换为稳定 CJK 字体，修复 "文本可提取但渲染方框"。
+	content = normalizeRiskyReportFonts(content)
 
 	return []byte(content)
 }
@@ -1064,30 +1280,30 @@ var loMutex sync.Mutex
 // �� -env:UserInstallation ��ÿ��ת������ profile Ŀ¼��������ʷ lock �ļ��������ţ�
 // ͬʱ��ȫ�� mutex ��֤��������LO �Բ�֧����ȫ������ʹ profile ��ͬ����
 func convertDocxToPdf(docxPath, outDir string) (string, error) {
-loMutex.Lock()
-defer loMutex.Unlock()
+	loMutex.Lock()
+	defer loMutex.Unlock()
 
-loCmd := "libreoffice"
-if runtime.GOOS == "windows" {
-loCmd = `C:\Program Files\LibreOffice\program\soffice.exe`
-}
-absDocx, _ := filepath.Abs(docxPath)
-absOutDir, _ := filepath.Abs(outDir)
-// ���� profile��ÿ�����Ŀ¼��ת���겻ɾ���� fontconfig cache ���ü�����������
-profile := filepath.Join(os.TempDir(), "lo-profile-"+filepath.Base(docxPath))
-envArg := "-env:UserInstallation=file://" + profile
-cmd := exec.Command(loCmd, envArg, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
-out, err := cmd.CombinedOutput()
-if err != nil {
-slog.Error("libreoffice: convert failed", "docx", docxPath, "error", err, "output", string(out))
-return docxPath, err
-}
-base := filepath.Base(docxPath)
-pdfName := base[:len(base)-len(filepath.Ext(base))] + ".pdf"
-pdfPath := filepath.Join(outDir, pdfName)
-if _, statErr := os.Stat(pdfPath); statErr != nil {
-slog.Info("libreoffice: PDF not found after convert", "path", pdfPath)
-return docxPath, statErr
-}
-return pdfPath, nil
+	loCmd := "libreoffice"
+	if runtime.GOOS == "windows" {
+		loCmd = `C:\Program Files\LibreOffice\program\soffice.exe`
+	}
+	absDocx, _ := filepath.Abs(docxPath)
+	absOutDir, _ := filepath.Abs(outDir)
+	// 创建 profile，每次清空目录，转换完不删（让 fontconfig cache 复用减少重启开销）
+	profile := filepath.Join(os.TempDir(), "lo-profile-"+filepath.Base(docxPath))
+	envArg := "-env:UserInstallation=file://" + profile
+	cmd := exec.Command(loCmd, envArg, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Error("libreoffice: convert failed", "docx", docxPath, "error", err, "output", string(out))
+		return docxPath, err
+	}
+	base := filepath.Base(docxPath)
+	pdfName := base[:len(base)-len(filepath.Ext(base))] + ".pdf"
+	pdfPath := filepath.Join(outDir, pdfName)
+	if _, statErr := os.Stat(pdfPath); statErr != nil {
+		slog.Info("libreoffice: PDF not found after convert", "path", pdfPath)
+		return docxPath, statErr
+	}
+	return pdfPath, nil
 }

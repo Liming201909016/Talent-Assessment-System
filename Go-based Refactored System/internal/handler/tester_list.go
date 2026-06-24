@@ -94,7 +94,8 @@ func (h *TesterHandler) TesterList(c *gin.Context) {
 		ca.name, ca.age, ca.telephone, ca.affiliation, ca.gender, ca.post,
 		ca.degree, ca.major, ca.stu_flag, ca.password, ca.pdf_path, ca.pdf_flag, ca.del_flag,
 		ca.end_time, pa.create_time, pa.user_time`).
-		Order("pa.create_time DESC").
+		// FB-040: 加 ca.id desc tie-breaker，避免同秒导入的多测评行交错。
+		Order("pa.create_time DESC, ca.id DESC").
 		Offset((pageNum - 1) * pageSize).
 		Limit(pageSize).
 		Scan(&rows)

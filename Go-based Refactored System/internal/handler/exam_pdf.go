@@ -878,17 +878,18 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 	// 取人员列表
 	var rows []exportPRow
 	isOpen := exam.IsOpen == 1
+	var scanErr error
 	if isOpen {
-		h.db.Table("el_candidate AS t").
+		scanErr = h.db.Table("el_candidate AS t").
 			Joins("LEFT JOIN el_paper AS pa ON pa.id = t.paper_id").
 			Select(`t.name, '' as id_number, t.gender, t.age, t.telephone, t.affiliation,
 				'' as depart, t.post, t.degree, t.major, t.stu_flag,
 				pa.user_time, t.paper_id, t.end_time, pa.create_time`).
 			Where("t.exam_id = ? AND (t.del_flag IS NULL OR t.del_flag = 0)", examID).
 			Order("pa.create_time DESC").
-			Scan(&rows)
+			Scan(&rows).Error
 	} else {
-		h.db.Table("el_tester AS t").
+		scanErr = h.db.Table("el_tester AS t").
 			Joins("LEFT JOIN el_paper AS pa ON pa.id = t.paper_id").
 			Select(`t.name, t.id_number, t.gender, t.age, t.telephone, t.affiliation,
 				t.depart, t.post, t.degree, t.major, t.stu_flag,
@@ -896,7 +897,14 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 				t.mbti_type, t.mbti_scores`).
 			Where("t.exam_id = ? AND (t.del_flag IS NULL OR t.del_flag = 0)", examID).
 			Order("pa.create_time DESC").
-			Scan(&rows)
+			Scan(&rows).Error
+	}
+	// FB-041 防御：原代码忽略 Scan 错误，DB 缺列时 rows 静默为空 → 导出 xlsx 只剩
+	// 标题+表头，运维无法定位。这里把 DB 错误透传出去并记日志。
+	if scanErr != nil {
+		slog.Error("export: query rows failed", "examId", examID, "isOpen", isOpen, "error", scanErr)
+		response.RestErr(c, "查询测评数据失败: "+scanErr.Error())
+		return
 	}
 
 	// 尝试基于模板导出

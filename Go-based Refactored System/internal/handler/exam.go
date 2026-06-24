@@ -42,6 +42,9 @@ func NewExamHandler(db *gorm.DB, cfg *config.Config) *ExamHandler {
 		// R5: 幂等添加 pdf_partial 列（标记前端数据未完全加载就生成的 PDF）
 		ensurePdfPartialColumn(db)
 	}
+	// FB-041: 这两个迁移与 pdfgen 无关，必须无条件执行，否则封闭模式 MBTI 交卷与
+	// 导出会因 el_tester 缺列而沉默失败。
+	ensureTesterMbtiColumns(db)
 	return h
 }
 
@@ -64,6 +67,58 @@ func ensurePdfPartialColumn(db *gorm.DB) {
 			slog.Info("[exam] added pdf_partial column", "table", tbl)
 		}
 	}
+}
+
+// ensureTesterMbtiColumns FB-041 修复：39 生产 el_tester 缺 mbti_type/mbti_scores 列，
+// 导致：
+//  1. 封闭 MBTI 交卷时 UPDATE el_tester 因 Unknown column 整条原子失败，end_time
+//     不写入 → 列表显示"进行中"，报告按钮不可用。
+//  2. 封闭模式导出 export-raw-data SQL 因同样原因失败，xlsx 只剩标题+表头。
+//
+// 处理方式：启动时幂等 ALTER TABLE 补齐列；若本次刚刚补上列，再一次性回填存量
+// 已完成但 end_time=NULL 的封闭 MBTI 行（基于 el_paper.update_time）。
+func ensureTesterMbtiColumns(db *gorm.DB) {
+	specs := []struct {
+		name string
+		ddl  string
+	}{
+		{"mbti_type", "ALTER TABLE el_tester ADD COLUMN mbti_type VARCHAR(8) NULL COMMENT 'MBTI 4-letter type'"},
+		{"mbti_scores", "ALTER TABLE el_tester ADD COLUMN mbti_scores TEXT NULL COMMENT 'MBTI 8 dimension scores JSON'"},
+	}
+	added := false
+	for _, s := range specs {
+		var count int64
+		db.Raw(`SELECT COUNT(*) FROM information_schema.COLUMNS
+				WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'el_tester' AND COLUMN_NAME = ?`, s.name).
+			Scan(&count)
+		if count > 0 {
+			continue
+		}
+		if err := db.Exec(s.ddl).Error; err != nil {
+			slog.Warn("[exam] add column on el_tester failed", "column", s.name, "error", err)
+			continue
+		}
+		slog.Info("[exam] added column on el_tester", "column", s.name)
+		added = true
+	}
+	if !added {
+		return
+	}
+	// 仅在本次刚刚补齐列后执行一次回填，避免每次重启都扫表。
+	// 用 el_paper.update_time 作为 end_time 兜底（paper 交卷时已写 update_time）。
+	res := db.Exec(`UPDATE el_tester t
+		JOIN el_paper p ON p.id = t.paper_id
+		SET t.end_time = COALESCE(p.update_time, NOW()),
+		    t.update_time = NOW()
+		WHERE t.paper_id IS NOT NULL
+		  AND p.state = 2
+		  AND t.end_time IS NULL`)
+	if res.Error != nil {
+		slog.Warn("[exam] backfill el_tester.end_time failed", "error", res.Error)
+		return
+	}
+	slog.Info("[exam] backfilled el_tester.end_time for finished closed MBTI rows",
+		"affected", res.RowsAffected)
 }
 
 // Close 关闭后端资源（chromedp pool 等）。由 main 在收到 SIGTERM 后调用。

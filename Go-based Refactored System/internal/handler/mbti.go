@@ -315,19 +315,38 @@ func (h *MbtiHandler) Submit(c *gin.Context) {
 
 	// 持久化 MBTI 类型到 el_tester（通过 paper_id 关联）
 	scoresJSON, _ := json.Marshal(scores)
-	h.db.Table("el_tester").Where("paper_id = ?", b.PaperID).
+	// FB-041 防御：原 UPDATE 含 mbti_type/mbti_scores 列，若 el_tester 缺这两列
+	// （历史部署遗留）会因 Unknown column 整条原子失败，end_time 不写入 → 列表
+	// 状态卡"进行中"。这里失败时回退到最小集合更新（仅 end_time/update_time）
+	// 以保证至少能正确推进交卷状态；同时把错误记录下来便于运维介入。
+	tRes := h.db.Table("el_tester").Where("paper_id = ?", b.PaperID).
 		Updates(map[string]interface{}{
 			"mbti_type":   mbtiType,
 			"mbti_scores": string(scoresJSON),
 			"end_time":    &now,
 			"update_time": &now,
 		})
+	if tRes.Error != nil {
+		slog.Error("mbti.submit: update el_tester full failed, falling back to minimal update",
+			"paperId", b.PaperID, "error", tRes.Error)
+		if fRes := h.db.Table("el_tester").Where("paper_id = ?", b.PaperID).
+			Updates(map[string]interface{}{
+				"end_time":    &now,
+				"update_time": &now,
+			}); fRes.Error != nil {
+			slog.Error("mbti.submit: update el_tester minimal failed",
+				"paperId", b.PaperID, "error", fRes.Error)
+		}
+	}
 	// 同时更新 el_candidate（如果存在）
-	h.db.Table("el_candidate").Where("paper_id = ?", b.PaperID).
+	if cRes := h.db.Table("el_candidate").Where("paper_id = ?", b.PaperID).
 		Updates(map[string]interface{}{
 			"end_time":    &now,
 			"update_time": &now,
-		})
+		}); cRes.Error != nil {
+		slog.Error("mbti.submit: update el_candidate failed",
+			"paperId", b.PaperID, "error", cRes.Error)
+	}
 
 	response.Rest(c, gin.H{
 		"type":   mbtiType,

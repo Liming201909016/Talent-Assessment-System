@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -147,5 +148,134 @@ func TestAggregateMbtiScores_TieBreaking(t *testing.T) {
 	// 全零 → 4 个维度都是 0=0 → I, N, F, P
 	if mbtiType != "INFP" {
 		t.Errorf("all-zero tie: want INFP, got %s", mbtiType)
+	}
+}
+
+// TestBugFB042_ReplaceDocumentFieldsStripsW14EffectsFromBody
+// 对应：docs/regression-tests.md FB-042
+// 复现：完整版模板正文静态段落仍保留 w14:textFill / w14:props3d，导致 PDF 渲染方框字
+// 期望：生成的 document.xml 不应再包含这些高风险 w14 特效
+func TestBugFB042_ReplaceDocumentFieldsStripsW14EffectsFromBody(t *testing.T) {
+	content := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document>
+  <w:body>
+    <w:p>
+      <w:r><w:t>姓名：</w:t></w:r>
+      <w:r><w:t>____</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="微软雅黑" w:hAnsi="微软雅黑" w:eastAsia="微软雅黑"/>
+          <w14:textFill><w14:solidFill><w14:srgbClr val="75BD42"/></w14:solidFill></w14:textFill>
+          <w14:props3d w14:extrusionH="57150" w14:contourW="0" w14:prstMaterial="softEdge"/>
+        </w:rPr>
+        <w:t>适配类型 1：ENFP</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:t>2026年XX月XX日</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`
+
+	got := (&MbtiReportHandler{}).replaceDocumentFields([]byte(content), map[string]string{
+		"姓名：": "Liming",
+	}, "2026年6月24日")
+
+	if !strings.Contains(string(got), "Liming") {
+		t.Fatalf("expected field replacement to remain intact")
+	}
+	if strings.Contains(string(got), "w14:textFill") {
+		t.Fatalf("expected w14:textFill to be stripped from full report body")
+	}
+	if strings.Contains(string(got), "w14:props3d") {
+		t.Fatalf("expected w14:props3d to be stripped from full report body")
+	}
+	if !strings.Contains(string(got), "适配类型 1：ENFP") {
+		t.Fatalf("expected static body text to remain present")
+	}
+}
+
+// TestBugFB043_ReplaceDocumentFieldsNormalizesRiskyFonts
+// 对应：docs/regression-tests.md FB-043
+// 复现：完整版静态段落使用汉仪字体族时，PDF 渲染可能出现方框字
+// 期望：生成 document.xml 时将高风险字体替换为稳定字体 Noto Sans CJK SC
+func TestBugFB043_ReplaceDocumentFieldsNormalizesRiskyFonts(t *testing.T) {
+	content := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document>
+	<w:body>
+		<w:p>
+			<w:r>
+				<w:rPr>
+					<w:rFonts w:ascii="汉仪雅酷黑 75W" w:hAnsi="汉仪雅酷黑 75W" w:eastAsia="汉仪雅酷黑 75W"/>
+				</w:rPr>
+				<w:t>职场角色：</w:t>
+			</w:r>
+		</w:p>
+		<w:p>
+			<w:r><w:t>姓名：</w:t></w:r>
+			<w:r><w:t>____</w:t></w:r>
+		</w:p>
+		<w:p>
+			<w:r><w:t>2026年XX月XX日</w:t></w:r>
+		</w:p>
+	</w:body>
+</w:document>`
+
+	got := (&MbtiReportHandler{}).replaceDocumentFields([]byte(content), map[string]string{
+		"姓名：": "Liming",
+	}, "2026年6月24日")
+	out := string(got)
+
+	if strings.Contains(out, "汉仪雅酷黑") {
+		t.Fatalf("expected risky font family to be normalized")
+	}
+	if !strings.Contains(out, "Noto Sans CJK SC") {
+		t.Fatalf("expected fallback stable font family to be present")
+	}
+}
+
+// TestBugFB044_ReplaceDocumentFieldsStabilizesEastAsiaHintOnlyFonts
+// 对应：docs/regression-tests.md FB-044
+// 复现：ESTP 模板中 "功利型"、"凭借" 等正文 run 只有 <w:rFonts w:hint="eastAsia"/>，
+// LibreOffice/Linux 会选用不稳定 fallback/subset，导致 PDF 渲染方框字
+// 期望：生成 document.xml 时为 hint-only 东亚字体 run 补齐 Noto Sans CJK SC
+func TestBugFB044_ReplaceDocumentFieldsStabilizesEastAsiaHintOnlyFonts(t *testing.T) {
+	content := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document>
+	<w:body>
+		<w:p>
+			<w:r>
+				<w:rPr>
+					<w:rFonts w:hint="eastAsia"/>
+					<w:sz w:val="24"/>
+				</w:rPr>
+				<w:t>功利型</w:t>
+			</w:r>
+		</w:p>
+		<w:p>
+			<w:r><w:t>姓名：</w:t></w:r>
+			<w:r><w:t>____</w:t></w:r>
+		</w:p>
+		<w:p>
+			<w:r><w:t>2026年XX月XX日</w:t></w:r>
+		</w:p>
+	</w:body>
+</w:document>`
+
+	got := (&MbtiReportHandler{}).replaceDocumentFields([]byte(content), map[string]string{
+		"姓名：": "Liming",
+	}, "2026年6月24日")
+	out := string(got)
+
+	if strings.Contains(out, `<w:rFonts w:hint="eastAsia"/>`) {
+		t.Fatalf("expected hint-only eastAsia font tag to be stabilized")
+	}
+	if !strings.Contains(out, `w:eastAsia="Noto Sans CJK SC"`) {
+		t.Fatalf("expected eastAsia stable fallback font to be present")
+	}
+	if !strings.Contains(out, "功利型") {
+		t.Fatalf("expected static ESTP role text to remain present")
 	}
 }

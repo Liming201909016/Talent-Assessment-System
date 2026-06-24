@@ -116,7 +116,10 @@ func (h *TesterHandler) List(c *gin.Context) {
 			return db
 		}).
 		Select("t.id, t.paper_id, t.exam_id, t.id_number, t.name, t.age, t.gender, t.password, t.telephone, t.affiliation, t.depart, t.post, t.degree, t.major, t.stu_flag, t.status, t.del_flag, t.end_time, t.pdf_path, t.pdf_flag, t.update_time, COALESCE(pa.create_time, t.create_time) AS create_time, pa.user_time, ea.title, rp.code AS repo_code").
-		Order("COALESCE(pa.create_time, t.create_time) desc").
+		// FB-040: 以 t.id desc 作 tie-breaker。导入时整个文件共享同一个 now 时间戳（精度到秒），
+		// 两次 import 间隔<1秒时 6 行 create_time 完全相同会导致不同测评的人员交错。
+		// 雪花 ID 单调递增，同一次 import 的多行 ID 连续，以 id desc 作次序可保证同测评行聚集。
+		Order("COALESCE(pa.create_time, t.create_time) desc, t.id desc").
 		Offset((pageNum - 1) * pageSize).Limit(pageSize).
 		Scan(&rows)
 	// 填充 answerNum
