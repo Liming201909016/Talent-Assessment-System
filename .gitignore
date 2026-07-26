@@ -1,16 +1,7 @@
-# === 只推送 Go 源码，排除其他一切 ===
+# === 项目源码、前端、文档、迁移与测试脚本均纳入版本控制 ===
 
 # Legacy Java System（只读参考，不推送）
 Legacy Java System/
-
-# 文档
-docs/
-
-# 脚本（测试、工具、DB、数据）
-scripts/
-
-# Copilot 规则（本地使用）
-.github/
 
 # Build artifacts
 Go-based Refactored System/bin/
@@ -18,9 +9,32 @@ Go-based Refactored System/logs/
 Go-based Refactored System/tmp/
 Go-based Refactored System/ruoyi-ui/node_modules/
 Go-based Refactored System/ruoyi-ui/dist/
+Go-based Refactored System/ruoyi-ui/coverage/
+Go-based Refactored System/ruoyi-ui/screenshots/
+Go-based Refactored System/coverage.out
+Go-based Refactored System/coverage.html
 
-# 前端源码（Vue，不推送）
-Go-based Refactored System/ruoyi-ui/
+# Script dependencies and generated test artifacts
+scripts/test/node_modules/
+scripts/test/screenshots/
+scripts/test/results/
+scripts/test/*.png
+scripts/logs/
+**/__pycache__/
+*.pyc
+scripts/test/archive/
+scripts/tools/archive/
+scripts/test/*.js
+scripts/test/*.ps1
+scripts/tools/*.js
+scripts/tools/*.ps1
+!scripts/test/competency-mobile-ui-test.js
+!scripts/test/competency-answer-flow-e2e.js
+!scripts/test/competency-submit-guard-e2e.js
+!scripts/test/staging-admin-browser-e2e.js
+
+# User-specific editor settings
+.vscode/
 
 # Environment files
 *.env.local

@@ -1,6 +1,8 @@
 package router
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/config"
 	"github.com/talent-assessment/refactored/internal/handler"
@@ -25,6 +27,13 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 	repoH := handler.NewRepoHandler(db)
 	quH := handler.NewQuHandler(db)
 	examH := handler.NewExamHandler(db, cfg)
+	competencyReportH := handler.NewCompetencyReportHandler(db, examH)
+	competencyDimensionH := handler.NewCompetencyDimensionHandler(db)
+	competencyImportH := handler.NewCompetencyImportHandler(db)
+	competencyRuntimeH := handler.NewCompetencyRuntimeHandler(db, cfg)
+	competencyWorker := service.NewCompetencyExpiryWorker(db, cfg, competencyRuntimeH.RuntimeService())
+	competencyWorkerContext, stopCompetencyWorker := context.WithCancel(context.Background())
+	competencyWorker.Start(competencyWorkerContext)
 	testerH := handler.NewTesterHandler(db, cfg)
 	userExamH := handler.NewUserExamHandler(db)
 	paperH := handler.NewPaperHandler(db)
@@ -236,6 +245,44 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 		examGrp.POST("/review-paging", examH.ReviewPaging)
 	}
 
+	// 胜任力维度（管理员测评配置）
+	competencyDimensionGrp := api.Group("/competency/dimensions")
+	{
+		competencyDimensionGrp.POST("/list", competencyDimensionH.List)
+		competencyDimensionGrp.POST("/update", competencyDimensionH.Update)
+	}
+	competencyQuestionGrp := api.Group("/competency/questions")
+	{
+		competencyQuestionGrp.POST("/paging", competencyDimensionH.QuestionPaging)
+		competencyQuestionGrp.POST("/update", competencyDimensionH.QuestionUpdate)
+		competencyQuestionGrp.GET("/import-template", competencyImportH.ImportTemplate)
+		competencyQuestionGrp.POST("/import-preview", competencyImportH.ImportPreview)
+		competencyQuestionGrp.POST("/import", competencyImportH.Import)
+	}
+	competencyExamGrp := api.Group("/competency/exams")
+	{
+		competencyExamGrp.POST("/publish", competencyRuntimeH.Publish)
+	}
+	competencyParticipantGrp := api.Group("/competency/participant")
+	{
+		competencyParticipantGrp.POST("/create-paper", competencyRuntimeH.CreatePaper)
+		competencyParticipantGrp.POST("/paper-detail", competencyRuntimeH.PaperDetail)
+		competencyParticipantGrp.POST("/fill-answer", competencyRuntimeH.FillAnswer)
+		competencyParticipantGrp.POST("/submit", competencyRuntimeH.Submit)
+	}
+	competencyResultGrp := api.Group("/competency/results")
+	{
+		competencyResultGrp.POST("/paging", competencyRuntimeH.ResultsPaging)
+		competencyResultGrp.POST("/detail", competencyRuntimeH.ResultDetail)
+	}
+	competencyReportGrp := api.Group("/competency/reports")
+	{
+		competencyReportGrp.POST("/generate", competencyReportH.Generate)
+		competencyReportGrp.GET("/download", competencyReportH.Download)
+	}
+	api.GET("/competency/admin/report-data", competencyRuntimeH.AdminReportData)
+	api.GET("/competency/internal/report-data", competencyRuntimeH.InternalReportData)
+
 	// tester
 	testerGrp := api.Group("/tester")
 	{
@@ -380,6 +427,7 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 
 	// shutdown 钩子：关闭 chromedp pool 等资源
 	shutdown := func() {
+		stopCompetencyWorker()
 		examH.Close()
 	}
 	return r, shutdown

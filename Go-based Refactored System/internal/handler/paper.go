@@ -178,6 +178,10 @@ func (h *PaperHandler) Delete(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
+	if err := rejectDirectCompetencyDelete(h.db, "paper", b.IDs); err != nil {
+		response.RestErr(c, err.Error())
+		return
+	}
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		// 1. 删除答案记录
 		if err := tx.Exec("DELETE FROM el_paper_qu_answer WHERE paper_id IN ?", b.IDs).Error; err != nil {
@@ -226,6 +230,10 @@ func (h *PaperHandler) CreatePaper(c *gin.Context) {
 	var exam model.Exam
 	if err := h.db.Where("id = ?", b.ExamID).First(&exam).Error; err != nil {
 		response.RestErr(c, "考试不存在！")
+		return
+	}
+	if err := requireLegacyExam(&exam); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "考试不存在！"))
 		return
 	}
 	switch exam.State {
@@ -431,6 +439,10 @@ func (h *PaperHandler) PaperDetail(c *gin.Context) {
 		response.RestErr(c, "试卷不存在")
 		return
 	}
+	if err := requireLegacyPaper(h.db, id); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
+		return
+	}
 	var er model.ExamRepo
 	var repo model.Repo
 	if err := h.db.Where("exam_id = ?", paper.ExamID).Take(&er).Error; err == nil {
@@ -495,6 +507,10 @@ func (h *PaperHandler) QuDetail(c *gin.Context) {
 		response.RestErr(c, "参数错误")
 		return
 	}
+	if err := requireLegacyPaper(h.db, b.PaperID); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
+		return
+	}
 	var pq model.PaperQu
 	if err := h.db.Where("paper_id = ? AND qu_id = ?", b.PaperID, b.QuID).First(&pq).Error; err != nil {
 		response.RestErr(c, "题目不存在")
@@ -542,6 +558,10 @@ func (h *PaperHandler) FillAnswer(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&b); err != nil || b.PaperID == "" || b.QuID == "" {
 		response.RestErr(c, "参数错误")
+		return
+	}
+	if err := requireLegacyPaper(h.db, b.PaperID); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
 		return
 	}
 	// 未作答 → 直接返回
@@ -652,9 +672,16 @@ func (h *PaperHandler) HandExam(c *gin.Context) {
 		response.RestErr(c, "id 为空")
 		return
 	}
+	if err := requireLegacyPaper(h.db, id); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
+		return
+	}
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var paper model.Paper
 		if err := tx.Where("id = ?", id).First(&paper).Error; err != nil {
+			return err
+		}
+		if err := requireLegacyPaper(tx, id); err != nil {
 			return err
 		}
 		if paper.State != paperStateING {
@@ -689,6 +716,10 @@ func (h *PaperHandler) HandExam(c *gin.Context) {
 		return tx.Save(&paper).Error
 	})
 	if err != nil {
+		if errors.Is(err, ErrLegacyPaperNotFound) || errors.Is(err, ErrCompetencyDedicatedAPI) || errors.Is(err, ErrInvalidAssessmentMode) {
+			response.RestErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
+			return
+		}
 		response.RestErr(c, err.Error())
 		return
 	}
@@ -745,6 +776,10 @@ func (h *PaperHandler) PaperResult(c *gin.Context) {
 		response.RestErr(c, "不存在")
 		return
 	}
+	if err := requireLegacyPaper(h.db, id); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "不存在"))
+		return
+	}
 	type quRow struct {
 		model.PaperQu
 		Content string `gorm:"column:content" json:"content"`
@@ -784,6 +819,10 @@ func (h *PaperHandler) PaperQuDetail(c *gin.Context) {
 	var paper model.Paper
 	if err := h.db.Where("id = ?", id).First(&paper).Error; err != nil {
 		response.RestErr(c, "试卷不存在")
+		return
+	}
+	if err := requireLegacyPaper(h.db, id); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
 		return
 	}
 	var er model.ExamRepo
@@ -930,6 +969,10 @@ func (h *PaperHandler) PaperStandScore(c *gin.Context) {
 	id := bindID(c)
 	if id == "" {
 		response.RestErr(c, "id 为空")
+		return
+	}
+	if err := requireLegacyPaper(h.db, id); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
 		return
 	}
 	var qs []struct {

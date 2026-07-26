@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,21 @@ import (
 var quExcelHeaders = []string{
 	"题目序号", "题目类型", "题目内容", "整体解析", "题目图片", "题目视频",
 	"所属题库", "是否正确项", "选项内容", "选项解析", "选项图片", "题目标题",
+}
+
+func validateImportRepositoryIDs(tx *gorm.DB, repoIDs []string) error {
+	repoIDs = normalizeBatchIDs(repoIDs)
+	if len(repoIDs) == 0 {
+		return nil
+	}
+	var count int64
+	if err := tx.Model(&model.Repo{}).Where("id IN ?", repoIDs).Count(&count).Error; err != nil {
+		return err
+	}
+	if int(count) != len(repoIDs) {
+		return fmt.Errorf("导入文件引用了不存在的题库")
+	}
+	return nil
 }
 
 // POST /exam/api/qu/qu/import/template
@@ -122,10 +138,10 @@ func (h *QuHandler) ImportExcel(c *gin.Context) {
 
 	// 分组数据
 	type optRow struct {
-		aIsRight string
-		aContent string
+		aIsRight  string
+		aContent  string
 		aAnalysis string
-		aImage   string
+		aImage    string
 	}
 	type quBlock struct {
 		no       string
@@ -195,29 +211,33 @@ func (h *QuHandler) ImportExcel(c *gin.Context) {
 		return
 	}
 
-	// 确保 sheet 标题对应的 repo 存在
+	// sheet题库、题目、答案、关联和统计必须作为一个原子批次提交。
 	now := time.Now()
 	var repo model.Repo
-	err = h.db.Where("title = ?", title).First(&repo).Error
-	if err == gorm.ErrRecordNotFound {
-		repo = model.Repo{
-			ID:         strconv.FormatInt(nextID(), 10),
-			Code:       "",
-			Title:      title,
-			CreateTime: &now,
-			UpdateTime: &now,
-		}
-		if e := h.db.Create(&repo).Error; e != nil {
-			response.RestErr(c, e.Error())
-			return
-		}
-	} else if err != nil {
-		response.RestErr(c, err.Error())
-		return
-	}
-
 	okN := 0
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Where("title = ?", title).First(&repo).Error
+		if err == gorm.ErrRecordNotFound {
+			repo = model.Repo{
+				ID: strconv.FormatInt(nextID(), 10), Code: "", Title: title,
+				CreateTime: &now, UpdateTime: &now,
+			}
+			if err := tx.Create(&repo).Error; err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+
+		extraRepoIDs := make([]string, 0)
+		for _, no := range order {
+			extraRepoIDs = append(extraRepoIDs, blocks[no].repoIDs...)
+		}
+		extraRepoIDs = normalizeBatchIDs(extraRepoIDs)
+		if err := validateImportRepositoryIDs(tx, extraRepoIDs); err != nil {
+			return err
+		}
+
 		for _, no := range order {
 			blk := blocks[no]
 			if blk.content == "" || len(blk.options) == 0 {
@@ -249,12 +269,14 @@ func (h *QuHandler) ImportExcel(c *gin.Context) {
 				if rid == repo.ID {
 					continue
 				}
-				_ = tx.Create(&model.QuRepo{
+				if err := tx.Create(&model.QuRepo{
 					ID:     strconv.FormatInt(nextID()+int64(len(rid)), 10),
 					QuID:   quID,
 					RepoID: rid,
 					QuType: blk.quType,
-				}).Error
+				}).Error; err != nil {
+					return err
+				}
 			}
 			// 答案项
 			for idx, opt := range blk.options {
@@ -275,14 +297,20 @@ func (h *QuHandler) ImportExcel(c *gin.Context) {
 			}
 			okN++
 		}
+		affectedRepoIDs := append(extraRepoIDs, repo.ID)
+		affectedRepoIDs = normalizeBatchIDs(affectedRepoIDs)
+		sort.Strings(affectedRepoIDs)
+		for _, repoID := range affectedRepoIDs {
+			if err := refreshRepoStat(tx, repoID); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		response.RestErr(c, err.Error())
 		return
 	}
-	// 更新 repo 统计（radio_count/multi_count/judge_count）
-	_ = refreshRepoStat(h.db, repo.ID)
 	response.Rest(c, gin.H{"message": fmt.Sprintf("导入 %d 题", okN)})
 }
 
@@ -297,7 +325,9 @@ func (h *QuHandler) Export(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 	quType := toIntPtr(req.QuTypeRaw)
 
-	q := h.db.Table("el_qu AS q").Select("q.id, q.qu_type, q.content, q.analysis, q.image")
+	q := h.db.Table("el_qu AS q").
+		Select("q.id, q.qu_type, q.content, q.analysis, q.image").
+		Where("q.dimension_id IS NULL")
 	if req.Title != "" {
 		q = q.Where("q.content like ?", "%"+req.Title+"%")
 	}
@@ -315,8 +345,20 @@ func (h *QuHandler) Export(c *gin.Context) {
 		Analysis string `gorm:"column:analysis"`
 		Image    string `gorm:"column:image"`
 	}
-	var qus []quRow
-	q.Scan(&qus)
+	qus := make([]quRow, 0)
+	if err := q.Scan(&qus).Error; err != nil {
+		response.RestErr(c, "查询导出题目失败")
+		return
+	}
+	questionIDs := make([]string, 0, len(qus))
+	for _, question := range qus {
+		questionIDs = append(questionIDs, question.ID)
+	}
+	answersByQuestion, repositoriesByQuestion, err := loadQuestionPageRelations(h.db, questionIDs)
+	if err != nil {
+		response.RestErr(c, "查询导出题目关联数据失败")
+		return
+	}
 
 	f := excelize.NewFile()
 	defer f.Close()
@@ -334,11 +376,12 @@ func (h *QuHandler) Export(c *gin.Context) {
 	for i, qu := range qus {
 		no := strconv.Itoa(i + 1)
 
-		// 查该题所属题库 id 列表
-		var repoIDs []string
-		h.db.Table("el_qu_repo").Where("qu_id = ?", qu.ID).Pluck("repo_id", &repoIDs)
-		var answers []model.QuAnswer
-		h.db.Where("qu_id = ?", qu.ID).Find(&answers)
+		repositories := repositoriesByQuestion[qu.ID]
+		repoIDs := make([]string, 0, len(repositories))
+		for _, repository := range repositories {
+			repoIDs = append(repoIDs, repository.RepoID)
+		}
+		answers := answersByQuestion[qu.ID]
 		if len(answers) == 0 {
 			// 仍然写一行题目
 			writeRow(f, sheet, rowIdx, []any{no, qu.QuType, qu.Content, qu.Analysis, qu.Image, "", strings.Join(repoIDs, ","), "", "", "", "", ""})

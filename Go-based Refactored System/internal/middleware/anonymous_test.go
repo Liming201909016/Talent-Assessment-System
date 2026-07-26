@@ -1,6 +1,14 @@
 package middleware
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/talent-assessment/refactored/internal/config"
+	"github.com/talent-assessment/refactored/internal/service"
+)
 
 // ============================================================
 // 回归测试 — FB-033 移动端预览页 401 异常
@@ -41,5 +49,96 @@ func TestBugFB033_TesterIdNumberIsAnonymous(t *testing.T) {
 				t.Errorf("IsAnonymous(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCompetencyParticipantRoutesUseExactMethodAndPath(t *testing.T) {
+	participantPaths := []string{
+		"/exam/api/competency/participant/create-paper",
+		"/exam/api/competency/participant/paper-detail",
+		"/exam/api/competency/participant/fill-answer",
+		"/exam/api/competency/participant/submit",
+	}
+	for _, path := range participantPaths {
+		t.Run("POST "+path, func(t *testing.T) {
+			if !IsAnonymousMethod("POST", path) {
+				t.Fatalf("POST %s must pass JWT middleware for participant flow", path)
+			}
+		})
+		for _, method := range []string{"GET", "PUT", "DELETE", "PATCH"} {
+			t.Run(method+" "+path, func(t *testing.T) {
+				if IsAnonymousMethod(method, path) {
+					t.Fatalf("%s %s must not be anonymous", method, path)
+				}
+			})
+		}
+		t.Run("POST suffix "+path, func(t *testing.T) {
+			if IsAnonymousMethod("POST", path+"/admin") {
+				t.Fatalf("POST %s/admin must not match by prefix", path)
+			}
+		})
+	}
+}
+
+func TestCompetencyManagementRoutesRequireAdminJWT(t *testing.T) {
+	paths := []string{
+		"/exam/api/competency/dimensions/paging",
+		"/exam/api/competency/questions/paging",
+		"/exam/api/competency/exams/publish",
+		"/exam/api/competency/results/paging",
+		"/exam/api/competency/results/detail",
+		"/exam/api/competency/admin/report-data",
+	}
+	for _, path := range paths {
+		if IsAnonymous(path) || IsAnonymousMethod("POST", path) {
+			t.Errorf("management route must require admin JWT: %s", path)
+		}
+	}
+}
+
+func TestCompetencyInternalReportRouteIsExact(t *testing.T) {
+	path := "/exam/api/competency/internal/report-data"
+	if !IsAnonymousMethod("GET", path) {
+		t.Fatal("internal report route must pass JWT middleware for Chromedp and validate its internal token in the handler")
+	}
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{"POST", path},
+		{"GET", path + "/extra"},
+		{"GET", "/exam/api/competency/internal"},
+	} {
+		if IsAnonymousMethod(tc.method, tc.path) {
+			t.Errorf("unexpected anonymous internal report route: %s %s", tc.method, tc.path)
+		}
+	}
+}
+
+func TestCompetencyAnonymousRouting_HTTPMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{Jwt: config.JwtCfg{Header: "Authorization"}}
+	auth := service.NewAuthService(cfg, nil, nil)
+	router := gin.New()
+	router.Use(JWT(cfg, auth))
+	router.POST("/exam/api/competency/participant/create-paper", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	router.POST("/exam/api/competency/participant/create-paper/admin", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	allowed := httptest.NewRecorder()
+	allowedReq := httptest.NewRequest(http.MethodPost, "/exam/api/competency/participant/create-paper", nil)
+	router.ServeHTTP(allowed, allowedReq)
+	if allowed.Code != http.StatusNoContent {
+		t.Fatalf("exact participant route status = %d, want %d", allowed.Code, http.StatusNoContent)
+	}
+
+	blocked := httptest.NewRecorder()
+	blockedReq := httptest.NewRequest(http.MethodPost, "/exam/api/competency/participant/create-paper/admin", nil)
+	router.ServeHTTP(blocked, blockedReq)
+	if blocked.Code != http.StatusUnauthorized {
+		t.Fatalf("suffix route status = %d, want %d", blocked.Code, http.StatusUnauthorized)
 	}
 }

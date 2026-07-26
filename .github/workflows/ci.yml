@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'Go-based Refactored System/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'Go-based Refactored System/**'
+
+# 取消同分支上的旧运行
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: 'Go-based Refactored System'
+
+jobs:
+  # ===== Job 1: Go 后端测试 =====
+  go-test:
+    name: Go Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: 'Go-based Refactored System/go.sum'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Run tests with coverage
+        run: |
+          go test ./... -v -count=1 -coverprofile=coverage.out -covermode=atomic
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: 'Go-based Refactored System/coverage.out'
+          retention-days: 30
+
+  # ===== Job 2: golangci-lint =====
+  go-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: 'Go-based Refactored System/go.sum'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61
+          working-directory: 'Go-based Refactored System'
+          args: --timeout=5m
+
+  # ===== Job 3: 安全扫描 (gosec) =====
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          args: '-fmt=sarif -out=gosec-results.sarif -exclude=G104,G304,G115 ./Go-based\ Refactored\ System/...'
+        continue-on-error: true
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec-results.sarif
+        continue-on-error: true
+
+  # ===== Job 4: 前端 lint (ESLint) =====
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 'Go-based Refactored System/ruoyi-ui'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'Go-based Refactored System/ruoyi-ui/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+        continue-on-error: true
+
+      - name: ESLint
+        run: npx eslint --ext .js,.vue src/ --max-warnings 100
+        continue-on-error: true
+
+  # ===== Job 5: 前端单元测试 (Vitest) =====
+  frontend-test:
+    name: Frontend Test (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 'Go-based Refactored System/ruoyi-ui'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'Go-based Refactored System/ruoyi-ui/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+        continue-on-error: true
+
+      - name: Run Vitest
+        run: npm test
+        continue-on-error: true
+
+      - name: Generate coverage
+        run: npm run test:coverage
+        continue-on-error: true
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: 'Go-based Refactored System/ruoyi-ui/coverage'
+          retention-days: 14

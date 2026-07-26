@@ -345,7 +345,12 @@ func (h *TesterHandler) Remove(c *gin.Context) {
 		response.AjaxErr(c, "ids 为空")
 		return
 	}
-	if err := h.db.Table("el_tester").Where("id IN (?)", splitCsv(ids)).Delete(nil).Error; err != nil {
+	parsedIDs := splitCsv(ids)
+	if err := rejectDirectCompetencyDelete(h.db, "tester", parsedIDs); err != nil {
+		response.AjaxErr(c, err.Error())
+		return
+	}
+	if err := h.db.Table("el_tester").Where("id IN (?)", parsedIDs).Delete(nil).Error; err != nil {
 		response.AjaxErr(c, err.Error())
 		return
 	}
@@ -360,8 +365,13 @@ func (h *TesterHandler) Logistic(c *gin.Context) {
 		response.AjaxErr(c, "ids 为空")
 		return
 	}
+	parsedIDs := splitCsv(ids)
+	if err := rejectDirectCompetencyDelete(h.db, "tester", parsedIDs); err != nil {
+		response.AjaxErr(c, err.Error())
+		return
+	}
 	if err := h.db.Table("el_tester").
-		Where("id IN (?)", splitCsv(ids)).
+		Where("id IN (?)", parsedIDs).
 		Updates(map[string]any{"del_flag": "1", "update_time": time.Now()}).Error; err != nil {
 		response.AjaxErr(c, err.Error())
 		return

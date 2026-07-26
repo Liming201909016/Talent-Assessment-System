@@ -1,0 +1,287 @@
+# Project Memory
+
+## 2026-06-24
+
+- 项目规则要求维护本文件；本次任务开始时文件不存在，已补建。
+- MBTI 完整版 PDF 方框字根因：LibreOffice/Linux 对 DOCX 中复杂 `w14:*` 特效、风险字体族、以及仅有 `w:hint="eastAsia"` 的静态正文 run 进行字体 fallback/subset 时不稳定；文本层可提取正常，但渲染层出现方框。
+- 已验证生产 ESTP 样本：旧文件 `ESTP_ESTP_20260624193941.pdf` 有方框；部署 FB-044 后强制重生成 `ESTP_ESTP_20260624201230.pdf`，第 4-7 页渲染图未见方框。
+- 后端兜底链路：`replaceDocumentFields` 全局剥离 `w14:textFill` / `w14:props3d`；归一化风险字体族；为 hint-only 东亚字体补齐 `Noto Sans CJK SC`；同时归一化 `styles.xml` / `fontTable.xml` 中的不稳定 CJK 字体声明。
+- 生产后端当前已部署 md5：`a8110e41c837a99365e6246d4a910a44`，服务 `talent-assessment` active，`/health` 返回 HTTP 200。
+- 生产验证脚本：`scripts/tools/recheck-estp-production.ps1` 可用于同一 ESTP 记录强制重生成并下载第 4-7 页渲染图。
+
+## 2026-07-24
+
+- 胜任力测验需求基线已形成：客户可从 48 个维度任意组合；每个所选维度的全部启用题目进入测评；每位受测者首次组卷时对全题池独立纯随机，题序随后固定。
+- 胜任力题目统一使用五级量表；正向题按 1/2/3/4/5 计分，反向题按 5/4/3/2/1 计分；一道题只属于一个维度，考察点仅作题目说明。
+- 维度得分为该维度题目最终分的平均值；整体得分为本次各维度得分之和；全部题目必答，限时到期自动提交；到期未答题仅按已答题计算并标记未完整作答；受测者默认不能查看结果。
+- 参考文件 `docs/2600724胜任力测验维度.xlsx` 已核验：Sheet1 恰有 48 个连续维度，无缺号、重号、重名或缺失核心含义；基层通用 10 项、管理通用 38 项。
+- 胜任力报告采用 1.00–5.00 等距四档；正式分级解读、典型行为和发展建议由客户提供；参考表第 42 项正式名称由“权利动机”修正为“权力动机”。
+- 最终需求基线位于 `docs/competency-assessment-requirements.md`；业务规则已确认，当前仅待客户交付 48 维度正式报告文案。
+- 胜任力题目采用 AI 分批生成与人工审核：每批 4 个维度，每维度首轮 8 道中性职场题（默认 6 正向、2 反向），共规划 12 批；AI 初稿不得跳过内容审核和预测试直接用于人才决策。
+- 第 1 批 D01–D04 共 32 道候选题已完成独立内容审查，审阅稿为 `docs/competency-question-bank-review-batch-01.md`；48 维度进度台账为 `docs/competency-question-bank-progress.md`，当前状态为第 1 批待人工审核、其余未生成。
+- 第 2 批 D05–D08 共 32 道候选题已完成独立内容审查，审阅稿为 `docs/competency-question-bank-review-batch-02.md`；D05–D08 已在进度台账中标记为待人工审核，当前累计完成 8 个维度、64 道候选题。
+- 第 2 批预测试重点：D05 与适应性区分；D06 与主动性/创新性/认知动机区分；D07 按跨部门协作机会检查岗位公平性；D08 与逻辑思维/问题解决/归纳总结区分。
+- 第 3 批 D09–D12 共 32 道测试题已完成一次独立内容审查并修订；D11、D12 后续应按战略信息接触和团队影响机会检查岗位公平性。
+- [纠正 - 2026-07-24] 上述“仅第 1/2 批完成、其余未生成”的阶段状态已过时。按用户“仅测试用、一次完成”的要求，D01–D48 共 12 批、384 道测试题现已全部生成；每维度 8 道（6 正向、2 反向），全部明确标记为未经过信效度验证。
+- 全量最小机械校验已通过：12 个批次文件、48 个维度、384 个唯一题号，无完全重复题干；进度台账 `docs/competency-question-bank-progress.md` 已更新为 V2.0。D13–D48 未逐批做深度内容审查，仅供系统测试与后续人工审阅，不得直接用于正式人才决策。
+- 胜任力落地实施设计已形成，基线文档为 `docs/competency-assessment-implementation-plan.md`；当前尚未修改业务代码、数据库或生产环境。
+- 已确认架构：新增显式 `assessment_type=competency` / `scoring_mode=competency_average`，现有 001/002/003 行为冻结；48 维度为独立主数据，不建成 48 个题库。
+- 已确认历史一致性方案：测评发布时冻结维度和全部启用题目的元数据/选项分值快照；个人组卷只读发布快照，使用安全随机源执行全题池 Fisher–Yates 并固化题序。
+- 已确认计分事实来源：胜任力使用专属维度结果和整体结果表保存 DECIMAL 成绩，现有整数 `obj_score` / `user_score` / `el_user_exam.max_score` 不承载胜任力小数成绩。
+- 已确认到期提交采用前端触发与后端过期 Worker 双保险，提交服务使用行锁、唯一索引和状态检查保证幂等；受测者接口使用精确匿名路径和参与者/试卷令牌，管理结果与报告保持管理员权限。
+- 数据库变更必须使用 `scripts/sql/` 下兼容 MySQL 5.7 的显式幂等迁移，不使用 `AutoMigrate` 或 `ORDER BY RAND()`；下一步只实施阶段 1，按 1A 安全分流基线 → 1B Schema、48 维度、题目导入与纯计分引擎执行，完成验证后再等待确认。
+- 胜任力阶段 1A 已启动：`docs/business-branches.md` 已补充显式类型分流、精确匿名路由、参与者/试卷令牌和旧 paper API 隔离矩阵；共识别 41 个待覆盖业务分支（40 个 P0、1 个 P1）及 6 个验收门禁，业务代码尚未修改。
+- 胜任力阶段 1A 首个切片已完成 RED→GREEN：RED 时精确参与者 POST 路由和内部报告 GET 路由共 6 项测试失败，Service 因缺少类型/令牌实现而 build failed；实现后相关测试 66 项通过。
+- 新增 `internal/service/competency_security.go`：只允许 legacy+legacy、competency+competency_average 两种类型组合；胜任力参与者/试卷令牌使用 HS512、强制 exp、purpose、participant/exam/paper 绑定，错误不回显 token 或 secret。
+- `internal/middleware/middleware.go` 已增加 method+path 精确匿名规则：仅 4 个参与者 POST 和内部报告 GET；不同 method、后缀路径和管理/结果接口保持后台 JWT 拦截。真实 httptest 验证精确路径返回 204、后缀路径返回 401。
+- 2026-07-24 验证：`Go: Build` 通过；`Go: Test All` 通过；4 个改动 Go 文件诊断为 0。阶段 1A 尚未完成：旧 Paper/标准分 API 的胜任力隔离需等待阶段 1B Schema 增加 `assessment_type` 后接入，API quick regression 也保留到该切片完成后执行。
+- 胜任力阶段 1B Schema 首个切片已完成 RED→GREEN：RED 时 `Exam` 缺少 5 个字段且迁移文件不存在（2 项失败）；新增模型字段和迁移后 2 项专项测试通过。
+- 新增 `scripts/sql/competency_001_schema.sql`：兼容 MySQL 5.7，以 `information_schema + PREPARE` 幂等增加 `assessment_type`、`scoring_mode`、`publish_status`、`published_at`、`published_by` 和 `idx_exam_assessment_publish`；只新增结构，不删除或覆盖数据，旧记录默认 legacy+legacy+已发布。
+- `model.Exam` 已同步上述 5 个字段；新增静态测试验证字段 tag、MySQL 5.7 幂等片段，并禁止 `ADD/CREATE ... IF NOT EXISTS`、`AutoMigrate`、DROP。
+- 新增本地工具 `scripts/tools/apply-local-migration.js`，从本地配置读取 DSN、使用现有 mysql2 执行指定迁移且不打印连接串或密码；`node --check` 通过。
+- [未验证 - 2026-07-24] 本地迁移实际执行失败：配置端点 `127.0.0.1:23306` 返回 `ECONNREFUSED`，因此本地数据库尚未新增字段/索引，也未取得 SQL 查询结果。`Go: Build` 与 `Go: Test All` 均通过，但在迁移成功前不可启动使用新增 `Exam` 模型的运行时服务。
+- [新增确认 - 2026-07-24] 胜任力报告分为基层员工版和领导人员版。选择环节固定在测评配置阶段，发布后冻结；两个版本共用同一 Vue/PDF 模板、模块、得分、等级、维度顺序和图表，仅总体评价与发展建议文案不同。
+- 报告对象使用独立字段 `competency_report_audience`（`frontline_employee` / `leader`），不复用历史 `stu_flag`；报告生成时从结果/报告快照读取版本，不能临时选择或回退到另一版本。
+- 已将 `competency_report_audience` 纳入尚未执行的 `competency_001_schema.sql` 和 `model.Exam`；新增白名单校验。RED 时模型/迁移缺字段共 2 项失败，GREEN 后专项测试 35 项通过，`Go: Build` 与 `Go: Test All` 全部通过，相关文件诊断为 0。
+- 正式文案匹配键已确定：总体评价按“报告对象 + 总体等级 + 内容版本”，发展建议按“报告对象 + 维度 + 得分等级 + 内容版本”。目标版本文案缺失时生产报告必须失败，不得自动编造或使用另一版本。
+- [实现 - 2026-07-24] 创建/编辑测评表单已增加“传统测评/胜任力测评”类别。选择胜任力后，可选择基层员工版或领导人员版，并从 48 维度中多选；传统题库组卷控件自动隐藏，发布后报告版本和维度只读。
+- 新增 `el_competency_dimension` / `el_exam_competency_dimension` 模型和 `scripts/sql/competency_002_dimensions.sql`；迁移包含 48 条幂等主数据、唯一约束和 D42“权力动机”，不删除数据且不覆盖管理员维护的 status。
+- 新增管理员 API `POST /exam/api/competency/dimensions/list`；测评 Save 入口校验类型、报告版本、至少一个且不重复的维度，并在事务中拒绝不存在/停用维度、批量保存关联；Detail/Paging 返回类型、报告版本、发布状态和已选维度。
+- 已发布胜任力测评的报告版本和维度集合在后端禁止修改；前端同步只读。草稿可编辑并恢复选择；删除无业务关联的测评会清理维度配置关联。
+- 创建配置切片 RED：缺少维度校验函数、模型和 002 迁移导致 service/model build failed。GREEN：专项 Go+Vue 测试 45 项通过；前端全量 Vitest 6 文件 67 项通过；Go Build、Go Test All、前端 production build 均通过。
+- 前端 production build 仍有 3 个既有 warning：`paper/paper/index.vue` 引用不存在的 `listCaptures` 导出，以及 asset/entrypoint size 超限；本切片未引入新的编译错误。
+- [未验证 - 2026-07-24] 因本地 MySQL `127.0.0.1:23306` 仍拒绝连接，001/002 迁移、维度 API、测评保存/详情数据库往返和浏览器真实操作尚未验证；不得部署或启动依赖新增表结构的后端。
+- [环境纠正 - 2026-07-24] 用户确认 `pg-azure-dev01.postgres.database.azure.com` 为误提供地址，本项目继续使用单机 MySQL，目标环境为 staging，不迁移 PostgreSQL。
+- 工作区规则仍将 `20.200.136.133` 定义为 production，不能作为 staging 使用。2026-07-24 只读连通性检查显示该地址 TCP/22 不可达，SSH `ConnectTimeout=10` 超时；未登录、未执行 SQL、未上传或部署。继续 staging 验证前需取得正确的 staging 主机/IP 和 SSH 用户/密钥对应关系。
+[纠正 - 2026-07-24] 用户明确确认上述环境归属已变更：`20.200.136.133` 当前为 staging，允许用于本次单机 staging 迁移和验证；仍禁止将本次变更发布到其他 production 环境。此前 SSH 超时事实仍有效，需要查证用户/密钥并按重试纪律处理。
+- staging 历史脚本确认 SSH 用户/密钥为 `liming` + `~/.ssh/vm-ubuntu-go-dev_key.pem`，不是 `vm-positive-dev-key.pem`；使用正确组合和 `ConnectTimeout=20` 重试仍超时。
+- staging HTTP 状态已验证：`http://20.200.136.133/` 可访问登录页，`/prod-api/health` 返回 `{"status":"ok"}`，说明应用在线但管理端口 22 被网络策略阻断。
+- 当前 Azure CLI 已登录，但当前账号可访问的全部订阅均未找到公网 IP `20.200.136.133`，不能使用 Azure Run Command；该 VM 属于其他账号/订阅。
+- 当前客户端公网 IP 为 `20.239.176.250`；继续 staging 迁移需在该 VM 所属 NSG/防火墙临时允许来源 `20.239.176.250/32` 访问 TCP/22，或由有权限的账号执行 Run Command。
+- staging Linux 后端产物已重建：`Go-based Refactored System/bin/server-linux`，44,505,510 bytes，SHA-256 `5981f1277b68bfcd6bc8b4965dc89f02b52ebc5451f97443334971dee723680c`；前端 production build 已生成 dist。尚未上传或部署。
+- [纠正 - 2026-07-24 20:13 +08:00] staging SSH 已恢复：`20.200.136.133:22` TCP 可达，使用 `liming` + `~/.ssh/vm-ubuntu-go-dev_key.pem` 免交互认证成功；远端主机名 `vm-ubuntu-go-dev`，远端用户 `liming`。此前 SSH 超时状态已失效，可继续 staging 备份、迁移和部署流程。
+- [staging 发布 - 2026-07-24] 预检通过：talent-assessment/nginx/mysql 均 active，MySQL 8.0.45，根分区 61G、已用 6.6G（11%）；迁移前 element 有 46 表、60 个测评，胜任力字段/表均为 0。
+- staging MySQL 备份成功并通过 gzip 校验：`/opt/talent-assessment/backups/element_before_competency_20260724_201912.sql.gz`，12,081,209 bytes，SHA-256 `b9ddc6146ece2cb5672f3fb2ef67e7d93206126ed721c78bf7ecc15c7d8476c0`。
+- staging 001/002 迁移成功：el_exam 新增 6 个字段，`idx_exam_assessment_publish` 2 列，新增 2 张胜任力表；48 维度序号 1-48、code/name 各 48 唯一，D42=权力动机；60 个既有测评全部为 legacy+legacy+NULL audience+published，无非法组合。
+- [纠正 - 2026-07-24] 初次最终检查发现 staging `el_exam.id=utf8mb4_0900_ai_ci` 与新关联表 `exam_id=utf8mb4_general_ci` JOIN 报 MySQL 1267。`competency_002_dimensions.sql` 已改为动态继承 el_exam.id 字符集/collation，兼容 MySQL 8 staging 和 MySQL 5.7 general_ci；重跑后 `exam_id=utf8mb4_0900_ai_ci`，JOIN/孤儿检查通过。
+- staging 应用部署成功：远端应用备份为 `/opt/talent-assessment/server.bak.20260724_202321` 和 `/opt/talent-assessment/dist.bak.20260724_202321`；后端 SHA-256 `5981f1277b68bfcd6bc8b4965dc89f02b52ebc5451f97443334971dee723680c`，前端 index SHA-256 `678b36d53d012bfef4fff13f6c6b98d8236007ad2620f47060303f0b5aa91d44`，与本地产物一致；service/nginx active，内外 health 均返回 `{"status":"ok"}`，登录页 HTTP 200。
+- staging 真实 API 验证通过：维度列表 48；临时创建基层员工版+2维度草稿，Detail 回填一致；编辑为领导人员版+1维度，Detail 与 SQL 一致（competency|competency_average|leader|draft）；删除后 exam+关联残留 0，孤儿关联 0，临时 Redis 会话已清理。
+- staging 浏览器验证通过：管理端新建页可切换胜任力，报告版本显示基层员工版/领导人员版，48 维度按 VIRD 分组；实测选择领导人员版及 D01/D02 后计数为 2。旧测评管理页仍加载共 60 条，页面可见 001 学生/职场、002 基层/管理干部、003 MBTI 等既有记录。
+- staging 最终检查：TEMP_EXAMS=0、TEMP_ASSOCIATIONS=0、DIMENSIONS=48、DISPATCH_COLUMNS=6；部署后 journal 未发现 panic/fatal/unknown column/missing table/error。Go 全量测试在 collation 修复后再次通过。
+- [阶段 1B 题目/计分 - 2026-07-24] 已新增 `competency_003_questions.sql`，以 MySQL 5.7 兼容的 information_schema + PREPARE 方式幂等扩展 `el_qu` 的 question_code、dimension_id、dimension_item_no、observation_point、scoring_direction、question_status，并创建 3 个唯一/查询索引；dimension_id 动态继承维度主表 id 的 charset/collation。`model.Qu` 使用指针字段保留既有题 NULL 语义。
+- [阶段 1B 题目/计分 - 2026-07-24] 已新增无 HTTP/DB 依赖的纯计分引擎：正向 raw、反向 6-raw；按维度 ID 分组；未答题不进入分子/分母；零已答维度 score 为 nil 且不计入整体；使用 `math/big.Rat` 保持精确分数，最终显示才保留两位；总体评价按有效维度平均值进行 1/2/3/4/5 边界四档分级。
+- RED 证据：新增测试前 service build 因计分符号未定义失败，model 测试因 003 迁移不存在且 Qu 缺 6 字段失败。GREEN 证据：题目 Schema + 计分专项 6 项通过；`Go: Build` 通过；最新 `Go: Test All` 退出码 0。
+- staging 迁移前完整备份已成功：`/opt/talent-assessment/backups/element_before_competency_20260724_231128.sql.gz`，12,085,196 bytes，SHA-256 `0d9eed2810a57875d807ad6537f0befcc9d09b043d1c5d81720f56e818ef11d7`。001/002/003 和验证脚本已上传 `/tmp`。
+- [未验证 - 2026-07-24] staging 003 迁移连续 3 次 SSH 连接超时，均发生在远端命令启动前；因此 `el_qu` 尚未取得 6 字段、3 索引、collation 和旧题 NULL 状态的真实 SQL 证据。不得部署包含新 Qu 字段的后端，待 SSH 恢复后执行 `/tmp/staging-competency-migrate.sh`。
+- [纠正 - 2026-07-24 23:20 +08:00] 上述 SSH 阻塞已解除。TCP/22 可达并成功登录 `vm-ubuntu-go-dev`；`competency_003_questions.sql` 已在 staging 执行，并再次完整重跑 001/002/003 验证幂等性。
+- staging 003 实际 SQL 证据：`el_qu` 题目字段 6 个；三个索引共 5 个索引列；`el_qu.dimension_id` 与 `el_competency_dimension.id` 均为 `utf8mb4_general_ci`；既有题带胜任力元数据记录数为 0；第二次执行输出 `MIGRATION_RERUN_OK` 且所有计数不变。
+- 迁移后运行验证：`talent-assessment=active`、`nginx=active`、内部 health 返回 `{"status":"ok"}`；最终检查 PUBLIC_HEALTH 正常、登录页 HTTP 200、临时测评/关联均为 0，近期日志无 panic/fatal/unknown column/missing table/error。003 仅改变数据库 Schema，尚未部署本地新增后端二进制。
+- [阶段 1A 收口 - 2026-07-24] 已新增旧 Paper API 类型守卫：通过 `el_paper` 与 `el_exam` 的单次索引 JOIN 读取 assessment_type/scoring_mode，严格调用 `ValidateAssessmentMode`；记录不存在、查询失败、非法组合、胜任力分别返回受控错误，查询失败不得回退 legacy。
+- 守卫已覆盖旧 `CreatePaper`、`paper-detail`、`paperQu-detail`、`qu-detail`、`fill-answer`、`hand-exam`、`paper-result`、paper/tester/candidate 三类标准分入口。胜任力创建在 `createPaperTx` 前拒绝；答题在空答案快速成功和写事务前拒绝；交卷在写事务前及事务内聚合前双重检查；标准分在固定公式查询前拒绝。
+- RED 证据：实现前专项测试 10 个入口均缺守卫、守卫文件不存在、两个写入口未在事务前拒绝。GREEN 证据：运行时模式 + 入口顺序专项测试通过；相关 5 个 Go 文件诊断为 0；`Go: Build` 和最新 `Go: Test All` 均退出码 0。
+- [未验证 - 2026-07-24] API quick regression `chain-batch.js` 未进入测试链：它固定访问本机 127.0.0.1:8092，captcha 响应为 null，读取 uuid 时抛 TypeError。当前本地 MySQL 端口此前不可用，未为此次单个切片启动或部署服务；旧 001/002/003 的真实 API 回归保留为 ⚠️。
+- [阶段 1B 题目导入基础 - 2026-07-24] 已实现管理员三接口：GET 导入模板、POST 导入预览、POST 正式导入。模板固定九列、一题一行、无合并单元格；预览返回规范化成功行、全部失败行及文件 SHA-256，且不执行数据库写入。
+- 导入校验覆盖：维度序号 1-48、维度存在/启用、名称精确一致、题号与维度内题号在文件及数据库中唯一、题干/考察点必填、正向/反向、启用/停用；不包含每维度 7-8 题限制。空备注默认 `AI测试题-未信效度验证`。
+- 正式导入要求重传同一 xlsx 和 expectedHash，使用 constant-time 比较并重新执行完整校验；任一行错误不写入；全部有效时单事务 `CreateInBatches(100)` 写 `el_qu`，不创建五套固定 `el_qu_answer`。上传压缩文件限制 10MiB、解压限制 64MiB、单次最多 10000 题。
+- RED 证据：service 缺导入表头/数据结构/校验器，handler 缺导入 Handler，专项测试编译失败。GREEN 证据：导入 service/handler 专项全部通过；模板实读验证九列、示例及零合并；HTTP 验证缺文件、错误扩展名和 SHA-256 不一致；相关文件诊断 0；`Go: Build` 通过，最新 `Go: Test All` 退出码 0。
+- [未验证 - 2026-07-24] 本切片未部署 staging；正式导入的真实 MySQL 批量写入/回滚尚未执行。下一待办“验证数据库唯一约束”可与 staging 临时导入及清理一并验证，发布纪律要求先累计本地变更再确认统一部署。
+- [staging 唯一约束验证 - 2026-07-24] 使用事务临时题目验证两个索引：重复 `question_code=ZZ-CONSTRAINT-CODE-A` 被 MySQL 1062 拒绝，命中 `el_qu.uk_qu_question_code`；重复 `(dimension_id, dimension_item_no)=(competency-d01,900003)` 被 MySQL 1062 拒绝，命中 `el_qu.uk_qu_dimension_item`。
+- 验证前后 `el_qu` 均为 855 行，临时 ID/题号残留为 0；验证脚本带 EXIT cleanup 且 DELETE 使用主键 ID 条件。随后 staging PUBLIC_HEALTH 正常、登录页 HTTP 200、临时测评/关联为 0、近期错误日志为空。
+- [阶段 1B 启用题数校验 - 2026-07-24] 维度列表现通过一次 `GROUP BY dimension_id` 查询返回每维度 `questionCount`，无 N+1；创建/编辑胜任力草稿时在事务内一次查询所选维度启用题数，任一为 0 即以“维度编号 + 名称”拒绝，并在草稿关联中保存当前 `question_count`。
+- 前端维度选择器显示每维度启用题数和已选总题数；维度停用或启用题数为 0 时不可选择。RED：Go 因缺 `validateEnabledQuestionCounts` 编译失败，Vue 两项测试因缺总题数/禁选逻辑失败。GREEN：后端专项通过，前端 Vitest 7 文件 69 项全过，Go Build/Go Test All 通过，前端 production build 成功（仅保留既有 listCaptures 和体积 3 个 warning），相关文件诊断 0。
+- staging 只读数据核对：48 个维度全部为零启用题，总启用题数为 0，因为现有 855 道题均为 legacy 且尚未导入 384 道胜任力测试题。因此本切片部署后会按设计禁止创建新的胜任力草稿，必须先部署导入接口并导入测试题后再验证正向保存链。
+- [未验证 - 2026-07-24] 本切片尚未部署 staging；题数查询数据库失败的注入测试和 staging 正向创建仍待后续统一部署/导入时验证。
+
+## 2026-07-25
+
+- [胜任力核心闭环完成] 新增 004 运行时迁移：不可变发布题目快照、`el_paper_qu` 原始/最终分字段、维度结果、整体结果及到期扫描索引；所有关联列动态继承被关联列 charset/collation。迁移在 staging 成功并幂等重跑：runtime_tables=3、paper_question_columns=3、runtime_indexes=9。
+- 发布服务在行锁事务中严格重校验测评、维度、启用题和题目元数据，批量冻结题目与五级选项 JSON，更新维度题数、发布时间/人员和理论总分；重复发布只读返回原快照摘要。创建页增加独立“发布并冻结题目”按钮。
+- 参与者闭环：tester 登录/candidate 保存为胜任力签发绑定参与者令牌；首次组卷锁参与者，使用 crypto/rand Fisher–Yates 洗牌并批量固化题序；重复进入返回同一试卷；独立答题页只渲染一个复杂题卡，支持即时保存、进度、第一道未答、倒计时和失败重试。
+- 提交闭环：手工未答拒绝；完整/到期提交使用同一行锁事务和纯计分函数，写唯一整体结果与 N 条维度结果，更新 paper 和 participant end_time；重复提交返回首次结果。可配置 Worker 每 30 秒默认分批扫描到期试卷并调用同一提交服务，shutdown 时停止。
+- 管理结果/报告：管理员分页、详情和报告数据 API 只读已保存结果；报告读取 `report_audience` 快照，共用一份 Vue 报告布局。客户正式文案未交付时明确 `reportTextReady=false` 和“正式解读文案待配置”，不自动编造或跨 audience 回退；内部报告 GET 仍需常量时间校验内部令牌。
+- RED→GREEN：运行时模型/004 迁移/安全随机算法最初均缺失导致 model/service build fail；实现后 Go Build 和 Go Test All 退出码 0。前端 Vitest 8 文件 72 项通过；production build 成功，仍仅有既有 listCaptures 和资源体积 3 个 warning。
+- staging 部署前备份：`/opt/talent-assessment/backups/element_before_competency_20260725_003626.sql.gz`，12,085,769 bytes，SHA-256 `46b605ecd7f26c3afde54e434c4ad14d927eca48814ef615a98b9e860296abc4`。
+- staging 累计部署成功：后端 SHA-256 `f2b3c1635728c20d72967c795970c5562805255e32993a3910a4d17fdf0adcb0`，前端 index SHA-256 `e1e6503e86c1ec1f8f9c4917745e4fb9d81d19239d20392fb371ed4f6787e6d9`；talent-assessment/nginx active，health 正常；远端备份 `server.bak.20260725_003922` / `dist.bak.20260725_003922`。
+- staging 真实全链通过：临时 D01/D02 各 2 题 → 创建 leader 草稿 → 发布 2 维度/4 题 → 重复发布幂等 → candidate 令牌 → 首次随机组卷 → 重复进入同 paper → 刷新题序固定且集合完整 → 未答完手工交卷拒绝 → 全答 → 完整提交 → 重复提交幂等 → 管理结果/报告。已知答案结果 D01=5、D02=1、overall=6、evaluationAverage=3、level=good、audience=leader；SQL 计数 snapshot/paperQu/dimensionResult/result=4/4/2/1；最终 cleanup_remaining=0。
+- staging 最终检查：PUBLIC_HEALTH 正常、登录页 HTTP 200、TEMP_EXAMS=0、TEMP_ASSOCIATIONS=0、48 维度、近期关键错误为空。尚未导入 384 道 AI 测试题；正式报告文案仍未交付，因此当前报告仅为测试布局/数据能力，不通过生产文案验收。
+- [测试题导入准备 - 2026-07-25] 已从 12 批审阅稿生成 `scripts/data/competency-test-questions.xlsx`：48 维度、384 题、384 唯一题号、每维度 8 题、每维度 6 正向 + 2 反向；文件 77,890 bytes，本地 SHA-256 `b84979d3784d5d42b3e0aaee344a82a11d89cbe99a5076773f21de7173422ab0`。所有行备注为“AI测试题-未信效度验证”。
+- 已新增 `scripts/tools/staging-competency-import-questions.py`：远端内部生成短时管理员会话，经正式预览 API 强制校验 384 成功/0 错误，再以同一 SHA-256 调正式导入 API；导入后核对 384 题、48 维度、288 正向、96 反向、每维度 8 题，并删除临时 Redis 会话。检测到 1-383 条部分数据时拒绝继续，检测到完整 384 条时只读幂等返回。
+- [阻塞 - 2026-07-25 09:43 +08:00] 测试题尚未实际导入。执行前备份连续两次 SCP/SSH 超时，TCP/22 检查为不可达，第三次 SSH 复测仍超时。遵循数据库变更纪律，未在无导入前备份的情况下通过 HTTP 绕过执行写入。staging 公网 health 仍为 `{"status":"ok"}`、登录页 HTTP 200。SSH 恢复后顺序固定为：完整备份 → 上传 XLSX/导入器 → 预览 → 正式导入 → SQL/维度 API/业务链验证。
+- [纠正 - 2026-07-25 09:49 +08:00] 上述 SSH 阻塞已解除，主机 `vm-ubuntu-go-dev`、talent-assessment 和 MySQL 均 active。导入前完整备份成功：`/opt/talent-assessment/backups/element_before_competency_20260725_094936.sql.gz`，12,109,890 bytes，SHA-256 `33b517b6488b9dc4f24b468a8a24030c14eb49ec043b807b97bf58f6dde64b42`。
+- [测试题正式导入 - 2026-07-25] staging 预览 API 返回 success=384、errors=0；正式导入 API 返回 imported=384，文件 SHA-256 与本地一致：`b84979d3784d5d42b3e0aaee344a82a11d89cbe99a5076773f21de7173422ab0`。再次运行导入器返回 `COMPETENCY_QUESTIONS_ALREADY_IMPORTED`，未重复写入。
+- 最终 SQL 证据：测试题总数/唯一题号/维度数/正向/反向/启用/测试备注为 `384|384|48|288|96|384|384`；维度分布为 `48|8|8|384`（48 维度，每维度最少/最多均 8）；关联 `el_qu_answer` 行数为 0，确认未重复保存五级固定选项。
+- 导入后完整运行时链再次通过：D01/D02 各以已有 8 题 + 2 临时题发布，共 20 快照题；重复发布/恢复同 paper/固定完整题序/未答手工拦截/20 题作答/提交/结果/报告全部通过。统一选择 raw=3 后 D01=3、D02=3、overall=6、evaluationAverage=3、good；SQL snapshot/paperQu/dimensionResult/result=`20|20|2|1`；cleanup_remaining=0。最终 health 正常、登录页 200、临时测评/关联为 0、近期错误为空。
+- [数据结构与数据全面核验 - 2026-07-25] 新增只读检查器 `scripts/tools/staging-competency-data-integrity-check.sh` 和本地源文件规范化检查器 `scripts/tools/verify-competency-import-source.js`。staging 全部检查通过，未执行数据修改。
+- Schema 证据：维度表 10 个目标字段、测评维度表 12 个、el_qu 扩展 6 个、el_exam 分流 6 个、3 张运行时表、el_paper_qu 3 个答题字段、3 个 DECIMAL(18,6) 成绩字段均符合类型/可空性；18 个必需索引存在，抽查的 7 个关键唯一/复合索引列顺序及唯一性准确；两组关键 JOIN 列 charset/collation 一致。
+- 维度数据证据：48 行，ID/code/name/order 均 48 唯一，顺序 1-48，全部启用，无空必填；ID/code 与顺序一致，D42=权力动机；VIRD 分布为 20/10/10/8（Versatility/Integrity/Resilience/Drive），适用类别为基层通用 10、管理通用 38。
+- 题目数据证据：384 行、384 唯一题号、48 维度、288 正向/96 反向、全部启用且全部带测试题标记；每维度恰好 8 题，题号前缀/后缀与维度及维度内题号完全一致；必填缺失、孤儿、维度内重复、重复题干、固定答案行、题库关联行均为 0。855 条 legacy 题无胜任力元数据，el_qu 总数 1239。
+- 源文件与数据库逐字段比对：按“维度序号、名称、题号、维度内题号、题干、考察点、方向、状态、备注”UTF-8 HEX 规范化排序后，本地 XLSX 与 staging 数据库 SHA-256 均为 `3e7f887453b3aeab81b24dba148e2f151a37bccf31fa9e86a293ed3417a47f5d`，证明 384 行九字段内容一致。
+- 运行时一致性证据：测评维度、发布快照、维度结果、整体结果孤儿数均为 0；测评类型组合、答题 raw/final 范围、维度/整体结果计数与等级取值均无非法记录。最终 health 正常、登录页 200、临时测评/关联为 0、近期关键错误为空。
+- 核验过程中首次 VIRD 预期误写为 20/16/4/8，实际 002 主数据定义为 D21-D30 Integrity、D31-D40 Resilience，即 20/10/10/8；已修正检查器后全量通过。该失败是检查脚本预期错误，不是数据库数据错误。
+- [需求与数据库设计重审 - 2026-07-25] 核心主数据→源题→发布快照→个人答题→维度/整体结果的分层设计合理，当前 staging Schema、18 个关键索引、关联列 collation、384 题数据及孤儿检查均通过；但“测试闭环完成”不等于“生产需求全部完成”，正式上线仍有 P0 门禁。
+- P0 代码缺陷：参与者提交接口接受客户端 `submitType=timeout`，`Submit` 只对 manual 检查未答题，未验证 timeout 请求确已到 `limit_time`，可提前提交不完整答卷；正式上线前必须由服务端可信判断到期，参与者不能自声明 timeout。
+- P0 删除一致性：通用 Paper 删除未处理/禁止 `el_competency_dimension_result` 和 `el_competency_result`，且 001-004 无外键；删除胜任力试卷后可产生结果孤儿并破坏历史快照。已发布测评/胜任力试卷的删除、归档、匿名化和保留年限必须先确认并实现专用策略。
+- P0 历史身份快照：结果表没有 participant_type/participant_id 和报告基本信息快照；candidate/tester 可物理删除，Worker 也靠两表探测参与者类型。需确认人员删除/匿名化政策，并在结果或报告实例冻结参与者类型及报告所需基本信息。
+- P0 报告仍是测试能力：数据库尚无 `el_competency_report_text`、`el_competency_report`、`content_version`；正式客户文案未交付，当前固定 `reportTextReady=false`。无法满足正式文案版本冻结、历史重生成和报告实例审计。
+- P0 功能缺口：REQ-050 的任一维度排序尚未实现，结果分页当前只按 submitted_at；REQ-051 的胜任力动态导出尚未接入现有导出链。当前 384 道题仍是“AI测试题-未信效度验证”，不能用于正式人才决策。
+- P1 Schema 建议：评估为历史实体增加 RESTRICT 外键；增加 `(exam_id,snapshot_order)` 和胜任力范围内题序唯一保障；增加 `(exam_id,submitted_at,paper_id)`；持久化 DECIMAL 时避免 Go float64；迁移除索引名外核对列顺序/唯一性；对已有运行时表执行结构漂移检查。当前无外键但 staging 孤儿为 0，属于“现状正确、约束不足”。
+- 另发现发布语义偏差：维度名称/VIRD/类别/核心含义在草稿 Save 时复制，Publish 仅更新题数和 snapshot_time；若草稿保存后、发布前主数据变化，发布快照会保留旧草稿值。需确认期望是“草稿时冻结”还是“发布时冻结”；现有需求/实施计划写的是发布时冻结。
+- 待业务确认：时长必须为正、允许不限时还是采用默认值（当前 total_time<=0 隐式 2 小时）；测评结束时间与个人倒计时优先级；不完整答卷是否可生成正式报告/进入排名；优势与待发展维度数量和并列规则；正式报告图表；数据保留与删除；题库正式版本、信效度验收；报告文案首个 content_version 与版本生命周期。
+- [业务确认 - 2026-07-25] 客户拥有自己的正式题库，不考虑正式题库版本管理；当前 384 道 AI 题继续只作系统测试。正式报告文案阶段暂时搁置，不作为当前核心测评链门禁。
+- [业务确认 - 2026-07-25] 允许删除已发布的胜任力测评，采用整链事务性物理删除：报告实例/文件引用、整体/维度结果、答案/试卷题、试卷、candidate/tester 测评记录、发布题目/维度快照和测评本身全部删除；任一步失败整体回滚，删除后不可恢复且必须零孤儿。
+- [业务确认 - 2026-07-25] 胜任力个人答题时长必须显式配置且大于 0，不允许不限时或隐式 2 小时默认值；个人到时必须结束并自动提交，不能继续超时作答。测评结束时间只限制尚未开始者创建新试卷，与已经开始试卷的个人答题时长无关。
+- [业务确认 - 2026-07-25] 未完整作答的答卷可以保留管理端结果和审计信息，但不得生成正式报告。
+- [运行边界与删除修复 - 2026-07-25] FB-045～050 已按 RED→GREEN 完成：参与者 HTTP 只能发送 manual，服务端锁定试卷后按真实 limit_time 转 timeout；提前 timeout 和无 limit_time 均拒绝。胜任力 Save/Publish 强制 total_time>0，移除隐式 2 小时；首次组卷在创建前检查 exam.end_time，已有试卷恢复不受结束时间截断。
+- 正式报告数据入口现强制 `is_complete=1`，不完整答卷仍可通过管理结果详情审计，但无法进入正式报告页面/内部渲染数据。前端倒计时到零仍显示超时重试提示，但请求发送 manual，由服务端可信判定是否到期。
+- 已发布胜任力测评删除改为同一事务整链物理删除：维度/整体结果 → 答案/试卷题 → user_exam/candidate/tester → 试卷 → 发布题目/维度快照 → 配置关联 → 测评。Legacy 删除仍保留有关联即拒绝；通用 paper/candidate/tester 物理或逻辑删除会拒绝胜任力实体，必须从所属测评整链删除。
+- 发布时现重新读取当前启用维度主数据，按当前 display_order 排列并冻结 code/name/VIRD/category/core meaning/order/题数/snapshot_time，修复草稿保存后主数据变化仍冻结旧值的问题；题目在排序前先做必填元数据校验，避免异常数据 panic。
+- 验证：FB-045～050 专项全部通过；Go Build 通过；最新 Go Test All 退出码 0；前端 Vitest 8 文件 73 项通过；production build 成功（仍只有既有 3 个 warning）；相关文件诊断 0。上述新行为尚未部署 staging，整链真实删除和到期负例需部署后验证。
+- [staging 边界与删除发布 - 2026-07-25] 部署前数据库备份：`/opt/talent-assessment/backups/element_before_competency_20260725_112239.sql.gz`，12,130,320 bytes，SHA-256 `77d76a7b572f711f3f10f3f4b9b8bf20b03b42930d261d7d4e324b924977a97b`。应用备份为 `server.bak.20260725_112421` / `dist.bak.20260725_112421`。
+- staging 累计部署哈希与本地一致：后端 `d2a0e1461e23d097e33ce2461d2cf0937aa7fcf760198a39453dc05611d7860b`，前端 index `8d18943f1b6c0610c4eaf65358b875dd0b683a8a3e0b7659115da894a6b925da`；talent-assessment/nginx active，health 正常。
+- staging 真实边界验证通过：totalTime=0 保存被拒且未写 exam；已结束测评发布后无法创建新试卷；参与者自声明 timeout 被拒；通用 candidate/paper 删除被拒并提示删除所属测评；将真实试卷 limit_time 调至过去后由服务端转换为不完整 timeout 结果；管理结果仍可读，正式报告数据明确拒绝“不完整作答”。
+- staging 整链物理删除通过：删除前 snapshot/paper/paperQu/dimensionResult/result/candidate=`8|1|8|1|1|1`，调用测评删除后测评、维度/题目快照、试卷、试卷题、结果和 candidate 总残留为 0，脚本 cleanup_remaining=0。
+- 部署后完整主链再次通过：发布 20 题、恢复同 paper、固定完整题序、未答手工拒绝、完整答题提交、结果/报告一致；D01/D02=3/3、overall=6、average=3、good，db_counts=`20|20|2|1`，cleanup=0。全库结构/数据完整性检查再次全部通过，384 题规范化哈希不变，最终临时测评/关联为 0、近期关键错误为空。
+- [剩余代码盘点 - 2026-07-25] 核心创建/发布/答题/提交/删除链已完成并部署，但管理闭环仍未全部实现：胜任力维度仅有 list，缺启停/维护；题目仅有模板/预览/导入，缺专用分页、详情、编辑、启停及前端管理页；通用 Qu.Save 强制题库和答案，不适合作为胜任力题目维护入口。
+- 结果管理仍缺前端页面；前端 `fetchCompetencyResults` / `fetchCompetencyResultDetail` 只有 API 封装无消费方。后端 ResultPaging 只按 submitted_at 排序，尚未实现 REQ-050 的整体分/任一维度升降序。
+- 胜任力动态导出尚未接入 ExportRawAnswers/ExportRawData，现有实现仍按 001/002/003 题库逻辑；REQ-051 未完成。通用 GenerateReport 的路由选择仍只支持 repoCode 001/002/003，胜任力 PDF 生成未接入；正式报告文案和报告实例表按用户决定暂缓。
+- 后续技术债：结果未冻结 participant_type/participant_id/基本信息；Worker 每份过期试卷探测 tester/candidate，存在 N+1；数据库无外键、无 `(exam_id,snapshot_order)` 唯一约束和 `(exam_id,submitted_at,paper_id)` 索引；DECIMAL 模型仍经 float64 持久化。另需完成 48维度/384题单卷容量、100份随机试卷、Worker与前端并发提交验收。
+- 当前胜任力累计改动仍处于工作区未提交状态；staging 已部署不等于版本库已形成可追踪提交，正式交付前需整理提交。
+- [结果管理本地完成 - 2026-07-25] 新增管理员胜任力结果页和专用隐藏路由；测评列表仅对 `assessment_type=competency` 显示“胜任力结果”，传统测评继续使用原测试记录/导出/统计入口。结果页支持提交时间、整体分、所选已测维度分升降序，显示 candidate/tester 姓名、手机号、完成度、得分和提交信息，并提供维度得分与逐题审计详情。
+- 结果分页后端现使用 `sortBy + sortDirection + dimensionId` 白名单契约；稳定次序追加 paper_id，页大小限制 1-500。维度值通过参数化 JOIN，且先验证维度属于当前测评；examId 必填。candidate/tester 通过同一查询 LEFT JOIN 返回人员类型和基本信息，不在结果循环中执行 N+1 查询。
+- 结果管理验证：排序白名单/非法字段/非法方向/缺维度/缺 exam 上下文专项 Go 测试通过；结果页面 Vitest 新增 3 项，全量前端为 9 文件 76 项通过；Go Build、Go Test All、前端 production build 均成功，相关文件编辑器诊断为 0。production build 保留既有资源体积 warning，无新增编译错误。
+- [未部署 - 2026-07-25] 本次结果管理改动尚未发布 staging；真实 MySQL 的整体分/维度分分页次序、candidate/tester 返回和浏览器交互仍需按发布纪律在用户确认统一发布后验证。正式 production 未执行任何操作。
+- [纠正 - 2026-07-25 12:00 +08:00] 上述“结果管理尚未发布 staging”已失效。用户确认后已部署到 `20.200.136.133` staging；正式 production 仍未执行任何操作。
+- staging 部署前完整数据库备份：`/opt/talent-assessment/backups/element_before_competency_20260725_115947.sql.gz`，12,130,319 bytes，SHA-256 `dcc6f51e37bf8d1d6df6edab30a3159134034dd8d50cd09f643febb2d1b7ffb4`。应用备份为 `server.bak.20260725_120032` / `dist.bak.20260725_120032`。
+- staging 部署哈希与本地产物一致：后端 `b93d6a00e983af5fbfef087c7731196a59c127c1bff9e6e51e66322b8c9303f8`，前端 index `69ecb86946aa3d99af7b5b574ef746044c91ee6fe060317cdbf25be821b53e87`；talent-assessment/nginx active，内外 health 均为 `{"status":"ok"}`，登录页 HTTP 200。
+- 新增 staging 结果管理验证器 `scripts/tools/staging-competency-results-verify.py` 和短时浏览器会话辅助脚本。真实创建 1 个临时胜任力测评、D01/D02、3 名 candidate、3 份各 16 题完整答卷：提交时间降序 High→Mixed→Low；整体分升序 2→6→8；D01 维度分降序 5→4→1；三行均返回 candidate/name/telephone；结果详情为 2 个维度、16 条逐题审计。
+- staging 浏览器验证通过：专用路由加载正确测评标题和 3 条结果；整体分升序后首行为 Result Low；切换维度分自动选择 D01，降序后首行为 Result High 且显示维度分 5；详情弹窗显示 overall=8、D01=5、D02=3，逐题审计标签实测 16 行。验证截图确认表格、正反向、原始值和计分值均正常展示。
+- 验证后已删除短时 Cookie/Redis 会话及临时测评整链数据：`cleanup_remaining=0`、`temp_result_exams=0`、`orphan_competency_results=0`；部署后 15 分钟关键日志 `panic/fatal/unknown column/missing table=0`。剪贴板中的短时令牌已覆盖失效。
+- [题库功能只读检查 - 2026-07-25] 传统题库已具备题库分页/列表/详情/新增编辑/删除、题目分页/详情/新增编辑/删除、批量加入或移出题库、Excel 导入/导出/模板等后端能力；题库删除会拒绝仍被测评引用的记录，并事务清理 `el_qu_repo`。相关 Go 专项回归 14 项通过，编辑器诊断为 0。
+- 当前传统题目管理与胜任力题目共用 `el_qu`，但传统 `QuHandler.Paging/List/Detail/Save/Delete` 和 `RepoHandler.BatchAction` 未按 `dimension_id` 分流。结合已验证的 384 道胜任力题无 `el_qu_answer` / `el_qu_repo`，全局传统题目页会把胜任力题混入结果；前端又固定读取 `answerList[0]`、`answerList[1]` 和 `content.substring(1)`，存在页面运行时错误与错误编号展示风险。传统保存还会通过 `Save()` 覆盖未在表单返回的胜任力扩展字段，传统删除可直接删除胜任力源题，属于 P0 数据边界缺口。
+- 传统题目分页每行分别查询答案和首个题库，20 行页面约产生 41 次 DB 查询；导出同样每题查询题库和答案，存在明显 N+1。题库分页未应用 pageSize 上限，批量题库操作逐题/逐关联写库且忽略多处 DB error，批量量大时性能和一致性不足。
+- 前端题目新增/编辑表单把选择器绑定到 `repoId`，但校验规则检查空的 `repoIds`，且转换为数组发生在校验通过之后；新增保存可能被前端错误拦截。全局题库多选筛选后端只采用首个 repo ID。题库列表隐藏多选/判断计数，却把 `radioCount` 标成“题目数量”，展示语义不准确。
+- staging 公网只读探测确认传统导入组件硬编码 `/dev-api/exam/api/qu/qu/import-excel` 返回 HTTP 405，而实际 `/prod-api/...` 返回 JWT 401，证明 production build 的传统题目导入地址错误。胜任力题目目前仅有模板/预览/正式导入 API，缺分页、详情、单题编辑、启停、删除和管理页面。
+- [未验证 - 2026-07-25 13:06 +08:00] staging 公网 health 正常，但 SSH 连续三次不可达；此前结果验证的短时会话已清理，浏览器停留在登录页，无法完成本轮真实题库列表/编辑/导入页面操作和只读 SQL 复核。未创建、修改或删除任何题库数据，未部署任何变更。
+- [staging 管理员密码重置 - 2026-07-25] 经用户明确确认，通过已认证的 `PUT /system/user/resetPwd` 将 user_id=1 的 admin 密码重置为用户指定值；接口返回 HTTP 200/code 200。随后注销旧会话，使用新密码和新验证码重新登录成功并进入系统首页，证明 BCrypt 持久化和登录校验链生效。项目记忆不记录密码明文；剪贴板中的旧密码已清除。SSH 仍不可达，因此未直接查询数据库哈希。
+- [题库 staging 浏览器核验 - 2026-07-25] 新密码登录后，题库列表真实加载 6 个传统题库：00302/00301 各 48 题、00102/00101 各 90 题、00201/00202 各 140 题；默认每页 20，页面仅显示 `radioCount` 并标为“题目数量”。00302 题库内题目页真实加载 20 行，题号、题库名、A/B 选项和时间展示正常；已有题目的编辑页可回填题库、题号、题干和 2 个选项。
+- [题库 P0 实证 - 2026-07-25] 全局题目页真实 API 返回 total=1239；第一页 20 行全部是胜任力题、全部 `dimensionId` 非空且 `answerList=[]`。Vue 随即连续抛出 `TypeError: Cannot read properties of undefined (reading 'content')`，表格无法呈现，证实传统/胜任力未隔离及 `answerList[0]` 固定访问已实际破坏页面，不再只是静态风险。
+- [题目新增 P1 实证 - 2026-07-25] 在新增题目页面只设置有效 `repoId` 和题号后，直接调用表单校验得到 `valid=false`，错误为“必须选择一个题库！”，此时 `repoId` 有值而 `repoIds` 仍为空；未发保存请求、未写数据库。证明选择器/校验字段不一致会阻止正常新增。
+- 本轮题库检查只读完成：没有点击保存、导入、删除或批量操作，没有创建/修改题库数据，也没有部署代码。管理员浏览器会话暂时保留用于后续逐项修复验证。
+- [FB-051 本地修复 - 2026-07-25] 传统题目管理现以 `dimension_id IS NULL` 为明确边界：Paging/List/Detail/Export 不再返回胜任力源题；传统 Save 对请求中的胜任力元数据和既有胜任力题目 ID 双重拒绝；Delete 与 Repo.BatchAction 在任何写入前检查整批 ID，命中任一胜任力题即整批拒绝。统一错误为“胜任力题目请使用胜任力专用接口”。
+- 前端传统题目列表已移除 `answerList[0/1]` 直接索引，空答案显示 `—`；题号只在确有 `V` 前缀时去前缀，异常数据不再导致整表崩溃或丢失首字符。
+- FB-051 RED 证据：新测试初次运行同时报告 Paging/List/Detail/Save/Delete/BatchAction/Export 共 8 个隔离缺口，以及前端 3 个直接索引/安全格式化缺口。GREEN 后 FB-051 专项通过；题库相关测试 7 项通过；Go Test All、Go Build、前端 Vitest 9 文件 76 项和 production build 全部通过，相关文件诊断为 0。
+- [未部署 - 2026-07-25] FB-051 仅在本地完成，尚未部署 staging；当前 staging 全局题目页仍会混入384道胜任力题并报错。按发布纪律等待后续累计变更后统一确认 staging 发布。题目新增 `repoId/repoIds` 校验问题和传统导入 `/dev-api` 路径问题尚未修复。
+- [FB-052 本地修复 - 2026-07-25] 题目表单的题库选择器、`el-form-item` 和 rules 现统一绑定 `repoId`；提交时在任何答案/表单验证前执行 `syncRepoSelection()`，始终以当前 `repoId` 覆盖 `repoIds`。因此新增题目选择题库后可通过题库必填校验，编辑时切换题库也不会继续发送旧关联。
+- FB-052 RED 证据：专项测试首次明确失败为 `rules.repoId=undefined` 且 `syncRepoSelection=undefined`。GREEN 后专项 2 项通过；前端全量 Vitest 10 文件 78 项通过；production build 成功；相关文件诊断为 0。
+- [未部署 - 2026-07-25] FB-052 与 FB-051 均尚未部署 staging；真实新增/切换题库保存需统一发布后验证。传统导入 `/dev-api` 硬编码问题仍未修复。
+- [FB-053 本地修复 - 2026-07-25] 通用 DataTable 的传统题目导入地址现使用 `VUE_APP_BASE_API + /exam/api/qu/qu/import-excel`，随 development/staging/production 构建自动切换；上传请求头加入当前 `Authorization: Bearer <token>`，不再使用硬编码 `/dev-api` 或匿名上传。
+- FB-053 RED 证据：专项测试首次同时失败，实际 URL 为硬编码 `/dev-api/...` 且 `upload.headers=undefined`。GREEN 后专项 2 项通过；前端全量 Vitest 11 文件 80 项通过；production build 成功。直接扫描 production dist 得到 `/prod-api/exam/api/qu/qu/import-excel` 匹配 12 次、`/dev-api/exam/api/qu/qu/import-excel` 匹配 0 次，相关文件诊断为 0。
+- [未部署 - 2026-07-25] FB-051～FB-053 均尚未统一部署 staging；传统 Excel 导入真实上传和数据库写入仍需发布后用临时题库/题目执行并清理。未修改 production。
+- [FB-054 本地修复 - 2026-07-25] 传统题目分页已移除逐行答案/题库查询：主列表取得当前页 ID 后，一次 `IN` 查询全部答案、一次有序 LEFT JOIN 查询全部题库关联，再用 map 组装。默认20行页面数据库往返由约42次降为固定4次（COUNT、主列表、答案、题库关联）；空页只执行前两次。
+- 题库关联批量查询按 `qu_id, sort, id` 稳定排序并保留首关联语义；题库已删除时用 `COALESCE` 继续输出 `[已删题库:<id>]`。COUNT、列表、关系查询错误现全部检查并返回受控错误，不返回部分数据；无答案题的 `answerList` 保持非 nil 空数组。
+- FB-054 RED 证据：专项测试首次失败为缺少 `loadQuestionPageRelations`。GREEN 后专项通过；题库相关后端测试22项通过；Go Test All和Go Build通过，相关文件诊断为0。
+- [未部署 - 2026-07-25] FB-051～FB-054 均尚未统一部署 staging；实际MySQL查询数量与响应内容需发布后验证。未修改production。
+- [FB-055 本地修复 - 2026-07-25] 题库批量加入/移除现统一在一个GORM事务内执行。请求ID先去空/去重；批量校验全部题目均存在且为传统题、全部题库存在；加入时一次删除旧关联并 `CreateInBatches(100)` 重建，移除时一次删除目标组合。旧题库与请求题库均纳入受影响集合，按题库ID稳定顺序重排 `(sort,id)` 并刷新统计；所有查询、删除、插入、重排、统计错误均返回并触发整批回滚。
+- FB-055 RED时缺少事务、ID规范化、批量查询/写入、受影响题库集合和事务统计刷新共7类证据；GREEN后专项通过。不存在题目/题库不再静默生成零类型关联或孤儿关联。
+- [FB-056 本地修复 - 2026-07-25] 传统Excel导入的sheet题库查询/创建、额外题库ID校验、题目/答案/全部关联写入及sheet/额外题库统计刷新已纳入同一事务。额外题库不存在或任一写入/统计失败时，包含新建sheet题库在内的整批数据全部回滚；原先忽略的额外关联和统计错误已消除。
+- FB-056 RED明确命中题库事务外创建、额外关联错误忽略和事务外统计刷新；GREEN后专项通过。
+- [FB-057 本地修复 - 2026-07-25] 传统题目导出复用分页批量关系加载器，一次加载全部答案和全部有序题库关联，工作簿循环不再访问数据库。当前约855道传统题的导出关系查询由约1710次降为固定2次；主查询或关系查询失败时在写工作簿前返回受控错误，多题库ID顺序保持 `(sort,id)`。
+- FB-054～FB-057连续专项全部通过；题库相关后端测试25项通过，相关文件诊断为0。[未部署] FB-051～FB-057仍需统一部署staging后执行真实批量加入/移除、Excel导入回滚和导出内容验证；未修改production。
+- [FB-058 本地修复 - 2026-07-25] 传统题目删除现于事务前查询 `el_paper_qu`，任一所选题被历史试卷引用即整批拒绝并返回引用数。可删除时按答案→题库关联→题目顺序执行，关联读取、三个删除及题库统计刷新错误全部传播并回滚；受影响题库按ID稳定刷新。
+- [FB-059 本地修复 - 2026-07-25] 编辑既有传统题目前同样检查 `el_paper_qu`；历史试卷引用题返回“题目已被试卷引用，不能修改”，查询失败返回受控错误，二者均发生在写事务和答案/题库关联替换之前。新增题目不执行历史引用检查。
+- FB-058/059均先取得缺守卫的RED失败，再实现GREEN；FB-055～FB-059连续专项通过。[未部署] FB-051～FB-059等待统一staging发布和真实数据验证；未修改production。
+- [FB-060 本地修复 - 2026-07-25] 题库分页现复用全局 `capPageSize`（默认10、最大200），并检查COUNT与列表查询错误；数据库失败不再伪装成成功空列表，空记录返回非nil数组。RED时5项边界/错误处理断言全部缺失，GREEN后专项通过。
+- 本轮尝试统一部署FB-051～FB-060：Linux后端和production前端已成功重建（后端SHA-256 `5443fd2de74e6a3e1258947b47caa46bb8eaa9873bc60b668c55092c5520108f`，前端index SHA-256 `fd542f2c12cf81d615af5ff6fbfda648f0b581b2ef8176da7bf9eb879001e0e0`），但staging SSH在16:26和16:32两次均不可达，公网health仍正常。未上传、未备份、未部署；production未修改。
+- [FB-061 本地修复 - 2026-07-25] 传统题目保存现先去空/去重题库ID，并在写事务内校验全部题库存在。编辑链严格检查原题读取、旧题库关联读取和答案/关联删除错误；任何失败均回滚，不再用当前时间掩盖原题读取失败，也不会留下部分替换。
+- [FB-062 本地修复 - 2026-07-25] 题库保存后端新增标题trim/必填校验。新建由服务端初始化零统计与创建/更新时间；更新取消 `Save`，仅允许修改code/title/remark/update_time，客户端不能覆盖create_time和计算统计。RowsAffected=0返回“题库不存在”，成功后重读数据库真实行返回。
+- FB-060～FB-062专项通过；FB-061/062均先取得RED再GREEN。[未部署] staging SSH仍不可达，FB-051～FB-062待统一部署；production未修改。
+- [FB-063 本地修复 - 2026-07-25] 题目List、题目Detail的答案/题库关联/题库编码查询，以及题库List现全部检查数据库错误并返回具体受控失败；列表初始化为非nil空数组，详情任一关系读取失败都不再返回部分对象。RED时10项错误处理断言全部缺失，GREEN后FB-060～063专项通过。
+- staging SSH于16:44再次不可达（公网health正常），因此FB-051～FB-063仍未上传、备份或部署；production未修改。
+- [纠正 - 2026-07-25 17:10 +08:00] 上述FB-051～FB-063“未部署”状态已失效。SSH恢复后已重新构建并统一部署到 `20.200.136.133` staging；正式production仍未执行任何操作。
+- staging部署前完整数据库备份：`/opt/talent-assessment/backups/element_before_competency_20260725_170919.sql.gz`，12,130,321 bytes，SHA-256 `011b921e26c39eebb23d3466698d22f3ff3900858ea88043279409edc64d3928`。应用备份为 `server.bak.20260725_171029` / `dist.bak.20260725_171029`。
+- 部署哈希与本地一致：后端 `38a69e11ea84b16d7cebafe83f185439ca1cc8f9c74754f6be7a4eb052d3f0d9`，前端index `fd542f2c12cf81d615af5ff6fbfda648f0b581b2ef8176da7bf9eb879001e0e0`；talent-assessment/nginx active，内外health均为 `{"status":"ok"}`，登录页HTTP 200。
+- [题库staging验收 - 2026-07-25] 真实API核对：传统题=855、胜任力题=384；全局传统题目分页total=855、第一页胜任力题数=0。真实浏览器全局题目页显示20行传统题，未再出现 `undefined.content`；新增题表单的有效repoId校验通过并同步覆盖旧repoIds；上传组件URL为 `/prod-api/exam/api/qu/qu/import-excel` 且包含Bearer认证头。
+- 临时题库/题目真实链验证通过：题库客户端伪造radioCount=999后数据库返回0；新增传统题→重复/空ID批量加入归一化为单关联且sort=1→无效题库批量加入被拒并保持原关联不变→移除→重新加入；证明批量成功与失败回滚均正确。
+- 传统Excel真实上传验证通过：有效xlsx导入1题并刷新关联统计；引用不存在额外题库的xlsx被拒，临时sheet题库和题目均回滚为0；最终导入题和题库通过正式API清理。历史试卷引用题的删除/编辑均被拒、前后题目/答案/试卷引用计数保持 `1|2|442`；胜任力源题传统删除被拒。
+- 两轮验收均 `cleanup_remaining=0`；最终 `temp_qb_repos=0`、`temp_qb_questions=0`、`competency_orphans=0`、最近30分钟关键错误=0。短时Cookie/Redis会话/令牌和剪贴板均已清理。
+- [UF-001 / 00401 staging完成 - 2026-07-25] 按用户确认采用“虚拟胜任力题库入口”方案，不把384道胜任力源题写入传统 `el_qu_repo`。题库分页动态插入 code=`00401`、title=`胜任力测验题库`、实时题数=384、`virtual=true`；页面禁用该行选择/传统编辑删除，并导航到专用只读胜任力题目页。
+- 新增管理员 `POST /exam/api/competency/questions/paging`，仅查询 `dimension_id IS NOT NULL`，返回题号、维度、维度内题号、题干、考察点、方向、状态，支持维度/状态/题号/题干参数化筛选和稳定排序。前端专用页默认20条、维度可搜索、状态及关键词过滤，明确提示通过专用导入维护。
+- 00401部署前备份：`/opt/talent-assessment/backups/element_before_competency_20260725_173607.sql.gz`，12,130,318 bytes，SHA-256 `272ba46d8821ce12fe7b16bd96ad06454ce867a6bbc6c4eaf748e81da597411e`；应用备份 `server.bak.20260725_173636` / `dist.bak.20260725_173636`。部署哈希：后端 `9df58e8be57837355f5088e83342f3c528e5b94de4c561b652a425b4d51b2cf1`，前端index `9423c8a362cd1fe8085122d4fe4e3112c5e2247fe09f4523ccd147e0edc57fb6`。
+- staging API验证：题库总数7、00401唯一、名称正确、题数384；专用分页total=384/首屏20；D01+启用筛选total=8。浏览器验证题库列表首行00401/384且复选框禁用，点击进入 `/#/exam/competency/questions`，页面标题“00401 胜任力测验题库”、首屏20、总数384，首题D01-Q01及维度/考察点/方向/状态展示正确；截图已人工核验。
+- 00401本地验证：Go全量、Go Build、前端Vitest 12文件82项均通过；UF-001专项由12项缺失RED转GREEN。终验service/nginx active、health正常、临时行0、最近15分钟关键错误0，短时Cookie/Redis会话/令牌/剪贴板已清理；production未修改。
+- [00401题目编辑/启停本地完成 - 2026-07-25] 新增专用 `POST /exam/api/competency/questions/update`；独立request仅接收id、题干、考察点、方向、状态、备注，题号/维度/维度内题号/create_time不可提交或覆盖。后端校验空ID/题干/考察点、方向白名单及状态0/1，兼容JSON数字/字符串并拒绝空串、nil、小数和越界；更新限定 `dimension_id IS NOT NULL` 且只使用字段级Updates，已发布题目快照不受源题修改影响。
+- 00401页面新增编辑按钮和弹窗：身份字段只读展示，可编辑题干/考察点/方向/状态/备注；保存按钮loading防重复，成功关闭/通知/刷新，失败保留数据重试。后端RED因契约/函数全缺失编译失败，前端RED 2项失败；实现后后端专项与前端4项专项均GREEN。
+- [00401题目编辑/启停 staging完成 - 2026-07-25] 部署前备份 `/opt/talent-assessment/backups/element_before_competency_20260725_181343.sql.gz`，12,130,321 bytes，SHA-256 `397d54c730917c72d08c180c5bab9331c3db1b41ef277575e20a44705503cf4e`；应用备份 `server.bak.20260725_181415` / `dist.bak.20260725_181415`。部署哈希：后端 `d241326e764f9532ffd5e4ebb96f30e0ec80ecbc3c432cf5bcb599ffa40f45c1`，前端index `040449905873db53eb720714aab50d968c862ab280027a23ec149ddd84947c41`。
+- staging临时源题API验证：题干/考察点/方向/状态/备注更新成功；客户端同时伪造questionCode/dimensionId/dimensionItemNo时，题号/维度/维度内题号/create_time保持不变；空字符串状态被拒且数据不变；legacy题ID被专用更新接口拒绝。临时题清理后 `cleanup_remaining=0`。
+- staging浏览器验证：00401首行“编辑”按钮打开弹窗，身份区显示 `D01-Q01 / D01 沟通表达 / 1`，题干、考察点、正反向、启停、备注均正确回填，保存/取消按钮可见；未保存现有正式题。终验 `qedit_temp=0`、service/nginx active、health正常、最近15分钟关键错误0，短时Cookie/Redis会话/令牌/剪贴板已清理；production未修改。
+- [00401导入UI本地完成 - 2026-07-25] 页面新增专用模板下载和导入弹窗：仅接受0-10MiB xlsx；选择/移除/变更文件会清除旧预览与SHA-256；预览展示成功/错误总数、全部错误消息或前20条规范化成功行；仅0错误且有digest时允许确认导入。正式导入复用同一File并传expectedHash，成功后刷新题目与维度题数；失败保留文件/预览重试，预览和导入均有loading防重复。
+- 导入UI专项先RED失败3项（缺文件边界、预览、确认导入方法），实现后00401页面7项专项全GREEN；后端专用模板/预览/哈希复核/事务导入沿用已通过的测试和staging验证。
+- [FB-064 - 2026-07-25] staging浏览器用系统下载模板生成唯一临时题，预览真实返回“可导入1行、错误1行”；错误行是模板第2行填写说明。根因：模板生成三行（表头/说明/示例），校验器从第2行起全部当题目。新增RED稳定复现后，模板生成与校验共享 `CompetencyImportInstructions`，且只精确跳过系统模板第2行；普通错误行不会被宽松忽略。专项service+handler测试GREEN，待重新部署staging后完成正式导入和清理验收。
+- [00401导入UI staging完成 - 2026-07-25] 部署前数据库备份 `/opt/talent-assessment/backups/element_before_competency_import_ui_20260725_182806.sql.gz`，SHA-256 `e268cecc6b05a792621469ec6388b29fe1751e2d05a309a958baf4ac953ff646`。前端index SHA-256 `12031d4b2ae7ec75a258102f8092cf5276b3dad99e94a6c50705bc5039d1030a`；FB-064后端SHA-256 `750c7880789525d752498c2ff07f54c79614e8e972ddffeab734ab7a2e715ae6`。
+- staging浏览器验收：00401显示“下载模板/导入题目”；模板真实下载HTTP 200、xlsx MIME、6512 bytes；临时唯一题 `UI-TEST-20260725-1835` 修复前预览复现说明行错误，修复部署后为成功1/错误0并启用确认；正式导入后列表384→385。按查询所得主键删除后列表恢复384，数据库胜任力题384、D01启用8、临时题0、临时关联0；backend/nginx active、health OK、最近10分钟panic/fatal/segmentation/import-failed均0。
+- 两个短时Redis管理员会话、浏览器Cookie、本地临时模板/xlsx/部署包均已清理为0；production未修改。
+- [验证差异 - 2026-07-25] 前端全量Vitest 12文件87项通过，前端production build和Go build通过；胜任力导入service+handler专项通过。Go全量当前被既有源码字符串测试 `TestBugFB060_RepositoryPagingCapsSizeAndChecksErrors` 阻塞：实现已改为00401虚拟行所需的 `physicalTotal/physicalRows`，测试仍只接受旧片段 `q.Count(&total).Error` / `Find(&rows).Error`。本次导入功能未修改该陈旧测试，需作为独立测试维护变更处理。
+- [胜任力维度维护本地完成 - 2026-07-25] 新增管理员专用维度维护页和 `POST /exam/api/competency/dimensions/update`。稳定ID、编号和create_time不可改；可维护名称、VIRD层级、适用类别、核心含义、显示顺序和启停状态。后端使用独立request、UTF-8字符长度、固定VIRD/类别白名单、顺序1-48和状态0/1校验，字段级Updates，不使用Save或客户端model覆盖。
+- 显示顺序调整采用单事务原子交换：目标位置已有维度时先放入源顺序对应的唯一负数临时位，再更新当前维度和原占位维度，避免 `uk_competency_dimension_order` 冲突；名称冲突和MySQL 1062返回受控提示。已发布测评继续读取维度/题目快照，主数据编辑只影响未来保存或发布。
+- `competency_002_dimensions.sql` 的重复执行策略已由覆盖名称/VIRD/类别/核心含义/顺序改为已有ID no-op，防止后续幂等重跑抹掉管理员维护结果；新库仍完整初始化48条默认维度。
+- 00401页面新增“维度维护”入口；维护页显示编号、顺序、名称、VIRD、类别、核心含义、启用题数和状态，支持关键词/VIRD/状态筛选、默认20行分页、移动端全屏编辑。状态变化必须二次确认并说明仅影响未来测评；保存失败保留表单重试。
+- RED证据：后端因维度更新request/校验器不存在而编译失败，随后固定分类和顺序交换测试分别命中缺口；前端因维度维护页面不存在而suite失败。GREEN：后端维度专项通过，前端维度维护4项通过；前端全量13文件91项、Go全量、Windows Go Build和production build均通过。FB-060陈旧源码断言已仅同步局部变量名 `physicalTotal/physicalRows`，恢复全量测试，不改变业务行为。
+- [胜任力维度维护 staging完成 - 2026-07-25] 部署前数据库备份 `/opt/talent-assessment/backups/element_before_competency_dimension_maintenance_20260725_190525.sql.gz`，SHA-256 `d8e2cccb7329cfb53a1cd5ff9a0a77e92965a73bec3606ee2d7c6ae9cb1b796b`。部署后后端SHA-256 `13c043d43cd52910b0c880f1df814603a11d8d0ddf4623952265c4c242b59453`，前端index SHA-256 `5f46301fc1dacae38bc79aee9cd3c9e9176593a1236a02508eab16cca5f063e5`，与本地产物一致。
+- staging API真实验证：D01临时修改名称/核心含义/状态并将顺序1→2，D02原顺序2原子交换为1；伪造code/create_time未生效。重复D02名称和空字符串status均被拒；重跑新的002迁移后临时名称/顺序/状态保持，证明管理员维护不被幂等seed覆盖。finally调用正式API恢复D01/D02原值和顺序。
+- staging浏览器验证：00401页面“维度维护”入口可达；页面总数48、默认20行，D01/D02字段和各8道启用题正确；关键词D42只返回“权力动机 / Drive内驱力 / 管理通用 / 8 / 启用”；编辑弹窗回填编号、名称、顺序、VIRD、类别、核心含义和状态，切换停用后出现“只影响未来创建或发布，历史不受影响”的二次确认，取消后未写数据。
+- 终验：维度总数/唯一code/唯一name/唯一order=`48|48|48|48`，顺序1-48、停用数0；D01/D02/D42恢复为 `1/2/42 + status=0`，临时名称/含义0。短时Redis会话、浏览器Cookie、本地/远端临时文件均清理为0；talent-assessment/nginx active、health正常、最近15分钟panic/fatal/duplicate/unknown-column均0；production未修改。
+- [胜任力动态导出本地完成 - 2026-07-25] 新增独立 `competency_export.go`，两个既有入口 `export-raw-data` / `export-raw-answers` 在显式 `competency+competency_average` 时调用同一个三Sheet构建器；legacy/001/002/003继续原模板/宽表逻辑。测评列表对胜任力同时显示“胜任力结果、导出汇总、导出原始答题”，两种导出均明确提示包含结果汇总、逐题明细和题目字典并使用同一文件名。
+- `结果汇总`只读已保存整体/维度结果，动态维度列按发布快照display_order，包含人员、开始/完成、用时、完成率、完整性、整体分/均值/等级/报告对象/计分版本；不重新计算成绩。`逐题明细`读取个人固化题序、发布题干/维度/考察点/方向/选项快照及paper原始值/最终分；原始选择文本优先从options_snapshot解析。`题目字典`按snapshot_order输出一次发布题目完整元数据，不受个人随机题序影响。
+- 动态工作簿支持48维度后超过Z列的列宽设置、冻结首行、空结果仍输出三张合法表头。非超级管理员手机号沿用既有脱敏策略；汇总入口对胜任力补齐 `*:*:* / exam:list / exam:export` 权限检查，查询任一步失败均在写响应前中止。
+- RED证据：后端缺工作簿数据结构/构建器导致编译失败，前端2项因胜任力导出被v-else隐藏且缺专用文案/文件名失败。GREEN：动态导出后端3项、前端入口2项通过；Go全量和Windows Build通过，前端全量14文件93项和production build通过（保留既有3个warning），相关文件诊断0。待部署staging后使用真实三人、16题、2维度结果核对两个端点的三Sheet内容与持久化成绩一致。
+- [staging阻塞 - 2026-07-25] 动态导出部署前备份连续3次通过 `liming + ~/.ssh/vm-ubuntu-go-dev_key.pem + ConnectTimeout=10` 连接 `20.200.136.133:22` 均超时，远端备份命令未启动。遵守“先备份再部署”，未上传、未替换应用、未创建临时验收数据；production未修改。staging公网 `/prod-api/health` 仍返回ok。
+- 待部署产物已准备：Linux后端SHA-256 `9e3281126bada6a6481e9ff820e979b90fa72f96dc510b77a9019808538d9ba8`，前端index SHA-256 `5c95171c55c10989c4a2db05768a53425740a76638d6c85533f3c02fbe8b0ced`。SSH恢复后固定顺序：数据库备份→部署前后端→运行三人/16题/2维度临时结果链→下载并解析两个入口的三Sheet→核对2/6/8整体分和D01 1/4/5→整链清理与健康检查。
+- [纠正 - 2026-07-25 22:48] 上述动态导出staging阻塞已解除。部署前备份 `/opt/talent-assessment/backups/element_before_competency_export_20260725_224808.sql.gz`，SHA-256 `f02b01f1855093ba9a927f7e86e946f3a3e263096bd9d7d03dad246bde8a7e63`。部署后后端/前端index SHA-256分别为 `9e3281126bada6a6481e9ff820e979b90fa72f96dc510b77a9019808538d9ba8` / `5c95171c55c10989c4a2db05768a53425740a76638d6c85533f3c02fbe8b0ced`，与本地产物一致。
+- staging真实动态导出验收：临时测评 `RESULT-SORT-9c97b02dfc` 创建3名candidate、3份各16题完整答卷，持久化整体分Low/Mixed/High=`2/6/8`，D01=`1/4/5`，D02=`1/2/3`。两个既有GET端点均返回约12.9KiB xlsx及RFC5987文件名，标准库解析均为 `结果汇总/逐题明细/题目字典`；3条汇总、48条逐题、16条唯一题目字典，动态D01/D02列、完成率100%、原始值/文本/最终分和快照顺序全部正确；两个端点规范化工作簿内容完全一致。
+- staging浏览器验收：临时胜任力测评“更多”菜单显示“修改/胜任力结果/导出汇总/导出原始答题”；点击导出汇总弹出明确的“结果汇总、逐题明细和题目字典”确认文案，取消未发下载写操作。
+- 真实验收后通过正式测评整链删除清理，`cleanup_remaining=0`；临时exam/result=0、结果孤儿=0、胜任力源题仍384。短时Redis会话、远端xlsx/状态/验证器/部署文件和本地部署包均为0；talent-assessment/nginx active、health正常、最近20分钟panic/fatal/export-failed/unknown-column均0；production未修改。
+- [到期Worker批量优化本地完成 - 2026-07-25] Worker启动后在context未取消时立即执行一次扫描，不再等待首个默认30秒周期；后续仍按ticker周期扫描并随context取消退出。过期试卷主查询现通过candidate/tester LEFT JOIN和CASE一次解析participant_type，同时严格限定competency+competency_average，删除原每份试卷1-2次COUNT归属查询；批次100时归属解析数据库往返由最多201次降为1次（提交事务本身不变）。
+- Worker扫描按 `limit_time,id` 稳定排序并保留配置LIMIT；归属缺失或单份Submit失败记录paperId后继续，失败记录保持进行中并在下轮重试。RED证据命中缺candidate/tester批量JOIN、loop内N+1和启动首扫顺序；GREEN后Worker专项与100轮×384题安全随机容量测试通过，每轮384题无缺失/重复且产生多个不同排列。前端/Worker并发提交、部分/零作答真实持久化仍待staging验证。
+- [到期Worker staging完成 - 2026-07-25] 部署前备份 `/opt/talent-assessment/backups/element_before_competency_worker_20260725_225938.sql.gz`，SHA-256 `dd851f660f222800a56af91951b238503419ff3c1dde8416ba155dc62c2b4b91`。部署后Linux后端SHA-256 `cb74abd36bb072130c86101ee89d34d8ed75a7fa94f5dda5059120513f5e1615`，与本地产物一致；前端未变更。
+- staging真实并发/到期验收：同一份已答完且已过期试卷同时发起2次手工提交（服务端转可信timeout），最终仅1条整体结果+2条维度结果，两次调用均返回完成。随后创建candidate部分作答和tester零作答两份试卷，将limit_time置过去并重启服务；两份均在15秒内被启动首扫提交，短于默认30秒周期。
+- candidate部分答卷持久化为 `answered=1/16, effective_dimensions=1, overall=3, is_complete=0, submit_type=timeout`，2个维度中1个score=NULL；tester零答卷为 `0/16, effective_dimensions=0, overall=0, incomplete timeout`，2个维度score均NULL，证明未答题未补最低分。测试使用正式整链删除，`cleanup_remaining=0`。
+- 终验：临时exam/result=0、结果孤儿=0、进行中且已过期胜任力试卷=0、源题384；远端验证器/二进制临时文件和短时Redis会话清理为0。talent-assessment/nginx active、health正常、最近20分钟panic/fatal/worker-failed/owner-missing均0；production未修改。
+- [FB-065 - 2026-07-25] 首次48维度×384题×100份试卷容量链在10并发创建candidate时命中MySQL 1062：`Candidate.Save` 使用 `time.Now().UnixMilli()` 作为主键，同毫秒请求会生成重复ID。验证器finally已整链清理，`cleanup_remaining=0`。新增RED同时命中缺nextID和仍使用UnixMilli；修复为项目既有原子 `nextID()` 后GREEN。该一行修复仅改变新candidate主键生成，不改变请求/响应或现有记录。
+- [FB-065 staging完成 - 2026-07-25] 修复后二进制SHA-256 `5d96b345d8fe7020340b3b96cc2fefc860d856a25eada05ae82134a2bb3a6eb5` 已部署staging；并发容量链未再出现Duplicate entry。48×384×100容量、负例/越权/快照、传统001/002/003 smoke全部完成，最终临时测评=0、candidate/paper/result孤儿=0、源题384、服务/nginx active、health正常、近期panic/fatal/duplicate/unknown-column均0。
+- [剩余待办权威清单 - 2026-07-25] 当前立即阻塞项只有：FB-065 已本地GREEN但尚未部署staging；因此48维度×384题×100份真实容量链尚未取得最终通过证据。首次失败数据已整链清理，部署前容量备份为 `/opt/talent-assessment/backups/element_before_competency_capacity_20260725_230644.sql.gz`，SHA-256 `a8bd421b5ed3ca22b15f5c7eb334c8c2bfef180de554ba0306206ea5ed091a95`；待部署后原样重跑容量验证器。
+- [纠正 - 2026-07-25] 上述容量阻塞已解除。FB-065部署后后端SHA-256 `5d96b345d8fe7020340b3b96cc2fefc860d856a25eada05ae82134a2bb3a6eb5`。staging全量容量链发布48维度/384快照耗时0.098s；10并发创建100名candidate、100份试卷和38,400试卷题，总耗时5.190s，单链p50/p95/max=`0.479/0.758/0.837s`；100份持久化题序hash全部不同，第二次读取100份题序全部稳定。详情刷新p50/p95/max=`0.063/0.105/0.125s`。每份题数最小/最大均384，所有行绑定exam_question_id。整链删除后`cleanup_remaining=0`。这些是当前staging观测值，不声明生产SLA。
+- 容量链之后仍需完成的staging验收：参与者非法值/外来题/已结束/已过期保存负例矩阵；发布后修改或停用源题不影响已有快照/历史试卷；未登录、错误purpose、跨participant/exam/paper绑定和管理端越权矩阵；001/002/003完整API与浏览器回归；数据库备份恢复/回滚演练。以上不需要新增业务功能，属于阶段6验收债务。
+- [阶段6负例/安全/快照完成 - 2026-07-25] staging真实拒绝raw=0、外来paperQuestion、完成后继续写；过期保存由服务端触发可信timeout。安全矩阵拒绝缺token、paper token冒充participant purpose、跨paper、跨participant和未认证管理结果访问。发布后将D01-Q01源题内容/考察点/方向/状态临时修改，发布快照及历史试卷题干保持完全不变，随后源题按原字段恢复。临时测评整链删除，`cleanup_remaining=0`。因此上述阶段6债务已缩减为001/002/003完整回归和数据库恢复/回滚演练。
+- [传统001/002/003 staging回归 - 2026-07-25] 分别复用00101/00201/00301现有题库创建临时legacy测评和2题试卷，真实执行create-paper、paper-detail、qu-detail、fill-answer、hand-exam、paper-result、stand-score；三类均通过，证明新增显式分流未误拦传统链。随后先删paper再删exam，`cleanup_remaining=0`。阶段6业务链剩余阻塞仅数据库恢复/回滚演练（破坏性操作需单独确认）。
+- 已明确延期、不应在当前无客户材料时实施：48维度×4等级正式文案、基层/领导总体评价与发展建议、`content_version`、正式报告实例表及正式胜任力PDF。当前仅有测试报告布局和报告数据，`reportTextReady=false`；通用GenerateReport仍不支持胜任力。正式题库由客户提供，现有384题继续仅作系统测试。
+- 数据库/历史审计技术债：结果未冻结participant_type/participant_id/报告基本信息；模型DECIMAL仍用float64；无外键；缺建议的 `(exam_id,snapshot_order)` 唯一约束和更贴合提交时间查询的索引。实施前需单独设计迁移和兼容策略，不与容量验收混做。
+- [数据库技术债只读实证 - 2026-07-25] staging四张胜任力关系/结果表外键数=0；`el_competency_result`身份快照字段数=0；三项成绩列均为DECIMAL(18,6)，但Go模型仍用float64；结果表仅有PRIMARY(paper_id)和 `(exam_id,overall_score,paper_id)`；当前 `(exam_id,snapshot_order)` 重复组=0。现状数据一致，但约束/历史身份/精确类型仍需专门迁移设计。
+- 项目治理待办：当前胜任力累计改动尚未形成可追踪Git提交；`docs/coverage-history.md` 与规则要求的 `docs/business-chains.md` 仍不存在；`business-branches.md` 早期仍有已被后续staging证据取代的⚠️条目，需单独做账本收口。production仍未部署，必须等待用户明确“部署生产/上线”。
+- [治理收口 - 2026-07-25] 已新增 `docs/business-chains.md` 作为传统/胜任力端到端链索引，新增 `docs/coverage-history.md` 记录Go/前端测试与staging规模快照；已用真实staging证据关闭legacy API、参与者负例、快照不可变和容量链旧盲区。仍未创建Git提交，production未部署。
+- [仍需用户确认的破坏性步骤 - 2026-07-25] 数据库恢复/回滚演练需要创建临时schema、将备份恢复进去、校验后DROP临时schema；根据破坏性操作纪律必须在执行前单独获得确认。正式报告/PDF继续受客户文案缺失阻塞，不属于可自行完成项。
+- [数据库恢复演练完成 - 2026-07-26] 经用户授权，将备份 `element_before_competency_capacity_20260725_230644.sql.gz` 恢复到临时schema `element_restore_verify`，耗时59秒。恢复库/当前库表数均51、维度48、胜任力源题384、运行时快照/结果均0，计数一致；随后DROP临时schema并确认不存在，现有`element`未被覆盖。
+- [数据库加固005 staging完成 - 2026-07-26] 新增幂等迁移 `competency_005_hardening.sql`：结果冻结participant type/id/name/telephone/age/gender/affiliation/post/degree/major；增加 `(exam_id,snapshot_order)` 唯一索引、`(exam_id,submitted_at,paper_id)` 查询索引和11个非多态关系外键。迁移重复执行通过，现有结果身份回填空记录0；外键真实拒绝无效exam关联且测试行残留0。participant_id动态继承candidate.id的utf8mb4_0900_ai_ci，修复首次验证发现的collation冲突。
+- Go成绩模型改用 `shopspring/decimal` 对应DECIMAL(18,6)，提交直接从big.Rat构造六位decimal，不再经过float64；JSON保持数值输出，动态导出写六位精确字符串。新提交事务读取人员主数据并冻结完整基本信息。三份已知答卷再次验证overall=`2/6/8`、D01=`1/4/5`、结果排序/详情正常；临时修改candidate姓名和手机号后，结果表仍保留原快照，随后人员原值恢复。最终运行验证清理为0。
+- 005最终部署前备份 `/opt/talent-assessment/backups/element_before_competency_identity_full_20260726_000731.sql.gz`，SHA-256 `971d8f48d64eec09df50c8c1b88dce926f370f34d74ac855727586ef54476246`；后端SHA-256 `a61da43a212a308483e600a81be8fcb23caa63b09565c08596dce3c620d943c4`。Go全量测试通过，staging service/health正常，production未修改。
+- [剩余外部依赖 - 2026-07-26] 当前可执行开发与staging验收待办已完成。无法自行关闭的仅有：客户正式题库与48维度分级/两类报告文案未交付，因此正式报告实例、content_version和胜任力生产PDF继续延期；production发布必须等待用户明确“部署生产/上线”。Git工作区包含累计后端改动及用户 `.vscode/settings.json` 变更，且仓库 `.gitignore` 明确排除docs/scripts/前端，因此未自动提交或推送，避免把用户编辑和不可追踪迁移拆散。
+- [UF-002 / FB-066 开始测评修复 - 2026-07-26] 用户截图显示“00401 ABC 测评”准备页仍使用传统90题指导语，点击开始连续弹出英文 `competency exam is not published`。实际数据ID为exam `1785027744745375431`、candidate `1785027772270618331`；根因是该胜任力测评publish_status=0、快照=0，但OnlinePaging仍公开草稿且准备页未做发布门禁。
+- FB-066先RED：后端测试命中在线列表无publish过滤和英文错误；前端测试命中缺canStart/startDisabledReason。修复后未发布胜任力草稿不出现在在线列表；直接准备URL显示中文“尚未发布”并禁用开始；后端sentinel映射为可操作中文；loading期间重复点击直接返回；胜任力指导语按配置维度题数动态显示，不再固定90题。Go全量、前端15文件94项、production build通过（保留既有3个warning）。
+- 经用户明确授权，部署前备份 `/opt/talent-assessment/backups/element_before_fb066_start_gate_20260726_091536.sql.gz`，SHA-256 `0b73ebcbe095f92b010a2a9883fe7384f5069f1400473e78d7fe3ca36be13431`；部署后端/前端SHA-256分别为 `d719e24da3bf983fa693692d219fda420d70c6d65b72377a8d8d80f8e1ebadc7` / `00560297289ddef4e48b08f9a6f6fa53f2b8ce5033d2097ca9f1813be64856aa`。00401 ABC已发布并冻结D01/D02/D05/D06/D32共5维度40题，发布前各维度均启用且各8题；发布后OnlinePaging返回published=1。浏览器准备页显示59分钟、40题五级量表指导语、开始按钮可用、无英文通知。验证未提前创建试卷，paper数仍0，用户点击后才开始个人倒计时。production未修改。
+- [胜任力答题页视觉优化 - 2026-07-26] 本地重构 `competencyExam.vue` 的视觉层级，不改答题、保存、计时或提交接口：顶部改为题号/进度/已答未答/倒计时状态卡；五级选项在桌面端由纵向窄列改为5列等宽卡片，移动端回落单列；操作区只保留1个实心主CTA“交卷”，下一题为描边次操作；题号导航增加当前/已答/未答图例、44px移动触控区、键盘焦点、aria-label/aria-current和保存状态aria-live。桌面内容宽度由960px提升为1180px，选项有效横向利用率由截图约15%提升到约100%，页面颜色控制为主色/成功色/灰阶3类语义色，图标统一Element UI一套。
+- 视觉优化验证：新增组件结构与无障碍回归测试，首次RED为缺 `.exam-kicker`；实现后前端15文件95项全部通过，目标文件编辑器诊断0；`npm run build:prod`成功，保留既有3个warning（paper页面缺listCaptures导出、asset/entrypoint体积）。本轮只完成本地代码和构建，未部署staging或production；真实浏览器新版截图需等待用户确认统一发布staging后验收。
+- [移动端兼容验收 - 2026-07-26] 新增 `scripts/test/competency-mobile-ui-test.js`，通过Playwright真实Chromium拦截只读试卷详情，在390×844手机和768×1024平板视口验证响应式布局。手机：viewport/client/scroll宽均390，无横向溢出，五级选项1列、题号5列、选项48px、题号44px、操作区370px；平板：宽均768，无溢出，选项3列、题号13列、选项52px、题号40px、操作区720px。根据首张真实截图进一步将手机操作区调整为“上一题/下一题”同排、“第一道未答”次行、交卷独立主CTA，复测 `COMPETENCY_MOBILE_UI_PASS`。最终前端15文件95项通过、production build成功、编辑器诊断0；截图产物在ignored的 `scripts/test/screenshots/competency-mobile-390.png`。仍未部署staging/production。
+- [答题页UI与移动端适配staging部署 - 2026-07-26] 用户明确选择部署到 `20.200.136.133` staging。部署前前端备份为 `/opt/talent-assessment/dist.bak.competency_mobile_ui.20260726_100334`，备份index SHA-256 `00560297289ddef4e48b08f9a6f6fa53f2b8ce5033d2097ca9f1813be64856aa`。新dist共401文件/11,675,995 bytes，归档SHA-256 `b5c4a2262e73c4250d54b67232b501169f5a61ae4429f075a3f98c00c8f26e55`；原子目录切换、root:root和a+rX权限、nginx -t/reload完成，部署后本地/远端/公网原始index SHA-256均为 `e43daefeda97c5869c948fd002d3221190a4a86d5595f14b277f5026ac53d9fc`。
+- staging真实静态资源经Chromium三视口验收：390×844手机无横向溢出、1列选项/5列题号、48px选项/44px题号；768×1024平板无溢出、3列选项/13列题号；1440×900桌面无溢出、5列选项/21列题号，结果 `COMPETENCY_MOBILE_UI_PASS`。真实准备页仍显示00401 ABC、59分钟、40题且无加载错误；点击时原参与者短时认证已失效，系统正确提示重新登录/填写信息，因此未改动答案或试卷。验收试卷详情仅浏览器侧route mock，不写staging数据库。production未修改。
+- [真实试卷状态补充 - 2026-07-26] participant `1785027772270618331` 实际已在09:20:23创建paper `ff9fb841-c7d2-4eb3-93c9-11813f83e350`，作答8/40；个人limit_time为10:19:23，Worker于10:19:30按可信timeout自动提交。最终paper state=2，result submit_type=timeout、is_complete=0、answered/total=8/40，candidate end_time=10:19:30。该结果符合既定规则：不完整答卷保留管理审计但不得生成正式报告。当前不能继续原试卷；任何重置或重测会涉及现有结果处理，必须取得用户明确选择后执行。
+- [用户决定 - 2026-07-26] 对上述到期不完整答卷，用户选择“保留结果，停止本次测评”。未删除或重置试卷/结果，未创建新参与者或新试卷。
+- [胜任力答题页E2E - 2026-07-26] 针对已部署staging静态资源新增并执行3条Playwright Chromium流程：`competency-mobile-ui-test.js`覆盖390/768/1440三视口；`competency-answer-flow-e2e.js`覆盖第9题保存、9/31统计、题号状态和刷新恢复；`competency-submit-guard-e2e.js`覆盖缺token不发详情请求、未答交卷定位、补答、单次manual提交、完成页跳转和token清理。最终三个脚本退出码均0，staging health HTTP 200。首次答案统计文本断言及交卷跨重载模拟失败均仅修正测试代码，未改生产业务代码。
+- 本轮为保护已到期且用户决定保留的真实8/40答卷，答题API使用浏览器route mock，只加载staging真实静态资源，不写数据库；因此结论限定为胜任力答题页UI E2E通过，不扩张为全系统浏览器回归。完整证据见 `docs/runtime-validation-report.md`。
+- [已完成测评与报告检查 - 2026-07-26] staging只读盘点共有1163份传统已完成试卷，其中961份已有pdf_path、202份缺报告；按题库分布：无repo 1/1，00101 339/294，00102 724/592，00201 22/17，00202 23/17，00301 31/17，00302 23/23（格式为已完成/已有报告）。批量生成202份会产生PDF文件和数据库写入，未在无明确范围下执行。
+- 00401 ABC当前唯一结果paper `ff9fb841-c7d2-4eb3-93c9-11813f83e350`为state=2、timeout、is_complete=0、8/40，完整结果数0，candidate pdf_path为空/pdf_flag=0，服务器无胜任力报告目录。`FormalReportData`先执行`validateCompetencyFormalReport`，不完整结果返回`ErrCompetencyIncompleteReport`；FB-047专项测试1项通过。用户明确选择“只检查00401，不生成”，因此未调用生成接口、未写数据库、未创建报告文件。
+- [00401报告链只读审查 - 2026-07-26] 当前胜任力“报告”只实现完整答卷的测试报告数据和Vue页面：提交时冻结整体/维度结果与人员基本信息；`AdminReportData -> FormalReportData`先拒绝is_complete!=1，再返回结果、维度和逐题审计；页面固定`reportTextReady=false`并显示“正式解读文案待配置”。未实现`el_competency_report_text`、`el_competency_report`、content_version、胜任力PDF落盘/下载或pdf_path更新。
+- 通用`POST /exam/api/exam/exam/generate-report`的chromedp路由仅支持repoCode 001/002，003明确转MBTI专用链，其他（包括无传统repoCode的competency/00401）返回“不支持的 repoCode”；因此不能用于00401。另发现测试报告入口参数错误：路由定义要求`/exam/competency/report/:paperId`，`competencyReport.vue`读取`$route.params.paperId`，但`competencyResults.vue#showReport`却通过query传paperId；这会阻断即使完整答卷的测试报告导航。该轮仅检查未改代码；修复入口和实现正式PDF应作为两个独立逻辑变更。
+- [剩余待办权威清单 - 2026-07-26 12:05] 当前可立即处理的功能缺陷：①胜任力结果页测试报告入口把paperId放在query，而命名路由要求params；②前端`paper/paper/index.vue`调用并导入不存在的`listCaptures`，production build持续警告，相关截图/抓拍入口存在运行时风险。两项应分别按bug RED→GREEN处理。
+- 当前验证/治理债务：①`business-branches.md`仍保留多条已被后续staging证据覆盖的旧⚠️/❌，需逐项核证收口；其中“competency切回legacy”代码已清空报告版本/维度并恢复repo控件，账本状态过时；②仍缺Go语句覆盖率、前端行/分支覆盖率、传统001/002/003完整浏览器回归；③Git有49个可见未提交改动，且docs/scripts/整个前端目录被.gitignore排除，当前部署成果无法由普通git提交完整追踪；`.vscode/settings.json`为用户改动，整理提交时必须排除或单独处理；④`shopspring/decimal`被业务代码直接导入但go.mod仍标为indirect，需单独执行依赖整理并验证。
+- 当前外部依赖/授权项：客户正式题库与48维度四等级、基层/领导两类正式文案未交付；在材料确认前继续延期content_version、文案表、报告实例、正式胜任力PDF和下载/重生成审计。production仍未部署，必须等待用户明确上线授权。另有202份传统已完成试卷缺PDF，属于运营批处理待办，需指定范围、备份和分批方案后执行。
+- 本轮现状验证：当前Go全量测试通过、Go Build通过、前端15文件95项通过。早期本地DB/SSH/迁移/容量/恢复演练等“未验证/阻塞”记录均已有后续纠正，不再是当前待办；005已完成身份快照、decimal、索引和外键加固，不应重复实施。
+- [FB-067 本地修复 - 2026-07-26] 胜任力结果页原先用`query.paperId`跳转命名路由，但路由定义和报告页均要求`params.paperId`。先新增专项测试，修复前真实收到`query`而断言`params`失败；随后仅将`showReport`改为`params: { paperId: row.paperId }`。专项4项、前端全量15文件96项通过，production build成功，相关文件诊断0。构建仍保留既有3个warning（`listCaptures`缺失及asset/entrypoint体积），与本次修复无关。本切片尚未部署staging/production；真实完整00401答卷仍不存在，因此浏览器报告数据链需后续用完整测试答卷验收。

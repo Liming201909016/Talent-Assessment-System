@@ -279,3 +279,20 @@ func TestBugFB044_ReplaceDocumentFieldsStabilizesEastAsiaHintOnlyFonts(t *testin
 		t.Fatalf("expected static ESTP role text to remain present")
 	}
 }
+
+func TestBugFB044_ProcessTemplateNormalizesStyleAndFontTable(t *testing.T) {
+	styleXML := `<w:styles><w:style><w:rPr><w:rFonts w:ascii="微软雅黑" w:hAnsi="微软雅黑" w:eastAsia="宋体" w:cs="Times New Roman"/></w:rPr></w:style></w:styles>`
+	fontTableXML := `<w:fonts><w:font w:name="微软雅黑"/><w:font w:name="宋体"/><w:font w:name="汉仪雅酷黑 75W"/></w:fonts>`
+
+	styleOut := string(normalizeReportFontXml([]byte(styleXML)))
+	fontTableOut := string(normalizeReportFontXml([]byte(fontTableXML)))
+
+	for _, out := range []string{styleOut, fontTableOut} {
+		if strings.Contains(out, "微软雅黑") || strings.Contains(out, "宋体") || strings.Contains(out, "汉仪雅酷黑") {
+			t.Fatalf("expected style/font table fonts to be normalized, got %s", out)
+		}
+		if !strings.Contains(out, "Noto Sans CJK SC") {
+			t.Fatalf("expected Noto Sans CJK SC in normalized XML, got %s", out)
+		}
+	}
+}

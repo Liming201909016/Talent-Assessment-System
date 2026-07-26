@@ -61,14 +61,20 @@ type PdfGenCfg struct {
 	MaxBatch      int    `mapstructure:"maxBatch"`
 }
 
+type CompetencyCfg struct {
+	ExpiryScanSeconds int `mapstructure:"expiryScanSeconds"`
+	ExpiryBatchSize   int `mapstructure:"expiryBatchSize"`
+}
+
 type Config struct {
-	Server  ServerCfg  `mapstructure:"server"`
-	Mysql   MysqlCfg   `mapstructure:"mysql"`
-	Redis   RedisCfg   `mapstructure:"redis"`
-	Jwt     JwtCfg     `mapstructure:"jwt"`
-	Captcha CaptchaCfg `mapstructure:"captcha"`
-	Upload  UploadCfg  `mapstructure:"upload"`
-	PdfGen  PdfGenCfg  `mapstructure:"pdfgen"`
+	Server     ServerCfg     `mapstructure:"server"`
+	Mysql      MysqlCfg      `mapstructure:"mysql"`
+	Redis      RedisCfg      `mapstructure:"redis"`
+	Jwt        JwtCfg        `mapstructure:"jwt"`
+	Captcha    CaptchaCfg    `mapstructure:"captcha"`
+	Upload     UploadCfg     `mapstructure:"upload"`
+	PdfGen     PdfGenCfg     `mapstructure:"pdfgen"`
+	Competency CompetencyCfg `mapstructure:"competency"`
 }
 
 var Global *Config
@@ -114,6 +120,8 @@ func Load() *Config {
 	bindEnv(v, "pdfgen.poolSize", "PDFGEN_POOL_SIZE")
 	bindEnv(v, "pdfgen.internalToken", "PDFGEN_INTERNAL_TOKEN")
 	bindEnv(v, "pdfgen.reportBaseURL", "PDFGEN_REPORT_BASE_URL")
+	bindEnv(v, "competency.expiryScanSeconds", "COMPETENCY_EXPIRY_SCAN_SECONDS")
+	bindEnv(v, "competency.expiryBatchSize", "COMPETENCY_EXPIRY_BATCH_SIZE")
 
 	var c Config
 	if err := v.Unmarshal(&c); err != nil {
@@ -153,6 +161,12 @@ func Load() *Config {
 	}
 	if c.PdfGen.MaxBatch == 0 {
 		c.PdfGen.MaxBatch = 100
+	}
+	if c.Competency.ExpiryScanSeconds <= 0 {
+		c.Competency.ExpiryScanSeconds = 30
+	}
+	if c.Competency.ExpiryBatchSize <= 0 {
+		c.Competency.ExpiryBatchSize = 100
 	}
 	if c.PdfGen.InternalToken == "" {
 		// 启动时随机生成一个 32 字节 hex

@@ -561,6 +561,10 @@ func (h *MbtiReportHandler) processTemplate(templatePath string, fields map[stri
 			} else {
 				data = h.replaceDocumentFields(data, fields, dateStr)
 			}
+		case "word/styles.xml", "word/fontTable.xml":
+			if !isSimple {
+				data = normalizeReportFontXml(data)
+			}
 		case "word/charts/chart1.xml":
 			if !isSimple {
 				data = h.replaceChartValues(data, scores)
@@ -721,6 +725,7 @@ func stripW14Effects(xmlFrag string) string {
 // Linux/LibreOffice 环境下这些字体会触发不稳定子集嵌入，表现为文本提取正常但渲染成方框。
 // 这里在生成阶段把常见风险字体族替换为 Noto Sans CJK SC，作为最终兜底。
 func normalizeRiskyReportFonts(xmlFrag string) string {
+	xmlFrag = normalizeReportFontString(xmlFrag)
 	replacements := [][2]string{
 		{"汉仪雅酷黑 75W", "Noto Sans CJK SC"},
 		{"汉仪雅酷黑", "Noto Sans CJK SC"},
@@ -731,6 +736,33 @@ func normalizeRiskyReportFonts(xmlFrag string) string {
 		xmlFrag = strings.ReplaceAll(xmlFrag, pair[0], pair[1])
 	}
 	return stabilizeEastAsiaHintOnlyFonts(xmlFrag)
+}
+
+func normalizeReportFontXml(data []byte) []byte {
+	return []byte(normalizeReportFontString(string(data)))
+}
+
+func normalizeReportFontString(xmlFrag string) string {
+	replacements := [][2]string{
+		{"微软雅黑", "Noto Sans CJK SC"},
+		{"Microsoft YaHei", "Noto Sans CJK SC"},
+		{"MicrosoftYaHei", "Noto Sans CJK SC"},
+		{"宋体", "Noto Sans CJK SC"},
+		{"SimSun", "Noto Sans CJK SC"},
+		{"黑体", "Noto Sans CJK SC"},
+		{"SimHei", "Noto Sans CJK SC"},
+		{"仿宋", "Noto Sans CJK SC"},
+		{"方正仿宋_GB2312", "Noto Sans CJK SC"},
+		{"楷体", "Noto Sans CJK SC"},
+		{"汉仪雅酷黑 75W", "Noto Sans CJK SC"},
+		{"汉仪雅酷黑", "Noto Sans CJK SC"},
+		{"HYYakuHei-GEW", "Noto Sans CJK SC"},
+		{"HYYakuHei", "Noto Sans CJK SC"},
+	}
+	for _, pair := range replacements {
+		xmlFrag = strings.ReplaceAll(xmlFrag, pair[0], pair[1])
+	}
+	return xmlFrag
 }
 
 var rFontsTagRe = regexp.MustCompile(`<w:rFonts\b[^>]*/>`)

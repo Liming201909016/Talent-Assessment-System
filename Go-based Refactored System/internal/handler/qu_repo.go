@@ -2,7 +2,9 @@ package handler
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -27,9 +29,24 @@ type quRepo struct {
 	Remark     string     `gorm:"column:remark"        json:"remark"`
 	CreateTime *time.Time `gorm:"column:create_time"   json:"createTime"`
 	UpdateTime *time.Time `gorm:"column:update_time"   json:"updateTime"`
+	Virtual    bool       `gorm:"-"                    json:"virtual"`
 }
 
 func (quRepo) TableName() string { return "el_repo" }
+
+const competencyVirtualRepoID = "competency-question-bank-00401"
+
+func competencyVirtualRepo(questionCount int) quRepo {
+	return quRepo{ID: competencyVirtualRepoID, Code: "00401", Title: "胜任力测验题库", RadioCount: questionCount, Virtual: true}
+}
+
+func countCompetencyQuestions(db *gorm.DB) (int, error) {
+	var count int64
+	if err := db.Table("el_qu").Where("dimension_id IS NOT NULL").Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
 
 // POST /api/qu/repo/paging
 func (h *RepoHandler) Paging(c *gin.Context) {
@@ -45,9 +62,7 @@ func (h *RepoHandler) Paging(c *gin.Context) {
 	if req.Current <= 0 {
 		req.Current = 1
 	}
-	if req.Size <= 0 {
-		req.Size = 10
-	}
+	req.Size = capPageSize(req.Size)
 	// 兼容两种传参：顶层 title 或 params.title
 	searchTitle := req.Title
 	if searchTitle == "" {
@@ -57,17 +72,57 @@ func (h *RepoHandler) Paging(c *gin.Context) {
 	if searchTitle != "" {
 		q = q.Where("title like ?", "%"+searchTitle+"%")
 	}
-	var total int64
-	q.Count(&total)
-	var rows []quRepo
-	q.Order("update_time desc").Offset((req.Current - 1) * req.Size).Limit(req.Size).Find(&rows)
+	var physicalTotal int64
+	if err := q.Count(&physicalTotal).Error; err != nil {
+		response.RestErr(c, "查询题库总数失败")
+		return
+	}
+	includeCompetency := searchTitle == "" || strings.Contains("00401", searchTitle) || strings.Contains("胜任力测验题库", searchTitle)
+	competencyCount := 0
+	if includeCompetency {
+		var err error
+		competencyCount, err = countCompetencyQuestions(h.db)
+		if err != nil {
+			response.RestErr(c, "查询胜任力题数失败")
+			return
+		}
+	}
+	total := physicalTotal
+	if includeCompetency {
+		total++
+	}
+	rows := make([]quRepo, 0, req.Size)
+	pageStart := (req.Current - 1) * req.Size
+	if includeCompetency && pageStart == 0 {
+		rows = append(rows, competencyVirtualRepo(competencyCount))
+	}
+	physicalOffset := pageStart
+	if includeCompetency {
+		physicalOffset--
+		if physicalOffset < 0 {
+			physicalOffset = 0
+		}
+	}
+	remaining := req.Size - len(rows)
+	if remaining > 0 && int64(physicalOffset) < physicalTotal {
+		physicalRows := make([]quRepo, 0, remaining)
+		if err := q.Order("update_time desc").Offset(physicalOffset).
+			Limit(remaining).Find(&physicalRows).Error; err != nil {
+			response.RestErr(c, "查询题库列表失败")
+			return
+		}
+		rows = append(rows, physicalRows...)
+	}
 	response.Rest(c, gin.H{"records": rows, "total": total, "current": req.Current, "size": req.Size})
 }
 
 // POST /api/qu/repo/list
 func (h *RepoHandler) List(c *gin.Context) {
-	var rows []quRepo
-	h.db.Order("update_time desc").Find(&rows)
+	rows := make([]quRepo, 0)
+	if err := h.db.Order("update_time desc").Find(&rows).Error; err != nil {
+		response.RestErr(c, "查询题库列表失败")
+		return
+	}
 	response.Rest(c, rows)
 }
 
@@ -96,16 +151,37 @@ func (h *RepoHandler) Save(c *gin.Context) {
 		response.RestErr(c, "参数错误")
 		return
 	}
+	r.Title = strings.TrimSpace(r.Title)
+	if r.Title == "" {
+		response.RestErr(c, "题库名称不能为空")
+		return
+	}
+	now := time.Now()
 	if r.ID == "" {
-		// 由 DB 默认值或调用方生成；若无则自行生成
 		r.ID = strconv.FormatInt(nextID(), 10)
+		r.RadioCount = 0
+		r.MultiCount = 0
+		r.JudgeCount = 0
+		r.CreateTime = &now
+		r.UpdateTime = &now
 		if err := h.db.Create(&r).Error; err != nil {
 			response.RestErr(c, err.Error())
 			return
 		}
 	} else {
-		if err := h.db.Save(&r).Error; err != nil {
-			response.RestErr(c, err.Error())
+		result := h.db.Model(&quRepo{}).Where("id = ?", r.ID).Updates(map[string]any{
+			"code": r.Code, "title": r.Title, "remark": r.Remark, "update_time": &now,
+		})
+		if result.Error != nil {
+			response.RestErr(c, result.Error.Error())
+			return
+		}
+		if result.RowsAffected == 0 {
+			response.RestErr(c, "题库不存在")
+			return
+		}
+		if err := h.db.Where("id = ?", r.ID).Take(&r).Error; err != nil {
+			response.RestErr(c, "查询题库失败")
 			return
 		}
 	}
@@ -121,6 +197,12 @@ func (h *RepoHandler) Remove(c *gin.Context) {
 	if len(b.IDs) == 0 {
 		response.RestErr(c, "ids 为空")
 		return
+	}
+	for _, id := range b.IDs {
+		if id == competencyVirtualRepoID {
+			response.RestErr(c, "00401为胜任力题库入口，不能通过传统题库接口删除")
+			return
+		}
 	}
 
 	// FB-024: 删除题库前检查是否被 exam 引用
@@ -152,6 +234,22 @@ func nextID() int64 {
 	return time.Now().UnixNano() + atomic.AddInt64(&idCounter, 1)
 }
 
+func normalizeBatchIDs(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
 // POST /exam/api/repo/batch-action
 // 对齐 Java QuRepoService.batchAction：批量添加/移除题目到题库
 func (h *RepoHandler) BatchAction(c *gin.Context) {
@@ -161,40 +259,99 @@ func (h *RepoHandler) BatchAction(c *gin.Context) {
 		Remove  *bool    `json:"remove"`
 	}
 	_ = c.ShouldBindJSON(&b)
+	b.QuIDs = normalizeBatchIDs(b.QuIDs)
+	b.RepoIDs = normalizeBatchIDs(b.RepoIDs)
 	if len(b.QuIDs) == 0 || len(b.RepoIDs) == 0 {
 		response.RestErr(c, "quIds 或 repoIds 为空")
 		return
 	}
-	if b.Remove != nil && *b.Remove {
-		// 移除
-		h.db.Where("repo_id IN ? AND qu_id IN ?", b.RepoIDs, b.QuIDs).Delete(&quRepoRow{})
-	} else {
-		// 添加：对每个 quId 先删旧关联再重建
-		for _, qid := range b.QuIDs {
-			var qu struct {
-				QuType int `gorm:"column:qu_type"`
-			}
-			h.db.Table("el_qu").Where("id = ?", qid).Select("qu_type").Take(&qu)
-			h.db.Where("qu_id = ?", qid).Delete(&quRepoRow{})
-			for _, rid := range b.RepoIDs {
-				h.db.Create(&quRepoRow{
-					ID:     strconv.FormatInt(nextID(), 10),
-					QuID:   qid,
-					RepoID: rid,
-					QuType: qu.QuType,
-				})
-			}
-		}
+	if err := rejectCompetencyQuestionIDs(h.db, b.QuIDs); err != nil {
+		response.RestErr(c, err.Error())
+		return
 	}
-	// 重排 sort + 刷新统计
-	for _, rid := range b.RepoIDs {
-		var rows []quRepoRow
-		h.db.Where("repo_id = ?", rid).Order("sort ASC").Find(&rows)
-		for i := range rows {
-			rows[i].Sort = i + 1
-			h.db.Save(&rows[i])
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var questions []struct {
+			ID     string `gorm:"column:id"`
+			QuType int    `gorm:"column:qu_type"`
 		}
-		_ = refreshRepoStat(h.db, rid)
+		if err := tx.Table("el_qu").Select("id, qu_type").
+			Where("id IN ? AND dimension_id IS NULL", b.QuIDs).
+			Find(&questions).Error; err != nil {
+			return err
+		}
+		if len(questions) != len(b.QuIDs) {
+			return fmt.Errorf("部分题目不存在或不是传统题目")
+		}
+		var repoCount int64
+		if err := tx.Model(&quRepo{}).Where("id IN ?", b.RepoIDs).Count(&repoCount).Error; err != nil {
+			return err
+		}
+		if int(repoCount) != len(b.RepoIDs) {
+			return fmt.Errorf("部分题库不存在")
+		}
+
+		var oldRepoIDs []string
+		if err := tx.Model(&quRepoRow{}).Where("qu_id IN ?", b.QuIDs).
+			Distinct("repo_id").Pluck("repo_id", &oldRepoIDs).Error; err != nil {
+			return err
+		}
+		affected := make(map[string]struct{}, len(oldRepoIDs)+len(b.RepoIDs))
+		for _, repoID := range oldRepoIDs {
+			affected[repoID] = struct{}{}
+		}
+		for _, repoID := range b.RepoIDs {
+			affected[repoID] = struct{}{}
+		}
+
+		if b.Remove != nil && *b.Remove {
+			if err := tx.Where("repo_id IN ? AND qu_id IN ?", b.RepoIDs, b.QuIDs).
+				Delete(&quRepoRow{}).Error; err != nil {
+				return err
+			}
+		} else {
+			if err := tx.Where("qu_id IN ?", b.QuIDs).Delete(&quRepoRow{}).Error; err != nil {
+				return err
+			}
+			associations := make([]quRepoRow, 0, len(questions)*len(b.RepoIDs))
+			for _, question := range questions {
+				for _, repoID := range b.RepoIDs {
+					associations = append(associations, quRepoRow{
+						ID: strconv.FormatInt(nextID(), 10), QuID: question.ID,
+						RepoID: repoID, QuType: question.QuType,
+					})
+				}
+			}
+			if err := tx.CreateInBatches(associations, 100).Error; err != nil {
+				return err
+			}
+		}
+
+		affectedRepoIDs := make([]string, 0, len(affected))
+		for repoID := range affected {
+			affectedRepoIDs = append(affectedRepoIDs, repoID)
+		}
+		sort.Strings(affectedRepoIDs)
+		for _, repoID := range affectedRepoIDs {
+			rows := make([]quRepoRow, 0)
+			if err := tx.Where("repo_id = ?", repoID).
+				Order("sort ASC, id ASC").Find(&rows).Error; err != nil {
+				return err
+			}
+			for i := range rows {
+				if err := tx.Model(&quRepoRow{}).Where("id = ?", rows[i].ID).
+					Update("sort", i+1).Error; err != nil {
+					return err
+				}
+			}
+			if err := refreshRepoStat(tx, repoID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		response.RestErr(c, err.Error())
+		return
 	}
 	response.Rest(c, true)
 }

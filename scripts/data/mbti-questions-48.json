@@ -1,0 +1,290 @@
+[
+  {
+    "no": 1, "dimension": "E-I", "content": "V1",
+    "title": "当你遇到新朋友时，你",
+    "optionA": "说话的时间与聆听的时间差不多",
+    "optionB": "聆听的时间会比说话的时间多"
+  },
+  {
+    "no": 2, "dimension": "S-N", "content": "V2",
+    "title": "在工作中，你更倾向于",
+    "optionA": "关注具体的事实和细节",
+    "optionB": "关注整体的趋势和可能性"
+  },
+  {
+    "no": 3, "dimension": "T-F", "content": "V3",
+    "title": "在做重要决定时，你通常",
+    "optionA": "依据逻辑分析和客观事实",
+    "optionB": "考虑对他人的感受和影响"
+  },
+  {
+    "no": 4, "dimension": "J-P", "content": "V4",
+    "title": "在日常生活中，你更喜欢",
+    "optionA": "按照计划和日程安排行事",
+    "optionB": "保持灵活，随机应变"
+  },
+  {
+    "no": 5, "dimension": "E-I", "content": "V5",
+    "title": "在社交场合中，你通常",
+    "optionA": "主动与人交谈，结识新朋友",
+    "optionB": "等待别人来找你交流"
+  },
+  {
+    "no": 6, "dimension": "S-N", "content": "V6",
+    "title": "当学习新知识时，你更喜欢",
+    "optionA": "通过实际操作和具体案例来学习",
+    "optionB": "通过理解背后的原理和理论来学习"
+  },
+  {
+    "no": 7, "dimension": "T-F", "content": "V7",
+    "title": "当朋友向你倾诉烦恼时，你倾向于",
+    "optionA": "帮助分析问题并提出解决方案",
+    "optionB": "先表示理解和同情，给予情感支持"
+  },
+  {
+    "no": 8, "dimension": "J-P", "content": "V8",
+    "title": "关于工作任务的截止日期，你通常",
+    "optionA": "提前完成，不喜欢拖到最后",
+    "optionB": "在截止日期前的压力下效率最高"
+  },
+  {
+    "no": 9, "dimension": "E-I", "content": "V9",
+    "title": "在忙碌的一天之后，你更希望",
+    "optionA": "和朋友聚会聊天来放松",
+    "optionB": "独自待在家里安静地休息"
+  },
+  {
+    "no": 10, "dimension": "S-N", "content": "V10",
+    "title": "在描述一件事情时，你更倾向于",
+    "optionA": "按照时间顺序详细地叙述经过",
+    "optionB": "概括要点，强调自己的感悟"
+  },
+  {
+    "no": 11, "dimension": "T-F", "content": "V11",
+    "title": "在团队讨论中出现分歧时，你更倾向于",
+    "optionA": "坚持自己认为正确的观点",
+    "optionB": "寻求折中方案以维护团队和谐"
+  },
+  {
+    "no": 12, "dimension": "J-P", "content": "V12",
+    "title": "对于周末的安排，你通常",
+    "optionA": "提前规划好要做的事情",
+    "optionB": "看心情临时决定做什么"
+  },
+  {
+    "no": 13, "dimension": "E-I", "content": "V13",
+    "title": "在会议或讨论中，你通常",
+    "optionA": "积极发言，分享自己的想法",
+    "optionB": "先倾听别人的观点，再表达自己的看法"
+  },
+  {
+    "no": 14, "dimension": "S-N", "content": "V14",
+    "title": "你更欣赏的人是",
+    "optionA": "脚踏实地、务实可靠的人",
+    "optionB": "富有想象力、善于创新的人"
+  },
+  {
+    "no": 15, "dimension": "T-F", "content": "V15",
+    "title": "当需要给下属或同事提出批评意见时，你",
+    "optionA": "直接指出问题所在，对事不对人",
+    "optionB": "注意措辞和方式，避免伤害对方感受"
+  },
+  {
+    "no": 16, "dimension": "J-P", "content": "V16",
+    "title": "你的办公桌或工作区域通常是",
+    "optionA": "整洁有序，物品摆放有固定位置",
+    "optionB": "看起来有些凌乱，但自己知道东西在哪"
+  },
+  {
+    "no": 17, "dimension": "E-I", "content": "V17",
+    "title": "在处理问题时，你更倾向于",
+    "optionA": "与他人讨论，边说边想",
+    "optionB": "自己先想清楚，再与人沟通"
+  },
+  {
+    "no": 18, "dimension": "S-N", "content": "V18",
+    "title": "在阅读报告或文章时，你更关注",
+    "optionA": "具体的数据、事实和证据",
+    "optionB": "作者的观点、推论和预测"
+  },
+  {
+    "no": 19, "dimension": "T-F", "content": "V19",
+    "title": "你认为一个好的领导者应该更注重",
+    "optionA": "公平公正，按规则办事",
+    "optionB": "体贴关怀，关注员工的个人需求"
+  },
+  {
+    "no": 20, "dimension": "J-P", "content": "V20",
+    "title": "当计划突然发生变化时，你通常",
+    "optionA": "感到不安或沮丧，希望恢复原计划",
+    "optionB": "觉得无所谓，甚至感到兴奋"
+  },
+  {
+    "no": 21, "dimension": "E-I", "content": "V21",
+    "title": "在团队合作中，你更喜欢",
+    "optionA": "频繁沟通，及时分享进展",
+    "optionB": "各自独立完成分工，定期汇总"
+  },
+  {
+    "no": 22, "dimension": "S-N", "content": "V22",
+    "title": "当面临一个新项目时，你首先会",
+    "optionA": "了解过去类似项目的经验和做法",
+    "optionB": "思考是否有全新的方法和思路"
+  },
+  {
+    "no": 23, "dimension": "T-F", "content": "V23",
+    "title": "在评价他人的工作成果时，你更看重",
+    "optionA": "成果的质量和效率",
+    "optionB": "对方在过程中付出的努力和态度"
+  },
+  {
+    "no": 24, "dimension": "J-P", "content": "V24",
+    "title": "对于旅行，你更喜欢",
+    "optionA": "提前做好详细的行程规划",
+    "optionB": "只定大方向，到了再随意探索"
+  },
+  {
+    "no": 25, "dimension": "E-I", "content": "V25",
+    "title": "你在公开场合总是",
+    "optionA": "自如表达，享受被关注的感觉",
+    "optionB": "谨言慎行，不太喜欢成为焦点"
+  },
+  {
+    "no": 26, "dimension": "S-N", "content": "V26",
+    "title": "在解决问题时，你更依赖",
+    "optionA": "以往的经验和已验证的方法",
+    "optionB": "直觉和灵感，尝试新的可能"
+  },
+  {
+    "no": 27, "dimension": "T-F", "content": "V27",
+    "title": "当团队中有人犯了错误时，你更倾向于",
+    "optionA": "分析错误原因，建立防范机制",
+    "optionB": "先安抚当事人情绪，再讨论改进"
+  },
+  {
+    "no": 28, "dimension": "J-P", "content": "V28",
+    "title": "你更喜欢的工作方式是",
+    "optionA": "按照既定流程和标准操作",
+    "optionB": "根据情况灵活调整方法"
+  },
+  {
+    "no": 29, "dimension": "E-I", "content": "V29",
+    "title": "你获取能量的方式更多是",
+    "optionA": "参加社交活动，与人互动",
+    "optionB": "独处思考，享受安静时光"
+  },
+  {
+    "no": 30, "dimension": "S-N", "content": "V30",
+    "title": "对于未来，你更关注",
+    "optionA": "当下能做的具体事情",
+    "optionB": "长远的发展方向和愿景"
+  },
+  {
+    "no": 31, "dimension": "T-F", "content": "V31",
+    "title": "在谈判或协商中，你更看重",
+    "optionA": "达成对双方都合理的结果",
+    "optionB": "维护良好的合作关系"
+  },
+  {
+    "no": 32, "dimension": "J-P", "content": "V32",
+    "title": "在购物时，你通常",
+    "optionA": "事先列好清单，目标明确",
+    "optionB": "随意逛逛，看到喜欢的就买"
+  },
+  {
+    "no": 33, "dimension": "E-I", "content": "V33",
+    "title": "当你有一个新想法时，你通常会",
+    "optionA": "马上和别人分享讨论",
+    "optionB": "先自己思考完善再告诉别人"
+  },
+  {
+    "no": 34, "dimension": "S-N", "content": "V34",
+    "title": "你更喜欢的工作内容是",
+    "optionA": "处理具体、可量化的任务",
+    "optionB": "进行战略规划和概念设计"
+  },
+  {
+    "no": 35, "dimension": "T-F", "content": "V35",
+    "title": "你认为更重要的是",
+    "optionA": "追求真理和事实",
+    "optionB": "维护人际和谐"
+  },
+  {
+    "no": 36, "dimension": "J-P", "content": "V36",
+    "title": "面对多个任务时，你更倾向于",
+    "optionA": "一件一件按顺序完成",
+    "optionB": "同时推进多个任务，在之间切换"
+  },
+  {
+    "no": 37, "dimension": "E-I", "content": "V37",
+    "title": "在工作环境中，你更喜欢",
+    "optionA": "开放式办公，方便随时交流",
+    "optionB": "安静的独立空间，减少干扰"
+  },
+  {
+    "no": 38, "dimension": "S-N", "content": "V38",
+    "title": "在做汇报或演讲时，你更注重",
+    "optionA": "用数据和案例来支撑论点",
+    "optionB": "用故事和比喻来传达理念"
+  },
+  {
+    "no": 39, "dimension": "T-F", "content": "V39",
+    "title": "当朋友做了你不认同的决定时，你会",
+    "optionA": "坦诚地表达你的不同看法",
+    "optionB": "尊重对方的选择，给予支持"
+  },
+  {
+    "no": 40, "dimension": "J-P", "content": "V40",
+    "title": "在开始一项新工作之前，你更倾向于",
+    "optionA": "先制定详细的执行计划",
+    "optionB": "先开始做，边做边调整"
+  },
+  {
+    "no": 41, "dimension": "E-I", "content": "V41",
+    "title": "你认为自己更像",
+    "optionA": "外向活跃，喜欢热闹的氛围",
+    "optionB": "内敛沉稳，享受深度思考"
+  },
+  {
+    "no": 42, "dimension": "S-N", "content": "V42",
+    "title": "当别人向你寻求建议时，你更倾向于",
+    "optionA": "给出具体可行的操作步骤",
+    "optionB": "帮助对方拓宽思路，看到更多可能"
+  },
+  {
+    "no": 43, "dimension": "T-F", "content": "V43",
+    "title": "在职场中，你更看重",
+    "optionA": "能力和业绩",
+    "optionB": "人品和忠诚"
+  },
+  {
+    "no": 44, "dimension": "J-P", "content": "V44",
+    "title": "你更享受的状态是",
+    "optionA": "一切尽在掌控之中",
+    "optionB": "充满未知和惊喜"
+  },
+  {
+    "no": 45, "dimension": "E-I", "content": "V45",
+    "title": "在表达观点时，你更习惯",
+    "optionA": "当面口头表达",
+    "optionB": "通过文字或书面方式表达"
+  },
+  {
+    "no": 46, "dimension": "S-N", "content": "V46",
+    "title": "你更信任的是",
+    "optionA": "亲身经历和眼见为实的事物",
+    "optionB": "内心的预感和第六感"
+  },
+  {
+    "no": 47, "dimension": "T-F", "content": "V47",
+    "title": "在选择职业时，你更优先考虑",
+    "optionA": "薪资待遇和发展前景",
+    "optionB": "工作是否能帮助他人、有社会意义"
+  },
+  {
+    "no": 48, "dimension": "J-P", "content": "V48",
+    "title": "对于规章制度，你的态度是",
+    "optionA": "规则就是规则，应该严格遵守",
+    "optionB": "规则是参考，应该根据实际情况变通"
+  }
+]

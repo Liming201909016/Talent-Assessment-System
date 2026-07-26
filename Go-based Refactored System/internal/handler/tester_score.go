@@ -42,6 +42,10 @@ func (h *TesterHandler) StandScore(c *gin.Context) {
 		response.AjaxErr(c, "paperId 为空")
 		return
 	}
+	if err := requireLegacyPaper(h.db, b.PaperID); err != nil {
+		response.AjaxErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
+		return
+	}
 
 	// 若 repoCode 未传，从 paper → exam → repo 反查（与 candidate.StandScoreCandidate 一致）
 	if b.RepoCode == "" {
@@ -583,29 +587,37 @@ func (h *TesterHandler) LoginForm(c *gin.Context) {
 		"name":      te.Name,
 	}
 	token, _ := jwtpkg.Create(h.cfg.Jwt.Secret, claims)
+	participantToken := ""
+	if examID != "" {
+		var assessmentType string
+		if err := h.db.Table("el_exam").Where("id = ?", examID).Pluck("assessment_type", &assessmentType).Error; err == nil && assessmentType == "competency" {
+			participantToken, _ = createParticipantToken(h.cfg, "tester", te.ID, examID)
+		}
+	}
 
 	// 对齐 Java：返回完整 Tester（不含密码明文，Go 增强安全）
 	view := gin.H{
-		"id":          te.ID,
-		"idNumber":    te.IDNumber,
-		"name":        te.Name,
-		"age":         te.Age,
-		"gender":      te.Gender,
-		"password":    te.Password, // 前端 H5 答题页需要此字段做身份验证
-		"telephone":   te.Telephone,
-		"affiliation": te.Affiliation,
-		"depart":      te.Depart,
-		"post":        te.Post,
-		"degree":      te.Degree,
-		"major":       te.Major,
-		"stuFlag":     te.StuFlag,
-		"status":      te.Status,
-		"examId":      te.ExamID,
-		"paperId":     te.PaperID,
-		"endTime":     te.EndTime,
-		"pdfPath":     te.PdfPath,
-		"pdfFlag":     te.PdfFlag,
-		"token":       token,
+		"id":               te.ID,
+		"idNumber":         te.IDNumber,
+		"name":             te.Name,
+		"age":              te.Age,
+		"gender":           te.Gender,
+		"password":         te.Password, // 前端 H5 答题页需要此字段做身份验证
+		"telephone":        te.Telephone,
+		"affiliation":      te.Affiliation,
+		"depart":           te.Depart,
+		"post":             te.Post,
+		"degree":           te.Degree,
+		"major":            te.Major,
+		"stuFlag":          te.StuFlag,
+		"status":           te.Status,
+		"examId":           te.ExamID,
+		"paperId":          te.PaperID,
+		"endTime":          te.EndTime,
+		"pdfPath":          te.PdfPath,
+		"pdfFlag":          te.PdfFlag,
+		"token":            token,
+		"participantToken": participantToken,
 	}
 	response.AjaxOK(c, view)
 }

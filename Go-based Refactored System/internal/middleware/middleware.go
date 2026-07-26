@@ -98,6 +98,18 @@ func IsAnonymousMethod(method, path string) bool {
 	if method == "PUT" && path == "/exam/api/tester" {
 		return true
 	}
+	if method == "POST" {
+		switch path {
+		case "/exam/api/competency/participant/create-paper",
+			"/exam/api/competency/participant/paper-detail",
+			"/exam/api/competency/participant/fill-answer",
+			"/exam/api/competency/participant/submit":
+			return true
+		}
+	}
+	if method == "GET" && path == "/exam/api/competency/internal/report-data" {
+		return true
+	}
 	return false
 }
 

@@ -171,7 +171,7 @@ func printPDF(ctx context.Context, reportType, headerTitle string) ([]byte, erro
 	}
 	// 阶段 2：内容页（前端 .one-page 用 page-break-after:always 后会有空白第 2 页）
 	// 跳过封面 + 跳过空白页，从第 3 页起才是真正内容
-	content, err := printRange(ctx, "3-", true, headerHTML)
+	content, err := printRange(ctx, contentPageRange(reportType), true, headerHTML)
 	if err != nil {
 		// 内容页失败 → 仅返回封面（不报错，至少有封面）
 		// 可能是只有 1 页报告（无内容页）
@@ -190,6 +190,13 @@ func printPDF(ctx context.Context, reportType, headerTitle string) ([]byte, erro
 		return merged, nil
 	}
 	return stamped, nil
+}
+
+func contentPageRange(reportType string) string {
+	if reportType == "competency" {
+		return "2-"
+	}
+	return "3-"
 }
 
 // printRange 打印指定页范围。

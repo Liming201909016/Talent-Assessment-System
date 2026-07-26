@@ -32,26 +32,27 @@ func NewCandidateHandler(db *gorm.DB, cfg *config.Config) *CandidateHandler {
 
 // Candidate 对齐 el_candidate
 type Candidate struct {
-	ID          string     `gorm:"column:id;primaryKey" json:"id"`
-	PaperID     *string    `gorm:"column:paper_id"      json:"paperId"`
-	ExamID      string     `gorm:"column:exam_id"       json:"examId"`
-	Name        string     `gorm:"column:name"          json:"name"`
-	Age         *int       `gorm:"column:age"           json:"age"`
-	Password    string     `gorm:"column:password"      json:"-"`
-	Status      *string    `gorm:"column:status"        json:"status"`
-	Telephone   *string    `gorm:"column:telephone"     json:"telephone"`
-	Affiliation *string    `gorm:"column:affiliation"   json:"affiliation"`
-	Post        *string    `gorm:"column:post"          json:"post"`
-	Degree      *string    `gorm:"column:degree"        json:"degree"`
-	Major       *string    `gorm:"column:major"         json:"major"`
-	StuFlag     *int       `gorm:"column:stu_flag"      json:"stuFlag"`
-	Gender      *string    `gorm:"column:gender"        json:"gender"`
-	EndTime     *time.Time `gorm:"column:end_time"      json:"endTime"`
-	PdfPath     *string    `gorm:"column:pdf_path"      json:"pdfPath"`
-	DelFlag     *int       `gorm:"column:del_flag"      json:"delFlag"`
-	PdfFlag     *int       `gorm:"column:pdf_flag"      json:"pdfFlag"`
-	CreateTime  *time.Time `gorm:"column:create_time"   json:"createTime"`
-	UpdateTime  *time.Time `gorm:"column:update_time"   json:"updateTime"`
+	ID               string     `gorm:"column:id;primaryKey" json:"id"`
+	PaperID          *string    `gorm:"column:paper_id"      json:"paperId"`
+	ExamID           string     `gorm:"column:exam_id"       json:"examId"`
+	Name             string     `gorm:"column:name"          json:"name"`
+	Age              *int       `gorm:"column:age"           json:"age"`
+	Password         string     `gorm:"column:password"      json:"-"`
+	Status           *string    `gorm:"column:status"        json:"status"`
+	Telephone        *string    `gorm:"column:telephone"     json:"telephone"`
+	Affiliation      *string    `gorm:"column:affiliation"   json:"affiliation"`
+	Post             *string    `gorm:"column:post"          json:"post"`
+	Degree           *string    `gorm:"column:degree"        json:"degree"`
+	Major            *string    `gorm:"column:major"         json:"major"`
+	StuFlag          *int       `gorm:"column:stu_flag"      json:"stuFlag"`
+	Gender           *string    `gorm:"column:gender"        json:"gender"`
+	EndTime          *time.Time `gorm:"column:end_time"      json:"endTime"`
+	PdfPath          *string    `gorm:"column:pdf_path"      json:"pdfPath"`
+	DelFlag          *int       `gorm:"column:del_flag"      json:"delFlag"`
+	PdfFlag          *int       `gorm:"column:pdf_flag"      json:"pdfFlag"`
+	CreateTime       *time.Time `gorm:"column:create_time"   json:"createTime"`
+	UpdateTime       *time.Time `gorm:"column:update_time"   json:"updateTime"`
+	ParticipantToken string     `gorm:"-" json:"participantToken,omitempty"`
 }
 
 func (Candidate) TableName() string { return "el_candidate" }
@@ -114,7 +115,7 @@ func (h *CandidateHandler) Save(c *gin.Context) {
 	err := h.db.Where("exam_id = ? AND telephone = ?", b.ExamID, *b.Telephone).First(&existing).Error
 	now := time.Now()
 	if err == gorm.ErrRecordNotFound {
-		ca.ID = strconv.FormatInt(time.Now().UnixMilli(), 10)
+		ca.ID = strconv.FormatInt(nextID(), 10)
 		ca.CreateTime = &now
 		ca.UpdateTime = &now
 		if err := h.db.Create(&ca).Error; err != nil {
@@ -135,6 +136,10 @@ func (h *CandidateHandler) Save(c *gin.Context) {
 			response.RestErr(c, err.Error())
 			return
 		}
+	}
+	var assessmentType string
+	if err := h.db.Table("el_exam").Where("id = ?", ca.ExamID).Pluck("assessment_type", &assessmentType).Error; err == nil && assessmentType == "competency" {
+		ca.ParticipantToken, _ = createParticipantToken(h.cfg, "candidate", ca.ID, ca.ExamID)
 	}
 	response.Rest(c, ca)
 }
@@ -193,6 +198,10 @@ func (h *CandidateHandler) Remove(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
+	if err := rejectDirectCompetencyDelete(h.db, "candidate", ids); err != nil {
+		response.RestErr(c, err.Error())
+		return
+	}
 	// FB-012: 物理删除前先清理 PDF 文件，避免磁盘泄漏
 	h.cleanupCandidatePdfFiles(ids)
 	h.db.Where("id IN ?", ids).Delete(&Candidate{})
@@ -204,6 +213,10 @@ func (h *CandidateHandler) Logistic(c *gin.Context) {
 	ids := splitCsv(c.Param("ids"))
 	if len(ids) == 0 {
 		response.RestErr(c, "ids 为空")
+		return
+	}
+	if err := rejectDirectCompetencyDelete(h.db, "candidate", ids); err != nil {
+		response.RestErr(c, err.Error())
 		return
 	}
 	// FB-012: 软删除时也清理 PDF 文件（已删除的用户不应再有报告）
@@ -423,6 +436,10 @@ func (h *CandidateHandler) StandScoreCandidate(c *gin.Context) {
 	_ = c.ShouldBindJSON(&b)
 	if b.PaperID == "" {
 		response.RestErr(c, "paperId 为空")
+		return
+	}
+	if err := requireLegacyPaper(h.db, b.PaperID); err != nil {
+		response.RestErr(c, legacyPaperGuardMessage(err, "试卷不存在"))
 		return
 	}
 	// 若 repoCode 未传，从 paper → exam → repo 反查

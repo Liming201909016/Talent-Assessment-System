@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/model"
+	"github.com/talent-assessment/refactored/internal/service"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
@@ -204,6 +205,15 @@ func (h *ExamHandler) ExportRawAnswers(c *gin.Context) {
 	var exam model.Exam
 	if err := h.db.Where("id = ?", examID).First(&exam).Error; err != nil {
 		response.RestErr(c, "考试不存在")
+		return
+	}
+	if exam.AssessmentType == service.AssessmentTypeCompetency {
+		isCompetency, err := service.ValidateAssessmentMode(exam.AssessmentType, exam.ScoringMode)
+		if err != nil || !isCompetency {
+			response.RestErr(c, "胜任力测评类型配置错误")
+			return
+		}
+		h.exportCompetencyWorkbook(c, lu, isAdmin, exam)
 		return
 	}
 	h.exportRawAnswersWide(c, lu, isAdmin, exam)
@@ -862,6 +872,19 @@ func (h *ExamHandler) ExportRawData(c *gin.Context) {
 	var exam model.Exam
 	if err := h.db.Where("id = ?", examID).First(&exam).Error; err != nil {
 		response.RestErr(c, "考试不存在")
+		return
+	}
+	if exam.AssessmentType == service.AssessmentTypeCompetency {
+		lu, isAdmin, ok := competencyExportIdentity(c)
+		if !ok {
+			return
+		}
+		isCompetency, err := service.ValidateAssessmentMode(exam.AssessmentType, exam.ScoringMode)
+		if err != nil || !isCompetency {
+			response.RestErr(c, "胜任力测评类型配置错误")
+			return
+		}
+		h.exportCompetencyWorkbook(c, lu, isAdmin, exam)
 		return
 	}
 

@@ -1,4 +1,4 @@
-﻿package pdfgen
+package pdfgen
 
 // FB-039: 页眉左上角图标的 base64 PNG（与 baseline jsPDF 报告完全一致的设计）
 // 之前用 CSS border 三角对 002 不正确（baseline 002 是浅蓝色重叠圆设计，不是三角）

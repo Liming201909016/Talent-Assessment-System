@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +56,55 @@ func toIntPtr(v interface{}) *int {
 	return nil
 }
 
+type quWithAnswers struct {
+	model.Qu
+	AnswerList []model.QuAnswer `json:"answerList"`
+	Sort       int              `json:"sort"`
+	RepoName   string           `json:"repoName"`
+	RepoID     string           `json:"repoId"`
+}
+
+type questionPageRepo struct {
+	QuID   string `gorm:"column:qu_id"`
+	RepoID string `gorm:"column:repo_id"`
+	Title  string `gorm:"column:title"`
+}
+
+func loadQuestionPageRelations(db *gorm.DB, questionIDs []string) (map[string][]model.QuAnswer, map[string][]questionPageRepo, error) {
+	answersByQuestion := make(map[string][]model.QuAnswer, len(questionIDs))
+	repositoriesByQuestion := make(map[string][]questionPageRepo, len(questionIDs))
+	for _, questionID := range questionIDs {
+		answersByQuestion[questionID] = make([]model.QuAnswer, 0)
+		repositoriesByQuestion[questionID] = make([]questionPageRepo, 0)
+	}
+	if len(questionIDs) == 0 {
+		return answersByQuestion, repositoriesByQuestion, nil
+	}
+
+	answers := make([]model.QuAnswer, 0)
+	if err := db.Where("qu_id IN ?", questionIDs).
+		Order("qu_id ASC, id ASC").Find(&answers).Error; err != nil {
+		return nil, nil, err
+	}
+	for _, answer := range answers {
+		answersByQuestion[answer.QuID] = append(answersByQuestion[answer.QuID], answer)
+	}
+
+	repositories := make([]questionPageRepo, 0)
+	if err := db.Table("el_qu_repo AS qr").
+		Joins("LEFT JOIN el_repo AS rp ON rp.id = qr.repo_id").
+		Where("qr.qu_id IN ?", questionIDs).
+		Select("qr.qu_id, qr.repo_id, COALESCE(rp.title, '') AS title").
+		Order("qr.qu_id ASC, qr.sort ASC, qr.id ASC").
+		Scan(&repositories).Error; err != nil {
+		return nil, nil, err
+	}
+	for _, repository := range repositories {
+		repositoriesByQuestion[repository.QuID] = append(repositoriesByQuestion[repository.QuID], repository)
+	}
+	return answersByQuestion, repositoriesByQuestion, nil
+}
+
 // POST /exam/api/qu/qu/paging
 func (h *QuHandler) Paging(c *gin.Context) {
 	var req quPagingReq
@@ -86,9 +137,9 @@ func (h *QuHandler) Paging(c *gin.Context) {
 	if repoID != "" {
 		q = h.db.Table("el_qu AS q").
 			Joins("INNER JOIN el_qu_repo AS r ON r.qu_id = q.id").
-			Where("r.repo_id = ?", repoID)
+			Where("r.repo_id = ? AND q.dimension_id IS NULL", repoID)
 	} else {
-		q = h.db.Table("el_qu AS q")
+		q = h.db.Table("el_qu AS q").Where("q.dimension_id IS NULL")
 	}
 	if content != "" {
 		q = q.Where("q.content like ?", "%"+content+"%")
@@ -103,35 +154,36 @@ func (h *QuHandler) Paging(c *gin.Context) {
 		q = q.Where("q.level = ?", *level)
 	}
 	var total int64
-	q.Count(&total)
-	var rows []model.Qu
-	q.Select("q.*").Order("CAST(REPLACE(q.content, 'V', '') AS UNSIGNED), q.update_time desc").
-		Offset((req.Current - 1) * req.Size).Limit(req.Size).Scan(&rows)
+	if err := q.Count(&total).Error; err != nil {
+		response.RestErr(c, "查询题目总数失败")
+		return
+	}
+	rows := make([]model.Qu, 0)
+	if err := q.Select("q.*").Order("CAST(REPLACE(q.content, 'V', '') AS UNSIGNED), q.update_time desc").
+		Offset((req.Current - 1) * req.Size).Limit(req.Size).Scan(&rows).Error; err != nil {
+		response.RestErr(c, "查询题目列表失败")
+		return
+	}
 
 	// 对齐 Java QuServiceImpl.paging：每条记录附带 answerList + repoName
-	type quWithAnswers struct {
-		model.Qu
-		AnswerList []model.QuAnswer `json:"answerList"`
-		Sort       int              `json:"sort"`
-		RepoName   string           `json:"repoName"`
-		RepoID     string           `json:"repoId"`
+	questionIDs := make([]string, 0, len(rows))
+	for _, question := range rows {
+		questionIDs = append(questionIDs, question.ID)
+	}
+	answersByQuestion, repositoriesByQuestion, err := loadQuestionPageRelations(h.db, questionIDs)
+	if err != nil {
+		response.RestErr(c, "查询题目关联数据失败")
+		return
 	}
 	result := make([]quWithAnswers, len(rows))
 	for i, qu := range rows {
 		result[i].Qu = qu
-		h.db.Where("qu_id = ?", qu.ID).Order("id").Find(&result[i].AnswerList)
+		result[i].AnswerList = answersByQuestion[qu.ID]
 		result[i].Sort = i + 1
-		// 查询关联的第一个题库名称
-		// 用 LEFT JOIN：题库被删后 qu_repo 行还在，title 为 NULL
-		var repo struct {
-			RepoID string `gorm:"column:repo_id"`
-			Title  string `gorm:"column:title"`
+		repo := questionPageRepo{}
+		if repositories := repositoriesByQuestion[qu.ID]; len(repositories) > 0 {
+			repo = repositories[0]
 		}
-		h.db.Table("el_qu_repo AS qr").
-			Joins("LEFT JOIN el_repo AS rp ON rp.id = qr.repo_id").
-			Where("qr.qu_id = ?", qu.ID).
-			Select("qr.repo_id, rp.title").
-			Limit(1).Scan(&repo)
 		if repo.RepoID != "" && repo.Title == "" {
 			result[i].RepoName = "[已删题库:" + repo.RepoID + "]"
 		} else {
@@ -145,8 +197,11 @@ func (h *QuHandler) Paging(c *gin.Context) {
 
 // POST /exam/api/qu/qu/list  对齐 Java QuController.list：返回全部题目（参数被忽略）
 func (h *QuHandler) List(c *gin.Context) {
-	var rows []model.Qu
-	h.db.Order("update_time desc").Find(&rows)
+	rows := make([]model.Qu, 0)
+	if err := h.db.Where("dimension_id IS NULL").Order("update_time desc").Find(&rows).Error; err != nil {
+		response.RestErr(c, "查询题目列表失败")
+		return
+	}
 	response.Rest(c, rows)
 }
 
@@ -158,19 +213,30 @@ func (h *QuHandler) Detail(c *gin.Context) {
 		return
 	}
 	var qu model.Qu
-	if err := h.db.Where("id = ?", id).First(&qu).Error; err != nil {
+	if err := h.db.Where("id = ? AND dimension_id IS NULL", id).First(&qu).Error; err != nil {
 		response.RestErr(c, "不存在")
 		return
 	}
-	var answers []model.QuAnswer
-	h.db.Where("qu_id = ?", id).Find(&answers)
+	answers := make([]model.QuAnswer, 0)
+	if err := h.db.Where("qu_id = ?", id).Find(&answers).Error; err != nil {
+		response.RestErr(c, "查询题目答案失败")
+		return
+	}
 	// 关联题库
-	var repoIDs []string
-	h.db.Model(&model.QuRepo{}).Where("qu_id = ?", id).Pluck("repo_id", &repoIDs)
+	repoIDs := make([]string, 0)
+	if err := h.db.Model(&model.QuRepo{}).Where("qu_id = ?", id).
+		Pluck("repo_id", &repoIDs).Error; err != nil {
+		response.RestErr(c, "查询题目关联失败")
+		return
+	}
 	// 取首个题库的 code（用于前端按题库类型显示不同字段）
 	var repoCode string
 	if len(repoIDs) > 0 {
-		h.db.Model(&model.Repo{}).Where("id = ?", repoIDs[0]).Pluck("code", &repoCode)
+		if err := h.db.Model(&model.Repo{}).Where("id = ?", repoIDs[0]).
+			Pluck("code", &repoCode).Error; err != nil {
+			response.RestErr(c, "查询题库编码失败")
+			return
+		}
 	}
 	// 对齐 Java：返回扁平对象（前端 form.vue 直接读 data.content / data.answerList）
 	response.Rest(c, gin.H{
@@ -219,6 +285,25 @@ func (h *QuHandler) Save(c *gin.Context) {
 	if err := c.ShouldBindJSON(&body); err != nil {
 		response.RestErr(c, "参数错误: "+err.Error())
 		return
+	}
+	body.RepoIDs = normalizeBatchIDs(body.RepoIDs)
+	if hasCompetencyQuestionMetadata(body.Qu) {
+		response.RestErr(c, errCompetencyQuestionDedicatedAPI.Error())
+		return
+	}
+	if body.ID != "" {
+		if err := rejectCompetencyQuestionIDs(h.db, []string{body.ID}); err != nil {
+			response.RestErr(c, err.Error())
+			return
+		}
+		if err := rejectPaperReferencedQuestionIDs(h.db, []string{body.ID}); err != nil {
+			if err == errPaperReferencedQuestion {
+				response.RestErr(c, "题目已被试卷引用，不能修改")
+			} else {
+				response.RestErr(c, "检查题目试卷引用失败")
+			}
+			return
+		}
 	}
 
 	// 转换 answerInput → model.QuAnswer（boolean → int8）
@@ -282,6 +367,9 @@ func (h *QuHandler) Save(c *gin.Context) {
 		}
 	}
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := validateImportRepositoryIDs(tx, body.RepoIDs); err != nil {
+			return err
+		}
 		qu := body.Qu
 		isNew := qu.ID == ""
 		if isNew {
@@ -290,10 +378,13 @@ func (h *QuHandler) Save(c *gin.Context) {
 		} else {
 			// 保留原有 create_time
 			var orig model.Qu
-			if err := tx.Select("create_time").Where("id = ?", qu.ID).Take(&orig).Error; err == nil && orig.CreateTime != nil {
+			if err := tx.Select("create_time").Where("id = ?", qu.ID).Take(&orig).Error; err != nil {
+				return err
+			}
+			if orig.CreateTime != nil {
 				qu.CreateTime = orig.CreateTime
 			} else {
-				qu.CreateTime = &now // 原值为空时用当前时间
+				qu.CreateTime = &now
 			}
 		}
 		qu.UpdateTime = &now
@@ -307,13 +398,20 @@ func (h *QuHandler) Save(c *gin.Context) {
 			}
 			// 收集旧关联的 repo
 			var oldRepoIDs []string
-			tx.Model(&model.QuRepo{}).Where("qu_id = ?", qu.ID).Pluck("repo_id", &oldRepoIDs)
+			if err := tx.Model(&model.QuRepo{}).Where("qu_id = ?", qu.ID).
+				Pluck("repo_id", &oldRepoIDs).Error; err != nil {
+				return err
+			}
 			for _, rid := range oldRepoIDs {
 				affectedRepos[rid] = true
 			}
 			// 删除旧的答案和题库关联
-			tx.Where("qu_id = ?", qu.ID).Delete(&model.QuAnswer{})
-			tx.Where("qu_id = ?", qu.ID).Delete(&model.QuRepo{})
+			if err := tx.Where("qu_id = ?", qu.ID).Delete(&model.QuAnswer{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("qu_id = ?", qu.ID).Delete(&model.QuRepo{}).Error; err != nil {
+				return err
+			}
 		}
 		// 插入 answers
 		for i := range answers {
@@ -368,22 +466,39 @@ func (h *QuHandler) Delete(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
-	affectedRepos := map[string]bool{}
+	if err := rejectCompetencyQuestionIDs(h.db, b.IDs); err != nil {
+		response.RestErr(c, err.Error())
+		return
+	}
+	var paperReferenceCount int64
+	if err := h.db.Table("el_paper_qu").Where("qu_id IN ?", b.IDs).
+		Count(&paperReferenceCount).Error; err != nil {
+		response.RestErr(c, "检查题目试卷引用失败")
+		return
+	}
+	if paperReferenceCount > 0 {
+		response.RestErr(c, fmt.Sprintf("无法删除：题目已被试卷引用（%d条）", paperReferenceCount))
+		return
+	}
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		// 先收集受影响 repo
 		var oldRepoIDs []string
-		tx.Model(&model.QuRepo{}).Where("qu_id IN ?", b.IDs).
-			Distinct("repo_id").Pluck("repo_id", &oldRepoIDs)
-		for _, rid := range oldRepoIDs {
-			affectedRepos[rid] = true
+		if err := tx.Model(&model.QuRepo{}).Where("qu_id IN ?", b.IDs).
+			Distinct("repo_id").Pluck("repo_id", &oldRepoIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("qu_id IN ?", b.IDs).Delete(&model.QuAnswer{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("qu_id IN ?", b.IDs).Delete(&model.QuRepo{}).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("id IN ?", b.IDs).Delete(&model.Qu{}).Error; err != nil {
 			return err
 		}
-		tx.Where("qu_id IN ?", b.IDs).Delete(&model.QuAnswer{})
-		tx.Where("qu_id IN ?", b.IDs).Delete(&model.QuRepo{})
-		for rid := range affectedRepos {
-			if err := refreshRepoStat(tx, rid); err != nil {
+		sort.Strings(oldRepoIDs)
+		for _, repoID := range oldRepoIDs {
+			if err := refreshRepoStat(tx, repoID); err != nil {
 				return err
 			}
 		}

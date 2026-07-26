@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/config"
 	"github.com/talent-assessment/refactored/internal/model"
+	"github.com/talent-assessment/refactored/internal/service"
 	"github.com/talent-assessment/refactored/pkg/pdfgen"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"gorm.io/gorm"
@@ -200,6 +202,7 @@ func (h *ExamHandler) OnlinePaging(c *gin.Context) {
 	if searchTitle != "" {
 		q = q.Where("title like ?", "%"+searchTitle+"%")
 	}
+	q = q.Where("assessment_type IS NULL OR assessment_type <> ? OR publish_status = 1", service.AssessmentTypeCompetency)
 	var total int64
 	q.Count(&total)
 	var rows []model.Exam
@@ -224,7 +227,10 @@ func (h *ExamHandler) enrichExamRows(rows []model.Exam) []gin.H {
 			"id": e.ID, "title": e.Title, "content": e.Content,
 			"openType": e.OpenType, "joinType": e.JoinType, "isOpen": e.IsOpen,
 			"answerType": e.AnswerType, "level": e.Level, "state": e.State,
-			"timeLimit": e.TimeLimit != 0, "showPdf": e.ShowPdf != 0,
+			"assessmentType": e.AssessmentType, "scoringMode": e.ScoringMode,
+			"competencyReportAudience": e.CompetencyReportAudience,
+			"publishStatus":            e.PublishStatus,
+			"timeLimit":                e.TimeLimit != 0, "showPdf": e.ShowPdf != 0,
 			"startTime": fmtExamTime(e.StartTime), "endTime": fmtExamTime(e.EndTime),
 			"createTime": e.CreateTime, "updateTime": e.UpdateTime,
 			"totalScore": e.TotalScore, "totalTime": e.TotalTime,
@@ -297,11 +303,29 @@ func (h *ExamHandler) Detail(c *gin.Context) {
 	h.db.Table("el_exam_repo AS er").
 		Joins("INNER JOIN el_repo AS rp ON rp.id = er.repo_id").
 		Where("er.exam_id = ?", id).Limit(1).Pluck("rp.code", &repoCode)
+	dimensionIDs := make([]string, 0)
+	dimensions := make([]model.ExamCompetencyDimension, 0)
+	if e.AssessmentType == service.AssessmentTypeCompetency {
+		if err := h.db.Model(&model.ExamCompetencyDimension{}).
+			Where("exam_id = ?", id).
+			Order("display_order ASC").
+			Find(&dimensions).Error; err != nil {
+			response.RestErr(c, "查询胜任力维度配置失败")
+			return
+		}
+		for _, dimension := range dimensions {
+			dimensionIDs = append(dimensionIDs, dimension.DimensionID)
+		}
+	}
 	// 对齐 Java ExamSaveReqDTO：扁平字段 + repoList + departIds
 	response.Rest(c, gin.H{
 		"id": e.ID, "title": e.Title, "content": e.Content,
 		"openType": e.OpenType, "joinType": e.JoinType, "isOpen": e.IsOpen,
 		"answerType": e.AnswerType, "level": e.Level, "state": e.State,
+		"assessmentType": e.AssessmentType, "scoringMode": e.ScoringMode,
+		"competencyReportAudience": e.CompetencyReportAudience,
+		"publishStatus":            e.PublishStatus,
+		"publishedAt":              e.PublishedAt, "publishedBy": e.PublishedBy,
 		"timeLimit": e.TimeLimit != 0, "showPdf": e.ShowPdf != 0,
 		"startTime": fmtExamTime(e.StartTime), "endTime": fmtExamTime(e.EndTime),
 		"createTime": e.CreateTime, "updateTime": e.UpdateTime,
@@ -310,6 +334,7 @@ func (h *ExamHandler) Detail(c *gin.Context) {
 		"requiredFields": e.RequiredFields,
 		"repoList":       reposOut, "departIds": departs,
 		"repoCode": repoCode, "repoIds": repoIDs,
+		"dimensionIds": dimensionIDs, "competencyDimensions": dimensions,
 		"stuFlag": e.StuFlag,
 	})
 }
@@ -319,6 +344,23 @@ const (
 	joinTypeRepoJoin = 1
 	openTypeDeptOpen = 2
 )
+
+func sameStringSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	values := make(map[string]int, len(left))
+	for _, value := range left {
+		values[value]++
+	}
+	for _, value := range right {
+		if values[value] == 0 {
+			return false
+		}
+		values[value]--
+	}
+	return true
+}
 
 // POST /exam/api/exam/exam/save
 //
@@ -334,28 +376,66 @@ func (h *ExamHandler) Save(c *gin.Context) {
 
 	// 用扁平 struct 接收（避免 model.Exam 嵌入导致的 JSON tag 冲突）
 	var body struct {
-		ID             string           `json:"id"`
-		Title          string           `json:"title"`
-		Content        string           `json:"content"`
-		OpenType       int              `json:"openType"`
-		JoinType       int              `json:"joinType"`
-		IsOpen         int              `json:"isOpen"`
-		AnswerType     int              `json:"answerType"`
-		Level          int              `json:"level"`
-		State          int              `json:"state"`
-		TotalScore     int              `json:"totalScore"`
-		TotalTime      int              `json:"totalTime"`
-		QualifyScore   int              `json:"qualifyScore"`
-		PdfPath        string           `json:"pdfPath"`
-		RequiredFields string           `json:"requiredFields"`
-		StuFlag        int8             `json:"stuFlag"`
-		RepoList       []model.ExamRepo `json:"repoList"`
-		DepartIDs      []string         `json:"departIds"`
+		ID                       string           `json:"id"`
+		Title                    string           `json:"title"`
+		Content                  string           `json:"content"`
+		OpenType                 int              `json:"openType"`
+		JoinType                 int              `json:"joinType"`
+		IsOpen                   int              `json:"isOpen"`
+		AnswerType               int              `json:"answerType"`
+		Level                    int              `json:"level"`
+		State                    int              `json:"state"`
+		TotalScore               int              `json:"totalScore"`
+		TotalTime                int              `json:"totalTime"`
+		QualifyScore             int              `json:"qualifyScore"`
+		PdfPath                  string           `json:"pdfPath"`
+		RequiredFields           string           `json:"requiredFields"`
+		StuFlag                  int8             `json:"stuFlag"`
+		AssessmentType           string           `json:"assessmentType"`
+		ScoringMode              string           `json:"scoringMode"`
+		CompetencyReportAudience string           `json:"competencyReportAudience"`
+		DimensionIDs             []string         `json:"dimensionIds"`
+		RepoList                 []model.ExamRepo `json:"repoList"`
+		DepartIDs                []string         `json:"departIds"`
 	}
 	if err := json.Unmarshal(rawBytes, &body); err != nil {
 		slog.Info("exam-save: unmarshal error", "value", err)
 		response.RestErr(c, "参数错误")
 		return
+	}
+	if body.AssessmentType == "" {
+		body.AssessmentType = service.AssessmentTypeLegacy
+	}
+	if body.ScoringMode == "" {
+		if body.AssessmentType == service.AssessmentTypeCompetency {
+			body.ScoringMode = service.ScoringModeCompetencyAverage
+		} else {
+			body.ScoringMode = service.ScoringModeLegacy
+		}
+	}
+	isCompetency, err := service.ValidateAssessmentMode(body.AssessmentType, body.ScoringMode)
+	if err != nil {
+		response.RestErr(c, "测评类型与计分模式不匹配")
+		return
+	}
+	if isCompetency {
+		if body.TotalTime <= 0 {
+			response.RestErr(c, "胜任力测评必须配置大于0的答题时长")
+			return
+		}
+		if err := service.ValidateCompetencyReportAudience(body.CompetencyReportAudience); err != nil {
+			response.RestErr(c, "请选择基层员工版或领导人员版")
+			return
+		}
+		body.DimensionIDs, err = service.ValidateCompetencyDimensionIDs(body.DimensionIDs)
+		if err != nil {
+			response.RestErr(c, "请至少选择一个不重复的测评维度")
+			return
+		}
+		body.RepoList = make([]model.ExamRepo, 0)
+	} else {
+		body.CompetencyReportAudience = ""
+		body.DimensionIDs = make([]string, 0)
 	}
 
 	// 处理冲突字段：startTime/endTime/timeLimit/showPdf
@@ -408,17 +488,23 @@ func (h *ExamHandler) Save(c *gin.Context) {
 	}
 
 	// 映射到 model.Exam
+	var reportAudience *string
+	if body.CompetencyReportAudience != "" {
+		reportAudience = &body.CompetencyReportAudience
+	}
 	exam := model.Exam{
 		ID: body.ID, Title: body.Title, Content: body.Content,
 		OpenType: body.OpenType, JoinType: body.JoinType, IsOpen: body.IsOpen,
 		AnswerType: body.AnswerType, Level: body.Level, State: body.State,
 		TotalScore: body.TotalScore, TotalTime: body.TotalTime, QualifyScore: body.QualifyScore,
 		PdfPath: body.PdfPath, RequiredFields: body.RequiredFields, StuFlag: body.StuFlag,
-		StartTime: startTime, EndTime: endTime, TimeLimit: timeLimit, ShowPdf: showPdf,
+		AssessmentType: body.AssessmentType, ScoringMode: body.ScoringMode,
+		CompetencyReportAudience: reportAudience,
+		StartTime:                startTime, EndTime: endTime, TimeLimit: timeLimit, ShowPdf: showPdf,
 	}
 
 	// 1. 计算总分（仅题库组卷）
-	if body.JoinType == joinTypeRepoJoin {
+	if !isCompetency && body.JoinType == joinTypeRepoJoin {
 		obj := 0
 		for _, item := range body.RepoList {
 			if item.RadioCount > 0 && item.RadioScore > 0 {
@@ -440,18 +526,75 @@ func (h *ExamHandler) Save(c *gin.Context) {
 	}
 
 	now := time.Now()
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
 		isNew := exam.ID == ""
+		var original model.Exam
+		wasPublishedCompetency := false
+		selectedDimensions := make([]model.CompetencyDimension, 0)
+		enabledQuestionCounts := make(map[string]int)
 		if isNew {
 			exam.ID = strconv.FormatInt(nextID(), 10)
 			exam.CreateTime = &now
-		} else {
-			// 保留原有 create_time（Save 会覆盖所有字段）
-			var orig model.Exam
-			if err := tx.Select("create_time").Where("id = ?", exam.ID).Take(&orig).Error; err == nil && orig.CreateTime != nil {
-				exam.CreateTime = orig.CreateTime
+			if isCompetency {
+				exam.PublishStatus = 0
 			} else {
-				exam.CreateTime = &now // 原值为空时用当前时间
+				exam.PublishStatus = 1
+			}
+		} else {
+			if err := tx.Where("id = ?", exam.ID).Take(&original).Error; err != nil {
+				return err
+			}
+			if original.CreateTime != nil {
+				exam.CreateTime = original.CreateTime
+			} else {
+				exam.CreateTime = &now
+			}
+			wasPublishedCompetency = original.AssessmentType == service.AssessmentTypeCompetency && original.PublishStatus == 1
+			if wasPublishedCompetency {
+				if !isCompetency || original.CompetencyReportAudience == nil ||
+					exam.CompetencyReportAudience == nil ||
+					*original.CompetencyReportAudience != *exam.CompetencyReportAudience {
+					return errors.New("已发布胜任力测评不能修改报告版本")
+				}
+				var existingDimensionIDs []string
+				if err := tx.Model(&model.ExamCompetencyDimension{}).
+					Where("exam_id = ?", exam.ID).
+					Pluck("dimension_id", &existingDimensionIDs).Error; err != nil {
+					return err
+				}
+				if !sameStringSet(existingDimensionIDs, body.DimensionIDs) {
+					return errors.New("已发布胜任力测评不能修改测评维度")
+				}
+			}
+			if original.AssessmentType != service.AssessmentTypeCompetency && isCompetency {
+				exam.PublishStatus = 0
+				exam.PublishedAt = nil
+				exam.PublishedBy = nil
+			} else if !isCompetency {
+				exam.PublishStatus = 1
+				exam.PublishedAt = original.PublishedAt
+				exam.PublishedBy = original.PublishedBy
+			} else {
+				exam.PublishStatus = original.PublishStatus
+				exam.PublishedAt = original.PublishedAt
+				exam.PublishedBy = original.PublishedBy
+			}
+		}
+		if isCompetency && !wasPublishedCompetency {
+			if err := tx.Where("id IN ? AND status = ?", body.DimensionIDs, 0).
+				Order("display_order ASC").
+				Find(&selectedDimensions).Error; err != nil {
+				return err
+			}
+			if len(selectedDimensions) != len(body.DimensionIDs) {
+				return errors.New("所选测评维度不存在或已停用")
+			}
+			enabledQuestionCounts, err = loadEnabledQuestionCounts(tx, body.DimensionIDs)
+			if err != nil {
+				return err
+			}
+			if err := validateEnabledQuestionCounts(selectedDimensions, enabledQuestionCounts); err != nil {
+				return err
 			}
 		}
 		exam.UpdateTime = &now
@@ -463,12 +606,16 @@ func (h *ExamHandler) Save(c *gin.Context) {
 			if err := tx.Save(&exam).Error; err != nil {
 				return err
 			}
-			tx.Where("exam_id = ?", exam.ID).Delete(&model.ExamRepo{})
-			tx.Where("exam_id = ?", exam.ID).Delete(&model.ExamDepart{})
+			if err := tx.Where("exam_id = ?", exam.ID).Delete(&model.ExamRepo{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("exam_id = ?", exam.ID).Delete(&model.ExamDepart{}).Error; err != nil {
+				return err
+			}
 		}
 
 		// 3a. 仅题库组卷保存 exam_repo
-		if body.JoinType == joinTypeRepoJoin {
+		if !isCompetency && body.JoinType == joinTypeRepoJoin {
 			seen := map[string]bool{}
 			for i := range body.RepoList {
 				r := body.RepoList[i]
@@ -487,7 +634,35 @@ func (h *ExamHandler) Save(c *gin.Context) {
 			}
 		}
 
-		// 3b. 仅部门开放保存 exam_depart
+		// 3b. 胜任力草稿保存所选维度；已发布测评只校验，不重建快照。
+		if !wasPublishedCompetency {
+			if err := tx.Where("exam_id = ?", exam.ID).Delete(&model.ExamCompetencyDimension{}).Error; err != nil {
+				return err
+			}
+			if isCompetency {
+				associations := make([]model.ExamCompetencyDimension, 0, len(selectedDimensions))
+				for _, dimension := range selectedDimensions {
+					associations = append(associations, model.ExamCompetencyDimension{
+						ID:                 strconv.FormatInt(nextID(), 10),
+						ExamID:             exam.ID,
+						DimensionID:        dimension.ID,
+						DimensionCode:      dimension.Code,
+						DimensionName:      dimension.Name,
+						VIRDLevel:          dimension.VIRDLevel,
+						ApplicableCategory: dimension.ApplicableCategory,
+						CoreMeaning:        dimension.CoreMeaning,
+						DisplayOrder:       dimension.DisplayOrder,
+						QuestionCount:      enabledQuestionCounts[dimension.ID],
+						CreateTime:         &now,
+					})
+				}
+				if err := tx.CreateInBatches(associations, 100).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		// 3c. 仅部门开放保存 exam_depart
 		if body.OpenType == openTypeDeptOpen {
 			for i, did := range body.DepartIDs {
 				if did == "" {
@@ -527,32 +702,136 @@ func (h *ExamHandler) Delete(c *gin.Context) {
 		response.RestErr(c, "ids 为空")
 		return
 	}
+	var exams []model.Exam
+	if err := h.db.Select("id, assessment_type").Where("id IN ?", b.IDs).Find(&exams).Error; err != nil {
+		response.RestErr(c, "查询测评类型失败")
+		return
+	}
+	competencyIDs := make([]string, 0)
+	legacyIDs := make([]string, 0)
+	for _, exam := range exams {
+		if exam.AssessmentType == service.AssessmentTypeCompetency {
+			competencyIDs = append(competencyIDs, exam.ID)
+		} else {
+			legacyIDs = append(legacyIDs, exam.ID)
+		}
+	}
+	competencyReportPaths := make([]string, 0)
+	if len(competencyIDs) > 0 {
+		if err := h.db.Model(&model.CompetencyReport{}).Where("exam_id IN ?", competencyIDs).
+			Where("pdf_path <> ''").Pluck("pdf_path", &competencyReportPaths).Error; err != nil {
+			response.RestErr(c, "查询胜任力报告文件失败")
+			return
+		}
+	}
 
 	// FB-021: 删除前检查是否有关联数据，避免孤儿
 	// 业务规则：有 tester / candidate / paper 关联的 exam 不可直接删
 	var testerCount, candidateCount, paperCount int64
-	h.db.Table("el_tester").Where("exam_id IN ? AND (del_flag IS NULL OR del_flag = '0')", b.IDs).Count(&testerCount)
-	h.db.Table("el_candidate").Where("exam_id IN ? AND (del_flag IS NULL OR del_flag = '0' OR del_flag = 0)", b.IDs).Count(&candidateCount)
-	h.db.Table("el_paper").Where("exam_id IN ?", b.IDs).Count(&paperCount)
-	if testerCount > 0 || candidateCount > 0 || paperCount > 0 {
-		response.RestErr(c, fmt.Sprintf("无法删除：含 %d 个测评者、%d 个考生、%d 份试卷。请先清理关联数据", testerCount, candidateCount, paperCount))
-		return
+	if len(legacyIDs) > 0 {
+		if err := h.db.Table("el_tester").Where("exam_id IN ? AND (del_flag IS NULL OR del_flag = '0')", legacyIDs).Count(&testerCount).Error; err != nil {
+			response.RestErr(c, "检查测评者关联失败")
+			return
+		}
+		if err := h.db.Table("el_candidate").Where("exam_id IN ? AND (del_flag IS NULL OR del_flag = '0' OR del_flag = 0)", legacyIDs).Count(&candidateCount).Error; err != nil {
+			response.RestErr(c, "检查考生关联失败")
+			return
+		}
+		if err := h.db.Table("el_paper").Where("exam_id IN ?", legacyIDs).Count(&paperCount).Error; err != nil {
+			response.RestErr(c, "检查试卷关联失败")
+			return
+		}
+		if testerCount > 0 || candidateCount > 0 || paperCount > 0 {
+			response.RestErr(c, fmt.Sprintf("无法删除：含 %d 个测评者、%d 个考生、%d 份试卷。请先清理关联数据", testerCount, candidateCount, paperCount))
+			return
+		}
 	}
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("id IN ?", b.IDs).Delete(&model.Exam{}).Error; err != nil {
-			return err
+		if len(competencyIDs) > 0 {
+			if err := deleteCompetencyExamChain(tx, competencyIDs); err != nil {
+				return err
+			}
 		}
-		// 配置型关联表（无业务数据），可一并删除
-		tx.Where("exam_id IN ?", b.IDs).Delete(&model.ExamRepo{})
-		tx.Where("exam_id IN ?", b.IDs).Delete(&model.ExamDepart{})
+		if len(legacyIDs) > 0 {
+			if err := tx.Where("exam_id IN ?", legacyIDs).Delete(&model.ExamRepo{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("exam_id IN ?", legacyIDs).Delete(&model.ExamDepart{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", legacyIDs).Delete(&model.Exam{}).Error; err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		response.RestErr(c, err.Error())
 		return
 	}
+	reportHandler := NewCompetencyReportHandler(h.db, h)
+	for _, reportPath := range competencyReportPaths {
+		reportHandler.removeReportFile(reportPath)
+	}
 	response.Rest(c, true)
+}
+
+func deleteCompetencyExamChain(tx *gorm.DB, examIDs []string) error {
+	var paperIDs []string
+	if err := tx.Model(&model.Paper{}).Where("exam_id IN ?", examIDs).Pluck("id", &paperIDs).Error; err != nil {
+		return err
+	}
+	if len(paperIDs) > 0 {
+		if err := tx.Exec("DELETE FROM el_competency_report_audit WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM el_competency_report WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM el_competency_dimension_result WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM el_competency_result WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM el_paper_qu_answer WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM el_paper_qu WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM el_mbti_answer WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Exec("DELETE FROM el_user_exam WHERE exam_id IN ?", examIDs).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec("DELETE FROM el_candidate WHERE exam_id IN ?", examIDs).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec("DELETE FROM el_tester WHERE exam_id IN ?", examIDs).Error; err != nil {
+		return err
+	}
+	if len(paperIDs) > 0 {
+		if err := tx.Where("id IN ?", paperIDs).Delete(&model.Paper{}).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Exec("DELETE FROM el_exam_competency_question WHERE exam_id IN ?", examIDs).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("exam_id IN ?", examIDs).Delete(&model.ExamCompetencyDimension{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("exam_id IN ?", examIDs).Delete(&model.ExamRepo{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("exam_id IN ?", examIDs).Delete(&model.ExamDepart{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("id IN ?", examIDs).Delete(&model.Exam{}).Error
 }
 
 // POST /exam/api/exam/exam/state  {id, state}
