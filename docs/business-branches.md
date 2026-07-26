@@ -7,6 +7,18 @@
 | MBTI full report generation | document.xml contains East Asian static body runs with only w:hint and no explicit font family | ✅ | Triggered by production ESTP "功利型/凭借" tofu-box issue; covered by FB-044 |
 | MBTI full report generation | styles.xml / fontTable.xml declare unstable CJK fonts used by body fallback | ✅ | Covered by FB-044 style/font-table normalization |
 
+## RuoYi Administration Stub Inventory
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| User profile | update profile/password/avatar and query/update assigned roles | P1 | ❌ | Replace 5 Ajax stubs with authenticated persistence, password verification and upload validation |
+| Role authorization | status/data scope, allocated/unallocated users, cancel/select authorization | P1 | ❌ | Replace 7 stubs with transactional role-user updates and permission checks |
+| Public registration | `POST /register` | P1 | ❌ | Implement validated registration or remove/disable the frontend entry and route |
+| Cache administration | config/dict refresh | P2 | ❌ | Implement real cache invalidation or remove ineffective success responses |
+| Monitoring administration | force logout, jobs/job logs, operlog/logininfor cleanup | P2 | ❌ | Replace 14 stubs only if these optional operations remain exposed in menus |
+| Code generation | `/tool/gen/*` | P3 | ❌ | Implement 9 optional generator routes or remove the unsupported module |
+| User repo/wrong-book generic CRUD | 18 generated GET/POST routes | P3 | ⚪ | Current frontend uses custom start/fill/check/next flows, not these generic actions; remove redundant stubGroup routes |
+
 ## Competency Assessment — Phase 1A Security and Dispatch Baseline
 
 > Scope: explicit assessment dispatch, exact anonymous routes, participant/paper token validation, and legacy API isolation.  
