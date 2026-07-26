@@ -32,6 +32,8 @@ scripts/tools/*.ps1
 !scripts/test/competency-answer-flow-e2e.js
 !scripts/test/competency-submit-guard-e2e.js
 !scripts/test/staging-admin-browser-e2e.js
+!scripts/test/staging-competency-config-negative-e2e.js
+!scripts/test/staging-competency-import-rollback-e2e.js
 
 # User-specific editor settings
 .vscode/

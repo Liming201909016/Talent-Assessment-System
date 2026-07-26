@@ -96,8 +96,8 @@
 | Report audience | legacy exam has no competency report audience | P0 | ✅ | Staging migration verified 60 legacy exams remain legacy+legacy+NULL audience+published |
 | Report audience | report audience is changed after competency publication | P0 | ✅ | Published exam save guard rejects audience changes; published result copies audience snapshot |
 | Report audience | report layout and module list for both versions | P0 | ✅ | One `competencyReport.vue` renders both audience values |
-| Report audience | overall evaluation content lookup | P0 | ❌ | Match by audience + evaluation level + content version |
-| Report audience | development advice content lookup | P0 | ❌ | Match by audience + dimension + level + content version |
+| Report audience | overall evaluation content lookup | P0 | ✅ | temp-v1 matches exact audience + evaluation level + content version; formal customer content remains external replacement work |
+| Report audience | development advice content lookup | P0 | ✅ | temp-v1 matches exact audience + dimension + level + content version; no cross-audience/version fallback |
 | Report audience | result score, dimension order, and charts across versions | P0 | ✅ | Shared result tables and one report component; audience does not enter scoring |
 | Report audience | historical report regeneration | P0 | ✅ | Report data reads `el_competency_result.report_audience` snapshot |
 
@@ -112,14 +112,14 @@
 | Exam creation | competency report version is empty or unknown | P0 | ✅ | Frontend validation and backend whitelist tests pass |
 | Exam creation | no dimension selected | P0 | ✅ | Frontend rules plus backend empty/nil tests pass |
 | Exam creation | duplicate dimension IDs | P0 | ✅ | Covered by `TestValidateCompetencyDimensionIDs/duplicate_id` |
-| Exam creation | selected dimension does not exist or is disabled | P0 | ⚠️ | Backend transactional guard implemented; negative staging mutation test not yet run |
+| Exam creation | selected dimension does not exist or is disabled | P0 | ✅ | Staging temporarily disabled D48; Save rejected and wrote zero exam rows, then D48 was restored |
 | Exam creation | selected dimension has zero enabled questions | P0 | ✅ | Pure guard tests identify the first zero-count dimension by code/name before exam write |
 | Exam creation | selected dimensions all have enabled questions | P0 | ✅ | Guard accepts positive counts and Save stores each count in draft association |
-| Exam creation | enabled-question count query fails | P0 | ⚠️ | Error is returned from the transaction; injected database failure test remains pending |
+| Exam creation | enabled-question count query fails | P0 | ✅ | Closed-database injection test proves grouped query error propagates to the Save transaction |
 | Dimension list | enabled question counts vary by dimension | P0 | ✅ | One grouped query returns each count; UI sums selected questions and disables zero-count/status-disabled dimensions |
 | Exam creation | dimensions list is empty | P1 | ✅ | Selector unit test verifies explicit migration guidance empty state |
 | Exam creation | edit competency draft | P0 | ✅ | Staging frontline→leader and 2→1 dimension round-trip verified |
-| Exam creation | edit published competency exam | P0 | ⚠️ | Backend guards and frontend read-only state implemented; real DB test not verified |
+| Exam creation | edit published competency exam | P0 | ✅ | Staging published D01 exam then rejected leader→frontline audience change; temporary exam was deleted |
 | Exam creation | switch form from competency back to legacy before save | P1 | ✅ | `handleAssessmentTypeChange` clears audience/dimensions, restores legacy scoring/publish state and repo controls |
 | Exam creation | save request fails | P1 | ✅ | Save uses loading with `finally`; form model is retained for retry |
 
@@ -159,7 +159,7 @@
 | Area | Branch | Priority | Coverage | Planned assertion |
 |------|--------|----------|----------|-------------------|
 | Import template | administrator downloads template | P0 | ✅ | HTTP test parses xlsx and verifies nine headers, three rows, and zero merged cells |
-| File boundary | file missing, not xlsx, empty, or larger than 10 MiB | P0 | ⚠️ | Missing/wrong extension tests pass; empty/oversize guards implemented but not exercised with large payload |
+| File boundary | file missing, not xlsx, empty, or larger than 10 MiB | P0 | ✅ | HTTP tests cover missing, wrong extension, zero-byte and 10MiB+1 payloads |
 | Import preview | valid rows | P0 | ✅ | Pure validation returns normalized row; source guard proves preview has no write calls |
 | Import preview | header differs from the nine-column contract | P0 | ✅ | Explicit header error test passes |
 | Row validation | dimension order outside 1-48 or dimension missing/disabled | P0 | ✅ | Invalid order, missing dimension, and disabled dimension tests pass |
@@ -173,7 +173,7 @@
 | Formal import | uploaded SHA-256 differs from preview | P0 | ✅ | Real multipart HTTP test rejects changed file before DB access using constant-time comparison |
 | Formal import | any validation error exists | P0 | ✅ | Validation gate precedes transaction; preview reports all row errors |
 | Formal import | all rows valid | P0 | ✅ | Staging previewed and imported 384/384 rows, rerun detected complete existing set and data hash matched source |
-| Formal import | database insert fails | P0 | ⚠️ | Transaction rollback path implemented; injected DB failure test pending |
+| Formal import | database insert fails | P0 | ✅ | Staging temporary BEFORE INSERT trigger forced MySQL failure; API reported rollback, question residue=0, trigger removed |
 
 ### J. Competency Publish Snapshot
 

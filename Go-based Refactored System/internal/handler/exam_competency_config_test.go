@@ -1,11 +1,31 @@
 package handler
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
 	"github.com/talent-assessment/refactored/internal/model"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
+
+func TestLoadEnabledQuestionCounts_PropagatesDatabaseFailure(t *testing.T) {
+	sqlDB, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:1)/element?timeout=1ms")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadEnabledQuestionCounts(db, []string{"d1"}); err == nil {
+		t.Fatal("closed database must propagate enabled-question count query failure")
+	}
+}
 
 func TestValidateEnabledQuestionCounts(t *testing.T) {
 	dimensions := []model.CompetencyDimension{

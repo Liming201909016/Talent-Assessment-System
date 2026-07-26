@@ -293,3 +293,5 @@
 - 覆盖率基线：全仓Go语句10.5%（handler 8.3%、service 33.8%）；前端Vitest配置范围语句/行58.9%、分支93.87%、函数37.5%。最终Go全量和Windows build通过，前端17文件100项通过，production build成功（只余asset/entrypoint体积2个warning）。FB-069通过无BOM重建`header_icons.go`解除全仓coverage插桩失败。
 - Git追踪策略已调整：纳入Go、前端源码、docs、.github、SQL/data/db及安全Python/Shell和4个已审查E2E脚本；继续忽略依赖、构建/覆盖率/截图/日志、`.vscode`和可能含硬编码凭据的既有JS/PS1/archive脚本。敏感扫描后仅测试中的固定`Bearer token`命中，为非真实值。本地提交`eaf8c23 feat: complete competency assessment workflow`已创建，未push；用户`.vscode/settings.json`仍单独未提交。
 - 当前剩余项仅为外部/授权：客户正式题库和正式文案到位后，用正式content version替换temp-v1并做正式PDF验收；202份传统缺失PDF按用户决定不生成；production按用户决定不部署。当前00401真实8/40不完整答卷继续保留审计，不生成报告。
+- [全部可执行盲区收口 - 2026-07-26] `business-branches.md`中的⚠️/❌/🔥已归零：staging临时停用D48后创建测评被拒且零写入，随后恢复status=0；发布D01临时测评后leader→frontline报告版本修改被拒并整链删除；关闭sql.DB注入证明启用题数查询错误向上传播；HTTP测试覆盖0字节与10MiB+1文件；staging临时BEFORE INSERT触发器强制导入失败，API返回已回滚、题号残留0，finally删除触发器。最终D48=启用、触发器/RESULT-SORT/NEG/ROLLBACK题/报告实例/审计均0。
+- 新增安全验收器`staging-competency-config-negative-e2e.js`和`staging-competency-import-rollback-e2e.js`，均不包含凭据并通过环境变量读取短时状态/SSH配置。最终Go全量再次通过；staging service/nginx/mysql active、health ok，panic/fatal/unknown-column均0。当前没有可自行执行且已确认范围内的功能或验证待办。

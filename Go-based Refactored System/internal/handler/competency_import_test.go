@@ -101,6 +101,33 @@ func TestCompetencyImportPreview_RejectsMissingAndWrongFileType(t *testing.T) {
 	}
 }
 
+func TestCompetencyImportPreview_RejectsEmptyAndOversizeFiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewCompetencyImportHandler(nil)
+	router := gin.New()
+	router.POST("/preview", h.ImportPreview)
+
+	for _, test := range []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{"empty", []byte{}, "文件必须大于0且不超过10MiB"},
+		{"oversize", make([]byte, competencyImportMaxFileSize+1), "文件必须大于0且不超过10MiB"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body, contentType := multipartRequest(t, "questions.xlsx", test.data, nil)
+			responseRecorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/preview", body)
+			request.Header.Set("Content-Type", contentType)
+			router.ServeHTTP(responseRecorder, request)
+			if !strings.Contains(responseRecorder.Body.String(), test.want) {
+				t.Fatalf("response=%s want=%s", responseRecorder.Body.String(), test.want)
+			}
+		})
+	}
+}
+
 func TestCompetencyImport_RejectsFileChangedSincePreview(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := NewCompetencyImportHandler(nil)
