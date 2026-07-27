@@ -277,7 +277,20 @@
 
 经用户单独确认，已删除生产`/tmp/prod-release-d743d06`目录和`/tmp/prod-release-d743d06.tar.gz`上传归档，残留数为0。正式备份目录仍存在；清理后服务保持active，8090 health正常。
 
-### 9.8 尚未完成的入口切换
+### 9.8 旧8088入口停用
+
+经用户明确确认，已从宝塔Nginx主配置中移除旧8088 `server`块。该入口原本使用`/www/wwwroot/dist`并代理无监听的8091。
+
+- 修改前配置备份：`/opt/talent-assessment/backups/release_00401_20260727_153001/nginx.conf.before-disable-8088.20260727_162121`。
+- 备份SHA-256：`c18bc433bdfc5771133ae31f453896e20cbfe89cfd686fe02cb46918df774511`。
+- 修改后Nginx配置检查成功并reload。
+- 全部Nginx配置中的8088监听引用数为0。
+- 本机和公网8088均不可达。
+- 8090公网首页HTTP 200，公网health为`ok`，`talent-assessment=active`。
+
+停用仅移除监听配置，没有删除旧`/www/wwwroot/dist`或其发布前备份。
+
+### 9.9 尚未完成的入口切换
 
 生产新版本当前入口为：
 
@@ -288,8 +301,6 @@
 1. 云安全组/上游网络放通TCP/80。
 2. 配置业务vhost监听80并指向`/opt/talent-assessment/dist + 8092`。
 3. 切换后重复health、captcha、登录页及传统只读冒烟。
-
-旧8088入口未修改，仍代理无监听的8091，其API 502属于部署前既有状态。
 
 ## 10. 本次发布回滚点
 
@@ -305,7 +316,7 @@
 6. 启动`talent-assessment`。
 7. 复核后端SHA-256恢复为`e437897b28c211d9e01b877c5eaf0b12f26b3cc4b7c4879eedfbde97e9061853`，再执行传统只读冒烟。
 
-旧8088未在本次切换，因此不需要为应用回滚修改`/www/wwwroot/dist`；其备份仍保留供独立恢复。
+旧8088已按用户确认停用。若必须恢复该旧入口，应从上述`nginx.conf.before-disable-8088.20260727_162121`备份精确恢复主配置，先执行Nginx配置检查再reload；旧`/www/wwwroot/dist`及其发布前备份仍保留。恢复后API仍会代理8091，除非另行恢复对应后端，因此不能把“端口恢复”视为“旧系统恢复完成”。
 
 ### 菜单回滚
 
