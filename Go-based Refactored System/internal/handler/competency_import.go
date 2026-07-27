@@ -52,15 +52,23 @@ func (h *CompetencyImportHandler) ImportTemplate(c *gin.Context) {
 		cell, _ := excelize.CoordinatesToCellName(column+1, 1)
 		file.SetCellValue(sheet, cell, header)
 	}
-	example := []string{
-		"1", "沟通表达", "D01-Q01", "1", "说明工作内容时，我会围绕重点安排表达顺序。",
-		"结构化表达", "正向", "启用", service.CompetencyImportDefaultRemark,
+	examples := [][]string{
+		{
+			"1", "沟通表达", "D01-EXAMPLE-F", "9001", "说明工作内容时，我会围绕重点安排表达顺序。",
+			"结构化表达", "正向", "启用", "示例数据-正式导入前请修改或删除",
+		},
+		{
+			"1", "沟通表达", "D01-EXAMPLE-R", "9002", "讨论出现分歧时，我有时会先坚持自己的表述方式。",
+			"沟通调整", "反向", "启用", "示例数据-正式导入前请修改或删除",
+		},
 	}
 	for column := range service.CompetencyImportHeaders {
 		explainCell, _ := excelize.CoordinatesToCellName(column+1, 2)
-		exampleCell, _ := excelize.CoordinatesToCellName(column+1, 3)
 		file.SetCellValue(sheet, explainCell, service.CompetencyImportInstructions[column])
-		file.SetCellValue(sheet, exampleCell, example[column])
+		for row, example := range examples {
+			exampleCell, _ := excelize.CoordinatesToCellName(column+1, row+3)
+			file.SetCellValue(sheet, exampleCell, example[column])
+		}
 	}
 	file.SetColWidth(sheet, "A", "D", 18)
 	file.SetColWidth(sheet, "E", "F", 42)

@@ -3,6 +3,8 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -123,6 +125,37 @@ func TestCompetencyResultPaging_RequiresExamContextBeforeQuery(t *testing.T) {
 	}
 }
 
+func TestCompetencyResultFilters_NormalizeAndValidate(t *testing.T) {
+	tests := []struct {
+		name, inputName, telephone, completion string
+		wantName, wantTelephone                string
+		wantComplete                           *int
+		wantErr                                bool
+	}{
+		{"empty", "", "", "", "", "", nil, false},
+		{"trimmed complete", "  张三 ", " 139 ", "complete", "张三", "139", intPointer(1), false},
+		{"incomplete", "", "", "incomplete", "", "", intPointer(0), false},
+		{"all", "", "", "all", "", "", nil, false},
+		{"invalid", "", "", "finished", "", "", nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeCompetencyResultFilters(tt.inputName, tt.telephone, tt.completion)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error=%v wantErr=%v", err, tt.wantErr)
+			}
+			if got.Name != tt.wantName || got.Telephone != tt.wantTelephone {
+				t.Fatalf("filters=%+v", got)
+			}
+			if (got.IsComplete == nil) != (tt.wantComplete == nil) || got.IsComplete != nil && *got.IsComplete != *tt.wantComplete {
+				t.Fatalf("isComplete=%v want=%v", got.IsComplete, tt.wantComplete)
+			}
+		})
+	}
+}
+
+func intPointer(value int) *int { return &value }
+
 func TestCompetencyOptionsJSON_ForwardAndReverse(t *testing.T) {
 	for _, tt := range []struct {
 		direction string
@@ -162,5 +195,44 @@ func TestParticipantTable(t *testing.T) {
 	}
 	if participantTable("admin") != "" {
 		t.Fatal("invalid participant table")
+	}
+}
+
+func TestCompetencyResultPaging_ProjectsStartAndDurationForManagement(t *testing.T) {
+	source, err := os.ReadFile("competency_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, required := range []string{
+		`StartedAt            *time.Time`,
+		`json:"startedAt"`,
+		`p.create_time AS started_at`,
+		`p.user_time`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("result paging management projection missing %q", required)
+		}
+	}
+}
+
+func TestCompetencyFormalReportData_ProjectsTemplateMetadata(t *testing.T) {
+	source, err := os.ReadFile("competency_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, required := range []string{
+		`"examTitle"`,
+		`"requiredFields"`,
+		`"startedAt"`,
+		`"userTime"`,
+		`"generatedAt"`,
+		`"dimensionCoreMeanings"`,
+		`core_meaning`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("formal report metadata missing %q", required)
+		}
 	}
 }

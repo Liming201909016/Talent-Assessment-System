@@ -36,7 +36,6 @@ var anonymousPrefixes = []string{
 	// 系统公开
 	"/login", "/register", "/captchaImage", "/logout",
 	"/profile/", "/common/download",
-	"/system/dict/",
 	"/health",
 
 	// 在线测评页面（前端路由）
@@ -93,6 +92,13 @@ func IsAnonymous(path string) bool {
 // IsAnonymousMethod 按 method+path 匹配的匿名端点（对齐 Java /exam/** 整段匿名）
 // 仅放行考生答题流程必经的 PUT，避免管理后台接口暴露
 func IsAnonymousMethod(method, path string) bool {
+	const publicDictTypePrefix = "/system/dict/data/type/"
+	if method == "GET" && len(path) > len(publicDictTypePrefix) && path[:len(publicDictTypePrefix)] == publicDictTypePrefix {
+		return true
+	}
+	if method == "POST" && path == "/system/dict/data/batch" {
+		return true
+	}
 	// preview.vue 点击"开始测评"会 PUT /exam/api/tester 写回 paperId
 	// Java SecurityConfig 中 /exam/** 整段匿名，Go 在此对齐
 	if method == "PUT" && path == "/exam/api/tester" {

@@ -11,13 +11,38 @@
 
 | Area | Branch | Priority | Coverage | Planned assertion |
 |------|--------|----------|----------|-------------------|
-| User profile | update profile/password/avatar and query/update assigned roles | P1 | ❌ | Replace 5 Ajax stubs with authenticated persistence, password verification and upload validation |
-| Role authorization | status/data scope, allocated/unallocated users, cancel/select authorization | P1 | ❌ | Replace 7 stubs with transactional role-user updates and permission checks |
-| Public registration | `POST /register` | P1 | ❌ | Implement validated registration or remove/disable the frontend entry and route |
-| Cache administration | config/dict refresh | P2 | ❌ | Implement real cache invalidation or remove ineffective success responses |
-| Monitoring administration | force logout, jobs/job logs, operlog/logininfor cleanup | P2 | ❌ | Replace 14 stubs only if these optional operations remain exposed in menus |
-| Code generation | `/tool/gen/*` | P3 | ❌ | Implement 9 optional generator routes or remove the unsupported module |
-| User repo/wrong-book generic CRUD | 18 generated GET/POST routes | P3 | ⚪ | Current frontend uses custom start/fill/check/next flows, not these generic actions; remove redundant stubGroup routes |
+| User profile | update profile/password/avatar and query/update assigned roles | P1 | ✅ | FB-088～092: authenticated self-service, bcrypt/session invalidation, decoded safe avatar and permission-checked transactional role replacement |
+| Role authorization | status/data scope, allocated/unallocated users, cancel/select authorization | P1 | ✅ | FB-091～092: exact RuoYi permissions, super-admin protection, bounded paging and transactional validated relationships |
+| Public registration | `POST /register` | P1 | ✅ | FB-093/095: config gate, atomic one-time captcha, strict credentials, bcrypt, transactional optional common role and unique-index migration |
+| Cache administration | config/dict refresh | P2 | ✅ | FB-096/097: real permission-checked SCAN refresh handlers replace both success stubs and preserve login/captcha keys |
+| Monitoring administration | force logout, jobs/job logs, operlog/logininfor cleanup | P2 | ✅ | FB-098/099 retire online/job/jobLog modules and unsupported audit mutations; real server and audit list routes remain |
+| Code generation | `/tool/gen/*` | P3 | ✅ | FB-098/099 remove the unsupported backend routes, frontend module, hidden edit route, and menu access |
+| User repo/wrong-book generic CRUD | 18 generated GET/POST routes | P3 | ✅ | FB-098 removes all generated stub routes and four confirmed unconsumed wrappers; `el_user_book` model/table/data remain |
+
+### Administration Stub Closure Branch Matrix (2026-07-27)
+
+| Function | Branch | Priority | Coverage |
+|----------|--------|----------|----------|
+| Profile update | authenticated current user updates valid nickname/email/phone/sex | P0 | ✅ |
+| Profile update | forged user ID, malformed JSON, invalid field format, duplicate email/phone, missing user or DB failure | P0 | ✅ |
+| Profile password | correct old password and strong new password | P0 | ✅ |
+| Profile password | wrong old password, weak/same password, malformed JSON, hash/update failure | P0 | ✅ |
+| Profile avatar | valid JPEG/PNG within size limit is stored under configured profile directory | P0 | ✅ |
+| Profile avatar | empty/oversized/fake image, path manipulation, file/DB failure | P0 | ✅ |
+| Profile avatar | persisted `/profile/...` URL is read through the nginx static location without an API-prefix rewrite | P0 | ✅ | FB-100: frontend store and upload completion keep the backend URL unchanged; regression test rejects `/prod-api/profile/...` |
+| User role assignment | authorized caller reads or transactionally replaces valid active roles | P0 | ✅ |
+| User role assignment | unauthorized caller, missing user/role, duplicate/invalid role ID, protected admin mutation or DB rollback | P0 | ✅ |
+| Role authorization | authorized caller changes status/data scope and assigns or removes users transactionally | P0 | ✅ |
+| Role authorization | unauthorized caller, malformed input, protected admin role/user, invalid IDs or DB rollback | P0 | ✅ |
+| Registration | enabled registration with valid one-time captcha, unique username and strong password | P0 | ✅ |
+| Registration | disabled registration, invalid/replayed captcha, malformed/duplicate username, weak/mismatched password or DB rollback | P0 | ✅ |
+| Config/dict cache | cache miss/hit, exact write invalidation and prefix refresh | P1 | ✅ | FB-096/097: one-hour config read-through; config and dict mutations invalidate old/new exact keys; prefix refresh uses batched SCAN |
+| Config/dict cache | Redis unavailable or database query failure returns controlled behavior without false success | P1 | ✅ | FB-096/097: config/dict reads fall back from Redis to DB; non-not-found DB failures and refresh failures return controlled errors; empty dict is `[]` |
+| Dictionary routing | public type/batch reads bypass JWT while all type/data management routes retain authenticated login context | P0 | ✅ | FB-101: method-specific public reads remain anonymous; broad `/system/dict/` prefix removed so management handlers receive the authenticated login context |
+| Optional modules | retired job/code-generation menus and hidden routes are absent | P1 | ✅ | FB-098/099 source and frontend tests; menu IDs disabled by explicit primary-key migration |
+| Audit pages | operation/login audit lists remain available while unsupported mutation controls/routes are absent | P1 | ✅ | Read-only list routes/wrappers/pages retained; delete/clean/export controls and routes removed |
+| Dead generic routes | user repo/wrong-book generated stubs return 404 and historical data remains untouched | P1 | ✅ | Authenticated HTTP tests return 404; no table/model/data migration is performed |
+| Stub inventory | production router has zero `Stub`/`AjaxStub`/`TableStub` registrations and no `_todo` success response | P0 | ✅ | Production route source has no stub caller/helper; `internal/handler/stub.go` deleted |
 
 ## Competency Assessment — Phase 1A Security and Dispatch Baseline
 
@@ -110,8 +135,12 @@
 | Report audience | report layout and module list for both versions | P0 | ✅ | One `competencyReport.vue` renders both audience values |
 | Report audience | overall evaluation content lookup | P0 | ✅ | temp-v1 matches exact audience + evaluation level + content version; formal customer content remains external replacement work |
 | Report audience | development advice content lookup | P0 | ✅ | temp-v1 matches exact audience + dimension + level + content version; no cross-audience/version fallback |
-| Report audience | result score, dimension order, and charts across versions | P0 | ✅ | Shared result tables and one report component; audience does not enter scoring |
+| Report audience | result score, dimension order, and charts across versions | P0 | ✅ | SC-012 staging used identical 40/40 answers: overall/5 dimension facts and order matched; two A4 9-page PDFs had 9/9 normalized text equality and matching chart data |
+| Report audience | exact text rows used by both real PDF versions | P0 | ✅ | SC-012 matched 2/2 overall and 10/10 dimension texts to exact temp-v1 audience+dimension+level rows |
 | Report audience | historical report regeneration | P0 | ✅ | Report data reads `el_competency_result.report_audience` snapshot |
+| Result navigation | competency exam “detail” action | P0 | ✅ | FB-075 RED→GREEN routes competency to `CompetencyResults` and preserves legacy route; deployed staging E2E queried the retained exam and clicked the primary detail action, then passed 9 operation classes and hid 9 legacy controls |
+| Result navigation | competency legacy `exam/users` stale URL, bookmark or existing tab | P0 | ✅ | FB-076 component fetches exam type before loading participants and replace-routes competency to `CompetencyResults`; staging stale-URL E2E hid legacy controls 9/9 and called legacy generate-report 0 times |
+| Result navigation | dashboard recent competency exam action | P0 | ✅ | FB-076 explicitly routes competency to `CompetencyResults`, preserves legacy `exam/users`; dedicated RED→GREEN source regression passed |
 
 ### G. Competency Exam Creation Configuration
 
@@ -170,7 +199,8 @@
 
 | Area | Branch | Priority | Coverage | Planned assertion |
 |------|--------|----------|----------|-------------------|
-| Import template | administrator downloads template | P0 | ✅ | HTTP test parses xlsx and verifies nine headers, three rows, and zero merged cells |
+| Import template | administrator downloads template | P0 | ✅ | HTTP test parses xlsx and verifies nine headers, four rows, and zero merged cells |
+| Import template | template provides understandable sample data | P1 | ✅ | Contains two valid D01 examples covering forward and reverse scoring |
 | File boundary | file missing, not xlsx, empty, or larger than 10 MiB | P0 | ✅ | HTTP tests cover missing, wrong extension, zero-byte and 10MiB+1 payloads |
 | Import preview | valid rows | P0 | ✅ | Pure validation returns normalized row; source guard proves preview has no write calls |
 | Import preview | header differs from the nine-column contract | P0 | ✅ | Explicit header error test passes |
@@ -186,6 +216,9 @@
 | Formal import | any validation error exists | P0 | ✅ | Validation gate precedes transaction; preview reports all row errors |
 | Formal import | all rows valid | P0 | ✅ | Staging previewed and imported 384/384 rows, rerun detected complete existing set and data hash matched source |
 | Formal import | database insert fails | P0 | ✅ | Staging temporary BEFORE INSERT trigger forced MySQL failure; API reported rollback, question residue=0, trigger removed |
+| Question export | one or more competency questions exist | P0 | ✅ | Exports all source questions in stable dimension/item order using the same nine-column contract as import |
+| Question export | no competency questions exist | P1 | ✅ | Returns a valid header-only workbook |
+| Question export | database query or workbook generation fails | P1 | ✅ | Returns a controlled error before writing a partial xlsx response |
 
 ### J. Competency Publish Snapshot
 
@@ -247,24 +280,51 @@
 | Result paging | participant is candidate or tester | P0 | ✅ | Staging returned candidate name/telephone/type for all three rows through one LEFT JOIN query without N+1 |
 | Result paging | no results | P1 | ✅ | Non-nil result slice initialized; frontend renders explicit empty state |
 | Result detail | open from result list | P0 | ✅ | Staging browser dialog showed overall=8, two ordered dimensions and all 16 per-question audit rows |
+| Result authorization | authenticated user lacks administrator/exam:list/exam:export permission | P0 | ✅ | FB-078 returns HTTP 403 before binding/querying; administrator, global, exam:list and exam:export retain access; internal-token rendering remains independently authenticated |
 | Result UI | legacy exam row | P0 | ✅ | Existing test-record/export/statistics entries remain in the non-competency branch |
 | Result UI | competency exam row | P0 | ✅ | Dedicated `CompetencyResults` route and list command preserve `examId` context |
 | Result UI | complete competency result opens test report | P0 | ✅ | Named route receives `params.paperId`; FB-067 RED→GREEN verifies the report page can read `$route.params.paperId` |
+| Result UI | management list shows start/completion/duration and detail shows score sum | P1 | ✅ | Result paging projects `p.create_time AS started_at` and `user_time`; UI shows start/completion/duration and dimension `scoreSum`; RED→GREEN tests pass |
+| Result filtering | name/telephone/completion filters are empty | P1 | ✅ | Empty/all normalization test keeps filters nil/empty and existing stable sort/pagination |
+| Result filtering | name or telephone contains text | P1 | ✅ | Inputs are trimmed and applied through parameterized LIKE to frozen participant snapshots; count and rows share the helper |
+| Result filtering | completion is complete/incomplete | P1 | ✅ | Pure test covers all/complete/incomplete and rejects unknown values; service maps to `is_complete=1/0` |
+| Result paging | malformed JSON or wrong field type | P1 | ✅ | FB-083 checks `ShouldBindJSON` and returns “参数格式错误” before defaults or service queries |
+| Result UI | query and reset buttons | P1 | ✅ | Component test verifies reset clears identity/completion/sorting, returns to page 1 and reloads |
+| Result UI | overlapping list/detail requests return out of order | P1 | ✅ | FB-081 uses independent monotonic sequences for list/detail; only the latest response may update data/loading, and list requests receive a frozen query snapshot |
+| Result UI | no complete row selected for batch report action | P1 | ✅ | Buttons bind disabled state to selected complete rows; `selectable` rejects incomplete rows |
+| Result UI | one or more complete rows selected for batch generation | P1 | ✅ | Component test verifies one generation call per selected paper, loading cleanup and summary feedback |
+| Result UI | one or more complete rows selected for batch download | P1 | ✅ | Component test verifies one download/save per selected paper, loading cleanup and participant filenames |
+| Result UI | selection changes while batch generation/download is running | P1 | ✅ | FB-082 captures a filtered/shallow-copied complete-result snapshot at task start; loops, progress and totals never read live selectedRows afterward |
+| Result UI | row view/answer-detail/download actions | P1 | ✅ | Source/component tests verify legacy labels/order while retaining competency report, detail and download APIs |
+| Result UI | mobile viewport under 768px | P2 | ✅ | FB-087 wraps heading/toolbars, makes filters full width, preserves table scrolling and opens a full-screen one-column detail dialog |
 
 ### M2. Temporary Competency Formal Report and PDF
 
 | Area | Branch | Priority | Coverage | Planned assertion |
 |------|--------|----------|----------|-------------------|
+| Report template | cover identifies exam, participant, audience and generation date | P1 | ✅ | Staging 00401 PDF cover shows exam, participant, frozen audience and actual render date |
+| Report template | reading guide explains 1–5 scale, aggregation and comparison boundary | P1 | ✅ | PDF explains 1.00–5.00, dimension average, overall sum/evaluation mean and cross-combination boundary |
+| Report template | participant fields follow exam requiredFields | P1 | ✅ | Template filters frozen identity fields by exam requiredFields; empty configuration shows all |
+| Report template | overview and measured dimensions have printable score charts | P1 | ✅ | Staging PDF renders four-level overall scale and five measured-dimension CSS bars without external chart runtime |
+| Report template | each measured dimension shows frozen core meaning and temporary interpretation | P1 | ✅ | Nine-page 00401 PDF contains all five published core meanings, exact temp-v1 interpretations and development prompts |
+| Report template | six configured participant fields fit on the overview page | P1 | ✅ | FB-073 RED→GREEN; five retained staging reports stay at 9 pages without splitting overall interpretation |
+| Report template | score bands 1–5 and both audiences render consistently | P1 | ✅ | Five independent configs cover averages 1/2/3/4/5, overall 5/10/15/20/25, three frontline and two leader PDFs |
 | Report text | active temporary content version exists for audience, overall level and every measured dimension level | P0 | ✅ | 392 temp-v1 rows cover 2 audiences × overall/dimensions × 4 levels; exact matches are frozen into instance snapshot |
 | Report text | any required text is missing or belongs to another audience/version | P0 | ✅ | Pure service test rejects missing dimension level and cross-audience fallback before rendering |
+| Report text | required exact lookup key is missing | P1 | ✅ | Error identifies contentVersion, audience, dimension (or overall), and level |
 | Report text | temporary content is rendered | P0 | ✅ | Staging PDF text contains “临时测试报告” and “不可作为人才决策依据” |
+| Internal report authentication | token is supplied in URL/query instead of `X-Internal-Token` | P0 | ✅ | FB-079 sends only `paperId` in query, places the token in `X-Internal-Token`, and rejects even a correct query token with HTTP 401 |
 | Generate report | result is incomplete | P0 | ✅ | Existing FB-047 formal report guard rejects before instance/PDF writes |
 | Generate report | complete result has no prior instance | P0 | ✅ | Staging created instance, rendered Chromium PDF, persisted path/hash/size and completed status |
 | Generate report | same version already completed and force=false | P0 | ✅ | Unique paper+version and existing-file guard return the same instance without duplication |
+| Generate report | concurrent requests target the same paperId | P0 | ✅ | FB-080 uses a stable bounded 64-stripe lock on the singleton report handler and locks before instance lookup through final audit/read, so waiting force=false requests re-read and reuse completed output |
 | Regenerate report | force=true for same content version | P0 | ✅ | Same instance is refreshed and regenerate audit action is recorded by the dedicated branch |
 | Generate report | render or file write fails | P0 | ✅ | Handler marks instance failed and never sets participant pdf_flag success |
+| Generate report | success audit insert fails after PDF metadata update | P0 | ✅ | FB-084 inserts success audit through the same GORM transaction as report metadata and participant PDF state; rollback removes the new file |
 | Download report | completed instance path is inside configured upload root and file exists | P0 | ✅ | Staging downloaded application/pdf, SHA-256 matched instance, and audit count was 1 |
+| Download report | same-name participants or spaces/plus signs in response filename | P1 | ✅ | FB-085 includes paperId in frontend names and encodes server filename* with `%20`/`%2B` RFC5987-compatible percent encoding |
 | Download report | missing instance/file or path escapes upload root | P0 | ✅ | `filepath.Rel` allow-root guard and completed-instance lookup reject invalid paths |
+| Download report | HTTP 200 response body is a JSON business error rather than a PDF | P0 | ✅ | FB-077 rejects every non-`application/pdf` Blob, parses the backend message with Blob.text/FileReader fallback, and prevents `saveAs`/success counting |
 | Delete exam | competency report instances/audits/files exist | P0 | ✅ | Staging full-chain cleanup removed report audit/instance before paper and removed allowed-root PDF; remaining=0 |
 
 ### N. Legacy and Competency Question Management Isolation
@@ -482,6 +542,17 @@
 | Formal import | P0 | ✅ | Browser confirmation imported one row; list refreshed from 384 to 385 |
 | Cleanup | P0 | ✅ | Deleted by queried primary key; DB/list returned to 384, temporary question/relation/session/files=0 |
 | Service health | P0 | ✅ | Backend/nginx active, health OK, recent panic/fatal/segmentation/import-failed counts all 0 |
+
+### AG2. Competency Question Import/Export Round-Trip Acceptance
+
+| Scenario | Priority | Coverage | Verified result |
+|----------|----------|----------|-----------------|
+| Template examples | P1 | ✅ | Four-row template contains one valid forward and one valid reverse D01 example |
+| Template preview | P0 | ✅ | Real staging preview returned success=2, errors=0 and a 64-character SHA-256 |
+| Template import | P0 | ✅ | Same file/hash imported two rows atomically; source question count changed 384→386 |
+| Question export | P0 | ✅ | Nine import-compatible columns exported all 386 rows and both temporary examples with correct direction/status |
+| Result exports | P0 | ✅ | Existing five-dimension 40/40 result exported 1 summary, 40 details and 40 dictionary rows from both endpoints; normalized content matched |
+| Cleanup and health | P0 | ✅ | Temporary examples/session/files=0, source questions restored to 384, health OK, recent critical errors=0 |
 
 ### AH. Competency Dimension Master Maintenance
 

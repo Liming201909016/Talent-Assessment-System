@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,15 +28,34 @@ const (
 	competencyReportStatusGenerating = "generating"
 	competencyReportStatusCompleted  = "completed"
 	competencyReportStatusFailed     = "failed"
+	competencyReportLockStripes      = 64
 )
 
 type CompetencyReportHandler struct {
-	db    *gorm.DB
-	examH *ExamHandler
+	db          *gorm.DB
+	examH       *ExamHandler
+	reportLocks [competencyReportLockStripes]sync.Mutex
 }
 
 func NewCompetencyReportHandler(db *gorm.DB, examH *ExamHandler) *CompetencyReportHandler {
 	return &CompetencyReportHandler{db: db, examH: examH}
+}
+
+func reportGenerationLockIndex(paperID string) int {
+	const offset32 uint32 = 2166136261
+	const prime32 uint32 = 16777619
+	hash := offset32
+	for index := 0; index < len(paperID); index++ {
+		hash ^= uint32(paperID[index])
+		hash *= prime32
+	}
+	return int(hash % competencyReportLockStripes)
+}
+
+func (h *CompetencyReportHandler) lockReportGeneration(paperID string) func() {
+	lock := &h.reportLocks[reportGenerationLockIndex(paperID)]
+	lock.Lock()
+	return lock.Unlock
 }
 
 func (h *CompetencyReportHandler) reportIdentity(c *gin.Context) (*model.LoginUser, bool) {
@@ -74,6 +94,8 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 		return
 	}
 	body.PaperID = strings.TrimSpace(body.PaperID)
+	unlock := h.lockReportGeneration(body.PaperID)
+	defer unlock()
 
 	runtime := service.NewCompetencyRuntimeService(h.db, h.examH.cfg)
 	data, err := runtime.FormalReportData(body.PaperID)
@@ -149,6 +171,10 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 		return
 	}
 	generatedAt := time.Now()
+	action := "generate"
+	if body.Force {
+		action = "regenerate"
+	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.CompetencyReport{}).Where("id = ?", report.ID).Updates(map[string]any{
 			"pdf_path": saved, "pdf_sha256": digest, "pdf_size": len(pdfBytes), "status": competencyReportStatusCompleted,
@@ -160,8 +186,11 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 		if result.ParticipantType == service.CompetencyParticipantTester {
 			table = "el_tester"
 		}
-		return tx.Table(table).Where("id = ? AND paper_id = ?", result.ParticipantID, body.PaperID).
-			Updates(map[string]any{"pdf_path": saved, "pdf_flag": 1, "update_time": &generatedAt}).Error
+		if err := tx.Table(table).Where("id = ? AND paper_id = ?", result.ParticipantID, body.PaperID).
+			Updates(map[string]any{"pdf_path": saved, "pdf_flag": 1, "update_time": &generatedAt}).Error; err != nil {
+			return err
+		}
+		return h.writeReportAuditWithDB(tx, c, report.ID, body.PaperID, action, &login.UserID, 1, "")
 	}); err != nil {
 		_ = os.Remove(saved)
 		h.markReportFailed(report.ID, err)
@@ -170,14 +199,6 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 	}
 	if existing.PDFPath != "" && existing.PDFPath != saved {
 		h.removeReportFile(existing.PDFPath)
-	}
-	action := "generate"
-	if body.Force {
-		action = "regenerate"
-	}
-	if err := h.writeReportAudit(c, report.ID, body.PaperID, action, &login.UserID, 1, ""); err != nil {
-		response.RestErr(c, "记录报告审计失败")
-		return
 	}
 	if err := h.db.Where("id = ?", report.ID).Take(&report).Error; err != nil {
 		response.RestErr(c, "读取报告实例失败")
@@ -265,12 +286,16 @@ func (h *CompetencyReportHandler) Download(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Type", "application/pdf")
-	c.Header("Content-Disposition", "attachment; filename=competency-report.pdf; filename*=UTF-8''"+url.QueryEscape(fileName))
+	c.Header("Content-Disposition", "attachment; filename=competency-report.pdf; filename*=UTF-8''"+encodeRFC5987FileName(fileName))
 	c.Header("Content-Length", strconv.FormatInt(info.Size(), 10))
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
 	if _, err := io.Copy(c.Writer, file); err != nil {
 		return
 	}
+}
+
+func encodeRFC5987FileName(fileName string) string {
+	return strings.ReplaceAll(url.QueryEscape(fileName), "+", "%20")
 }
 
 func (h *CompetencyReportHandler) validReportPath(path string) (string, error) {
@@ -313,11 +338,15 @@ func (h *CompetencyReportHandler) markReportFailed(reportID string, reportErr er
 }
 
 func (h *CompetencyReportHandler) writeReportAudit(c *gin.Context, reportID, paperID, action string, operatorID *int64, status int8, errorMessage string) error {
+	return h.writeReportAuditWithDB(h.db, c, reportID, paperID, action, operatorID, status, errorMessage)
+}
+
+func (h *CompetencyReportHandler) writeReportAuditWithDB(db *gorm.DB, c *gin.Context, reportID, paperID, action string, operatorID *int64, status int8, errorMessage string) error {
 	now := time.Now()
 	if len(errorMessage) > 500 {
 		errorMessage = errorMessage[:500]
 	}
-	return h.db.Create(&model.CompetencyReportAudit{
+	return db.Create(&model.CompetencyReportAudit{
 		ID: uuid.NewString(), ReportID: reportID, PaperID: paperID, Action: action,
 		OperatorID: operatorID, Status: status, ErrorMessage: errorMessage, ClientIP: c.ClientIP(), CreateTime: &now,
 	}).Error

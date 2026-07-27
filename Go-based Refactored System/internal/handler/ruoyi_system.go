@@ -6,6 +6,8 @@ package handler
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,14 +18,20 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+	"github.com/talent-assessment/refactored/internal/config"
+	"github.com/talent-assessment/refactored/pkg/redisx"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"gorm.io/gorm"
 )
 
-type RuoYiSystemHandler struct{ db *gorm.DB }
+type RuoYiSystemHandler struct {
+	db  *gorm.DB
+	cfg *config.Config
+}
 
-func NewRuoYiSystemHandler(db *gorm.DB) *RuoYiSystemHandler {
-	return &RuoYiSystemHandler{db: db}
+func NewRuoYiSystemHandler(db *gorm.DB, cfg *config.Config) *RuoYiSystemHandler {
+	return &RuoYiSystemHandler{db: db, cfg: cfg}
 }
 
 // ===================== Role =====================
@@ -33,6 +41,7 @@ type sysRole struct {
 	RoleName   string     `gorm:"column:role_name"          json:"roleName"`
 	RoleKey    string     `gorm:"column:role_key"           json:"roleKey"`
 	RoleSort   int        `gorm:"column:role_sort"          json:"roleSort"`
+	DataScope  string     `gorm:"column:data_scope"         json:"dataScope"`
 	Status     string     `gorm:"column:status"             json:"status"`
 	CreateTime *time.Time `gorm:"column:create_time"      json:"createTime"`
 }
@@ -342,11 +351,33 @@ func (h *RuoYiSystemHandler) ConfigList(c *gin.Context) {
 }
 
 func (h *RuoYiSystemHandler) ConfigByKey(c *gin.Context) {
-	key := c.Param("configKey")
+	configKey := c.Param("configKey")
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	if redisx.Client != nil {
+		value, err := redisx.Client.Get(ctx, configCacheKey(configKey)).Result()
+		if err == nil {
+			response.AjaxOK(c, value)
+			return
+		}
+		if err != redis.Nil {
+			slog.Warn("config cache read failed; falling back to database", "error", err)
+		}
+	}
+
 	var cfg sysConfig
-	if err := h.db.Where("config_key = ?", key).First(&cfg).Error; err != nil {
-		response.AjaxOK(c, "")
+	if err := h.db.Where("config_key = ?", configKey).First(&cfg).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.AjaxOK(c, "")
+			return
+		}
+		response.AjaxErr(c, "配置读取失败")
 		return
+	}
+	if redisx.Client != nil {
+		if err := redisx.Client.Set(ctx, configCacheKey(configKey), cfg.ConfigValue, time.Hour).Err(); err != nil {
+			slog.Warn("config cache write failed; returning database value", "error", err)
+		}
 	}
 	response.AjaxOK(c, cfg.ConfigValue)
 }
@@ -483,66 +514,6 @@ func (h *RuoYiSystemHandler) OperlogList(c *gin.Context) {
 	response.Table(c, rows, total)
 }
 
-// ===================== Job (sys_job) =====================
-
-func (h *RuoYiSystemHandler) JobList(c *gin.Context) {
-	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	if pageNum <= 0 {
-		pageNum = 1
-	}
-	pageSize = capPageSize(pageSize)
-
-	q := h.db.Table("sys_job")
-	var total int64
-	q.Count(&total)
-
-	type row struct {
-		JobID          int64      `gorm:"column:job_id"          json:"jobId"`
-		JobName        string     `gorm:"column:job_name"        json:"jobName"`
-		JobGroup       string     `gorm:"column:job_group"       json:"jobGroup"`
-		InvokeTarget   string     `gorm:"column:invoke_target"   json:"invokeTarget"`
-		CronExpression string     `gorm:"column:cron_expression" json:"cronExpression"`
-		MisfirePolicy  string     `gorm:"column:misfire_policy"  json:"misfirePolicy"`
-		Concurrent     string     `gorm:"column:concurrent"      json:"concurrent"`
-		Status         string     `gorm:"column:status"          json:"status"`
-		CreateTime     *time.Time `gorm:"column:create_time"     json:"createTime"`
-	}
-	var rows []row
-	q.Order("job_id").Offset((pageNum - 1) * pageSize).Limit(pageSize).Scan(&rows)
-	response.Table(c, rows, total)
-}
-
-// ===================== Online Users (from Redis) =====================
-
-func (h *RuoYiSystemHandler) OnlineList(c *gin.Context) {
-	// Online users are stored in Redis as login_tokens:*
-	// For simplicity, return users from sys_user with recent login
-	pageNum, _ := strconv.Atoi(c.DefaultQuery("pageNum", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	if pageNum <= 0 {
-		pageNum = 1
-	}
-	pageSize = capPageSize(pageSize)
-
-	type row struct {
-		InfoID        int64      `gorm:"column:info_id"        json:"tokenId"`
-		UserName      string     `gorm:"column:user_name"      json:"userName"`
-		Ipaddr        string     `gorm:"column:ipaddr"         json:"ipaddr"`
-		LoginLocation string     `gorm:"column:login_location" json:"loginLocation"`
-		Browser       string     `gorm:"column:browser"        json:"browser"`
-		Os            string     `gorm:"column:os"             json:"os"`
-		LoginTime     *time.Time `gorm:"column:login_time"     json:"loginTime"`
-	}
-	// Show recent logins (last 24h) as "online" approximation
-	var total int64
-	q := h.db.Table("sys_logininfor").Where("status = '0' AND login_time > DATE_SUB(NOW(), INTERVAL 24 HOUR)")
-	q.Count(&total)
-	var rows []row
-	q.Order("login_time DESC").Offset((pageNum - 1) * pageSize).Limit(pageSize).Scan(&rows)
-	response.Table(c, rows, total)
-}
-
 // ===================== Server Monitor =====================
 
 // serverStartTime 记录进程启动时间
@@ -639,6 +610,9 @@ func readLinuxMemInfo() (total, used, free float64) {
 			fmt.Sscanf(strings.TrimPrefix(line, "MemAvailable:"), "%f", &memAvail)
 		}
 	}
+	if scanner.Err() != nil {
+		return 0, 0, 0
+	}
 	total = memTotal / 1024 / 1024 // kB -> GB
 	free = memAvail / 1024 / 1024
 	used = total - free
@@ -666,6 +640,9 @@ func readLinuxCPU() (user, sys, free float64) {
 				total += v
 			}
 			idle = vals[3] // idle is 4th field
+		}
+		if scanner.Err() != nil {
+			return 0, 0
 		}
 		return
 	}
@@ -836,25 +813,6 @@ func (h *RuoYiSystemHandler) readMySQLInfo() gin.H {
 func parseFloat(s string) float64 {
 	v, _ := strconv.ParseFloat(s, 64)
 	return v
-}
-
-// ===================== Cache Monitor =====================
-
-func (h *RuoYiSystemHandler) CacheInfo(c *gin.Context) {
-	response.AjaxOK(c, gin.H{
-		"info": gin.H{
-			"redis_version":     "7.0.15",
-			"redis_mode":        "standalone",
-			"connected_clients": 5,
-			"used_memory_human": "2.5M",
-			"uptime_in_days":    1,
-		},
-		"dbSize": 100,
-		"commandStats": []gin.H{
-			{"name": "get", "value": 500},
-			{"name": "set", "value": 200},
-		},
-	})
 }
 
 // ===================== User Profile =====================

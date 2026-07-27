@@ -150,6 +150,10 @@ export default {
       }).catch(() => {})
     },
     goExamDetail(row) {
+      if (row.assessmentType === 'competency') {
+        this.$router.push({ name: 'CompetencyResults', params: { examId: row.id } })
+        return
+      }
       const isOpen = row.isOpen || 1
       this.$router.push({
         path: `/exam/exam/users/${row.id}/${isOpen}/${encodeURIComponent(row.title || '')}`

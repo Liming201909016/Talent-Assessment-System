@@ -168,6 +168,13 @@ func isRetryableReportErr(err error) bool {
 }
 
 func (h *ExamHandler) canGenerateReport(lu *model.LoginUser) bool {
+	return canAccessExamResults(lu)
+}
+
+func canAccessExamResults(lu *model.LoginUser) bool {
+	if lu == nil {
+		return false
+	}
 	if lu.UserID == 1 {
 		return true
 	}

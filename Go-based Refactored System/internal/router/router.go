@@ -43,7 +43,7 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 	sysRoleH := handler.NewSysRoleHandler(db)
 	sysConfigH := handler.NewSysConfigHandler(db)
 	sysUserH := handler.NewSysExamUserHandler(db)
-	ruoyiSysH := handler.NewRuoYiSystemHandler(db)
+	ruoyiSysH := handler.NewRuoYiSystemHandler(db, cfg)
 
 	r.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 
@@ -75,11 +75,11 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 		sys.PUT("/user/changeStatus", ruoyiSysH.UserChangeStatus)
 		sys.PUT("/user/resetPwd", ruoyiSysH.UserResetPwd)
 		sys.GET("/user/profile", ruoyiSysH.UserProfile)
-		sys.PUT("/user/profile", handler.AjaxStub("system/user/profile/update"))
-		sys.PUT("/user/profile/updatePwd", handler.AjaxStub("system/user/profile/updatePwd"))
-		sys.POST("/user/profile/avatar", handler.AjaxStub("system/user/profile/avatar"))
-		sys.GET("/user/authRole/:userId", handler.AjaxStub("system/user/authRole"))
-		sys.PUT("/user/authRole", handler.AjaxStub("system/user/authRole/update"))
+		sys.PUT("/user/profile", ruoyiSysH.UserProfileUpdate)
+		sys.PUT("/user/profile/updatePwd", ruoyiSysH.UserProfileUpdatePwd)
+		sys.POST("/user/profile/avatar", ruoyiSysH.UserProfileAvatar)
+		sys.GET("/user/authRole/:userId", ruoyiSysH.UserAuthRoleDetail)
+		sys.PUT("/user/authRole", ruoyiSysH.UserAuthRoleUpdate)
 
 		// role
 		sys.GET("/role/list", ruoyiSysH.RoleList)
@@ -87,13 +87,13 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 		sys.POST("/role", ruoyiSysH.RoleAdd)
 		sys.PUT("/role", ruoyiSysH.RoleEdit)
 		sys.DELETE("/role/:roleIds", ruoyiSysH.RoleDelete)
-		sys.PUT("/role/changeStatus", handler.AjaxStub("system/role/changeStatus"))
-		sys.PUT("/role/dataScope", handler.AjaxStub("system/role/dataScope"))
-		sys.GET("/role/authUser/allocatedList", handler.TableStub("system/role/authUser/allocatedList"))
-		sys.GET("/role/authUser/unallocatedList", handler.TableStub("system/role/authUser/unallocatedList"))
-		sys.PUT("/role/authUser/cancel", handler.AjaxStub("system/role/authUser/cancel"))
-		sys.PUT("/role/authUser/cancelAll", handler.AjaxStub("system/role/authUser/cancelAll"))
-		sys.PUT("/role/authUser/selectAll", handler.AjaxStub("system/role/authUser/selectAll"))
+		sys.PUT("/role/changeStatus", ruoyiSysH.RoleChangeStatus)
+		sys.PUT("/role/dataScope", ruoyiSysH.RoleDataScope)
+		sys.GET("/role/authUser/allocatedList", ruoyiSysH.RoleAllocatedList)
+		sys.GET("/role/authUser/unallocatedList", ruoyiSysH.RoleUnallocatedList)
+		sys.PUT("/role/authUser/cancel", ruoyiSysH.RoleAuthCancel)
+		sys.PUT("/role/authUser/cancelAll", ruoyiSysH.RoleAuthCancelAll)
+		sys.PUT("/role/authUser/selectAll", ruoyiSysH.RoleAuthSelectAll)
 
 		// menu
 		sys.GET("/menu/list", ruoyiSysH.MenuList)
@@ -120,7 +120,7 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 		sys.POST("/config", ruoyiSysH.ConfigAdd)
 		sys.PUT("/config", ruoyiSysH.ConfigEdit)
 		sys.DELETE("/config/:configIds", ruoyiSysH.ConfigDelete)
-		sys.DELETE("/config/refreshCache", handler.AjaxStub("system/config/refreshCache"))
+		sys.DELETE("/config/refreshCache", ruoyiSysH.ConfigRefreshCache)
 		sys.GET("/config/configKey/:configKey", ruoyiSysH.ConfigByKey)
 
 		// dict/type
@@ -129,7 +129,7 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 		sys.POST("/dict/type", ruoyiSysH.DictTypeAdd)
 		sys.PUT("/dict/type", ruoyiSysH.DictTypeEdit)
 		sys.DELETE("/dict/type/:dictIds", ruoyiSysH.DictTypeDelete)
-		sys.DELETE("/dict/type/refreshCache", handler.AjaxStub("system/dict/type/refreshCache"))
+		sys.DELETE("/dict/type/refreshCache", ruoyiSysH.DictRefreshCache)
 		sys.GET("/dict/type/optionselect", ruoyiSysH.DictTypeOptionselect)
 
 		// dict/data
@@ -154,47 +154,16 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 		sys.DELETE("/post/:postIds", ruoyiSysH.PostDelete)
 	}
 
-	// monitor.* 占位
+	// monitor.* 仅保留有真实数据来源的只读能力
 	monitor := r.Group("/monitor")
 	{
 		monitor.GET("/server", ruoyiSysH.ServerInfo)
-		monitor.GET("/cache", ruoyiSysH.CacheInfo)
-		monitor.GET("/online/list", ruoyiSysH.OnlineList)
-		monitor.DELETE("/online/:tokenId", handler.AjaxStub("monitor/online/forceLogout"))
-		monitor.GET("/job/list", ruoyiSysH.JobList)
-		monitor.GET("/job/:jobId", handler.AjaxStub("monitor/job/detail"))
-		monitor.POST("/job", handler.AjaxStub("monitor/job/add"))
-		monitor.PUT("/job", handler.AjaxStub("monitor/job/edit"))
-		monitor.DELETE("/job/:jobIds", handler.AjaxStub("monitor/job/delete"))
-		monitor.PUT("/job/changeStatus", handler.AjaxStub("monitor/job/changeStatus"))
-		monitor.PUT("/job/run", handler.AjaxStub("monitor/job/run"))
-		monitor.GET("/jobLog/list", handler.TableStub("monitor/jobLog/list"))
-		monitor.DELETE("/jobLog/:jobLogIds", handler.AjaxStub("monitor/jobLog/delete"))
-		monitor.DELETE("/jobLog/clean", handler.AjaxStub("monitor/jobLog/clean"))
 		monitor.GET("/operlog/list", ruoyiSysH.OperlogList)
-		monitor.DELETE("/operlog/:operIds", handler.AjaxStub("monitor/operlog/delete"))
-		monitor.DELETE("/operlog/clean", handler.AjaxStub("monitor/operlog/clean"))
 		monitor.GET("/logininfor/list", ruoyiSysH.LogininforList)
-		monitor.DELETE("/logininfor/:infoIds", handler.AjaxStub("monitor/logininfor/delete"))
-		monitor.DELETE("/logininfor/clean", handler.AjaxStub("monitor/logininfor/clean"))
-	}
-
-	// tool.* 占位
-	tool := r.Group("/tool")
-	{
-		tool.GET("/gen/list", handler.TableStub("tool/gen/list"))
-		tool.GET("/gen/:tableId", handler.AjaxStub("tool/gen/detail"))
-		tool.GET("/gen/preview/:tableId", handler.AjaxStub("tool/gen/preview"))
-		tool.GET("/gen/db/list", handler.TableStub("tool/gen/db/list"))
-		tool.POST("/gen/importTable", handler.AjaxStub("tool/gen/importTable"))
-		tool.PUT("/gen", handler.AjaxStub("tool/gen/edit"))
-		tool.DELETE("/gen/:tableIds", handler.AjaxStub("tool/gen/delete"))
-		tool.GET("/gen/genCode/:tableName", handler.AjaxStub("tool/gen/genCode"))
-		tool.GET("/gen/synchDb/:tableName", handler.AjaxStub("tool/gen/synchDb"))
 	}
 
 	// register (open)
-	r.POST("/register", handler.AjaxStub("register"))
+	r.POST("/register", ruoyiSysH.Register)
 
 	// ============ /exam/api/* 业务模块（与前端 api/*.js 前缀一致） ============
 	api := r.Group("/exam/api")
@@ -258,6 +227,7 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 		competencyQuestionGrp.GET("/import-template", competencyImportH.ImportTemplate)
 		competencyQuestionGrp.POST("/import-preview", competencyImportH.ImportPreview)
 		competencyQuestionGrp.POST("/import", competencyImportH.Import)
+		competencyQuestionGrp.GET("/export", competencyImportH.Export)
 	}
 	competencyExamGrp := api.Group("/competency/exams")
 	{
@@ -421,22 +391,10 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 		sysUserGrp.POST("/quick-reg", sysUserH.QuickReg)
 	}
 
-	// user/repo 和 user/wrong-book Java 后端无对应实现，保留空 stub
-	stubGroup(api, "/user/repo", []string{"paging", "list", "detail", "save", "delete"})
-	stubGroup(api, "/user/wrong-book", []string{"paging", "list", "detail", "delete"})
-
 	// shutdown 钩子：关闭 chromedp pool 等资源
 	shutdown := func() {
 		stopCompetencyWorker()
 		examH.Close()
 	}
 	return r, shutdown
-}
-
-func stubGroup(g *gin.RouterGroup, prefix string, actions []string) {
-	sub := g.Group(prefix)
-	for _, a := range actions {
-		sub.POST("/"+a, handler.Stub(prefix+"/"+a))
-		sub.GET("/"+a, handler.Stub(prefix+"/"+a))
-	}
 }

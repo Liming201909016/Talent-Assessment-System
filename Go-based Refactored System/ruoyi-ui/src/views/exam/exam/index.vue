@@ -253,6 +253,10 @@ export default {
 
     handleExamDetail(row) {
       console.log(row)
+      if (row.assessmentType === 'competency') {
+        this.$router.push({ name: 'CompetencyResults', params: { examId: row.id }})
+        return
+      }
       this.$router.push({ name: 'ListExamUser', params: { examId: row.id, isOpen: row.isOpen, title: row.title, stuFlag: row.stuFlag}})
     },
 

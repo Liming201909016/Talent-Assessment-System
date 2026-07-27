@@ -3,6 +3,8 @@ import { shallowMount } from '@vue/test-utils'
 import CompetencyExam from '@/views/paper/exam/competencyExam.vue'
 import CompetencyReport from '@/views/paper/exam/competencyReport.vue'
 import { fetchCompetencyInternalReportData, submitCompetencyPaper } from '@/api/competency'
+import fs from 'fs'
+import path from 'path'
 
 vi.mock('@/api/competency', () => ({
   fetchCompetencyPaper: vi.fn(), saveCompetencyAnswer: vi.fn(), submitCompetencyPaper: vi.fn(), fetchCompetencyReportData: vi.fn(), fetchCompetencyInternalReportData: vi.fn()
@@ -78,5 +80,28 @@ describe('Competency runtime pages', () => {
     expect(fetchCompetencyInternalReportData).toHaveBeenCalledWith('p1', 'internal-token')
     expect(wrapper.text()).toContain('不可作为人才决策依据')
     expect(wrapper.text()).toContain('临时总体评价')
+  })
+
+  it('implements the 00401 printable report template based on the reference document', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/paper/exam/competencyReport.vue'), 'utf8')
+    for (const required of [
+      'data.meta.examTitle', 'data.result.participantName', 'data.meta.generatedAt',
+      '报告阅读说明', '1.00–5.00', '不同维度数量', 'personFields',
+      'overall-scale', 'dimension-chart', 'dimensionCoreMeaning', '发展提示'
+    ]) {
+      expect(source).toContain(required)
+    }
+  })
+
+  it('prints section titles and content pages without blank-page inflation', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/paper/exam/competencyReport.vue'), 'utf8')
+    expect(source).toContain('<header class="page-title">报告阅读说明</header>')
+    expect(source).toContain('<header class="page-title">测评结果分析</header>')
+    expect(source).toContain('@media print')
+    expect(source).toContain('.report-page{width:100%;min-height:auto;')
+    expect(source).toContain('.cover{min-height:850px;')
+    expect(source).toContain('.dimension-page{font-size:14px;line-height:1.6;padding:38px 60px}')
+    expect(source).toContain('.overview-page{font-size:14px;line-height:1.6;padding:38px 60px}')
+    expect(source).toContain('.overview-page .overall-score{width:120px;height:120px')
   })
 })

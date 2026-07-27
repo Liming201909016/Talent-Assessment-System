@@ -12,6 +12,7 @@ import (
 	"github.com/talent-assessment/refactored/internal/model"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // ===================== User CRUD =====================
@@ -399,28 +400,82 @@ func (h *RuoYiSystemHandler) ConfigDetail(c *gin.Context) {
 }
 
 func (h *RuoYiSystemHandler) ConfigAdd(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:config:add"); !ok {
+		return
+	}
 	var cfg sysConfig
-	_ = c.ShouldBindJSON(&cfg)
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.AjaxErr(c, "参数格式错误")
+		return
+	}
 	cfg.ConfigID = nextID()
 	now := time.Now()
 	cfg.CreateTime = &now
-	h.db.Create(&cfg)
+	if err := h.db.Create(&cfg).Error; err != nil {
+		response.AjaxErr(c, "配置新增失败")
+		return
+	}
+	if !invalidateConfigKeys(c, cfg.ConfigKey) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 
 func (h *RuoYiSystemHandler) ConfigEdit(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:config:edit"); !ok {
+		return
+	}
 	var cfg sysConfig
-	_ = c.ShouldBindJSON(&cfg)
-	h.db.Model(&sysConfig{}).Where("config_id = ?", cfg.ConfigID).Updates(map[string]any{
-		"config_name": cfg.ConfigName, "config_key": cfg.ConfigKey,
-		"config_value": cfg.ConfigValue, "config_type": cfg.ConfigType, "remark": cfg.Remark,
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.AjaxErr(c, "参数格式错误")
+		return
+	}
+	var oldConfig sysConfig
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select("config_id", "config_key").Where("config_id = ?", cfg.ConfigID).First(&oldConfig).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&sysConfig{}).Where("config_id = ?", cfg.ConfigID).Updates(map[string]any{
+			"config_name": cfg.ConfigName, "config_key": cfg.ConfigKey,
+			"config_value": cfg.ConfigValue, "config_type": cfg.ConfigType, "remark": cfg.Remark,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		return nil
 	})
+	if err != nil {
+		response.AjaxErr(c, "配置修改失败")
+		return
+	}
+	if !invalidateConfigKeys(c, oldConfig.ConfigKey, cfg.ConfigKey) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 
 func (h *RuoYiSystemHandler) ConfigDelete(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:config:remove"); !ok {
+		return
+	}
 	ids := strings.Split(c.Param("configIds"), ",")
-	h.db.Where("config_id IN ?", ids).Delete(&sysConfig{})
+	keys := make([]string, 0)
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&sysConfig{}).Where("config_id IN ?", ids).Pluck("config_key", &keys).Error; err != nil {
+			return err
+		}
+		if len(keys) == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Where("config_id IN ?", ids).Delete(&sysConfig{}).Error
+	})
+	if err != nil {
+		response.AjaxErr(c, "配置删除失败")
+		return
+	}
+	if !invalidateConfigKeys(c, keys...) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 
@@ -437,27 +492,81 @@ func (h *RuoYiSystemHandler) DictTypeDetail(c *gin.Context) {
 }
 
 func (h *RuoYiSystemHandler) DictTypeAdd(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:dict:add"); !ok {
+		return
+	}
 	var dt sysDictType
-	_ = c.ShouldBindJSON(&dt)
+	if err := c.ShouldBindJSON(&dt); err != nil {
+		response.AjaxErr(c, "参数格式错误")
+		return
+	}
 	dt.DictID = nextID()
 	now := time.Now()
 	dt.CreateTime = &now
-	h.db.Create(&dt)
+	if err := h.db.Create(&dt).Error; err != nil {
+		response.AjaxErr(c, "字典类型新增失败")
+		return
+	}
+	if !invalidateDictTypes(c, dt.DictType) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 
 func (h *RuoYiSystemHandler) DictTypeEdit(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:dict:edit"); !ok {
+		return
+	}
 	var dt sysDictType
-	_ = c.ShouldBindJSON(&dt)
-	h.db.Model(&sysDictType{}).Where("dict_id = ?", dt.DictID).Updates(map[string]any{
-		"dict_name": dt.DictName, "dict_type": dt.DictType, "status": dt.Status, "remark": dt.Remark,
+	if err := c.ShouldBindJSON(&dt); err != nil {
+		response.AjaxErr(c, "参数格式错误")
+		return
+	}
+	var oldDictType sysDictType
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select("dict_id", "dict_type").Where("dict_id = ?", dt.DictID).First(&oldDictType).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&sysDictType{}).Where("dict_id = ?", dt.DictID).Updates(map[string]any{
+			"dict_name": dt.DictName, "dict_type": dt.DictType, "status": dt.Status, "remark": dt.Remark,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		return nil
 	})
+	if err != nil {
+		response.AjaxErr(c, "字典类型修改失败")
+		return
+	}
+	if !invalidateDictTypes(c, oldDictType.DictType, dt.DictType) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 
 func (h *RuoYiSystemHandler) DictTypeDelete(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:dict:remove"); !ok {
+		return
+	}
 	ids := strings.Split(c.Param("dictIds"), ",")
-	h.db.Where("dict_id IN ?", ids).Delete(&sysDictType{})
+	types := make([]string, 0)
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&sysDictType{}).Where("dict_id IN ?", ids).Pluck("dict_type", &types).Error; err != nil {
+			return err
+		}
+		if len(types) == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Where("dict_id IN ?", ids).Delete(&sysDictType{}).Error
+	})
+	if err != nil {
+		response.AjaxErr(c, "字典类型删除失败")
+		return
+	}
+	if !invalidateDictTypes(c, types...) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 
@@ -483,6 +592,9 @@ func (h *RuoYiSystemHandler) DictDataDetail(c *gin.Context) {
 }
 
 func (h *RuoYiSystemHandler) DictDataAdd(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:dict:add"); !ok {
+		return
+	}
 	var b struct {
 		DictSort  int    `json:"dictSort"`
 		DictLabel string `json:"dictLabel"`
@@ -491,16 +603,28 @@ func (h *RuoYiSystemHandler) DictDataAdd(c *gin.Context) {
 		Status    string `json:"status"`
 		Remark    string `json:"remark"`
 	}
-	_ = c.ShouldBindJSON(&b)
+	if err := c.ShouldBindJSON(&b); err != nil {
+		response.AjaxErr(c, "参数格式错误")
+		return
+	}
 	now := time.Now()
-	h.db.Table("sys_dict_data").Create(map[string]any{
+	if err := h.db.Table("sys_dict_data").Create(map[string]any{
 		"dict_sort": b.DictSort, "dict_label": b.DictLabel, "dict_value": b.DictValue,
 		"dict_type": b.DictType, "status": b.Status, "remark": b.Remark, "create_time": now,
-	})
+	}).Error; err != nil {
+		response.AjaxErr(c, "字典数据新增失败")
+		return
+	}
+	if !invalidateDictTypes(c, b.DictType) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 
 func (h *RuoYiSystemHandler) DictDataEdit(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:dict:edit"); !ok {
+		return
+	}
 	var b struct {
 		DictCode  int64  `json:"dictCode"`
 		DictSort  int    `json:"dictSort"`
@@ -510,17 +634,56 @@ func (h *RuoYiSystemHandler) DictDataEdit(c *gin.Context) {
 		Status    string `json:"status"`
 		Remark    string `json:"remark"`
 	}
-	_ = c.ShouldBindJSON(&b)
-	h.db.Table("sys_dict_data").Where("dict_code = ?", b.DictCode).Updates(map[string]any{
-		"dict_sort": b.DictSort, "dict_label": b.DictLabel, "dict_value": b.DictValue,
-		"dict_type": b.DictType, "status": b.Status, "remark": b.Remark,
+	if err := c.ShouldBindJSON(&b); err != nil {
+		response.AjaxErr(c, "参数格式错误")
+		return
+	}
+	var oldDictData sysDictData
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select("dict_code", "dict_type").Where("dict_code = ?", b.DictCode).First(&oldDictData).Error; err != nil {
+			return err
+		}
+		result := tx.Table("sys_dict_data").Where("dict_code = ?", b.DictCode).Updates(map[string]any{
+			"dict_sort": b.DictSort, "dict_label": b.DictLabel, "dict_value": b.DictValue,
+			"dict_type": b.DictType, "status": b.Status, "remark": b.Remark,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		return nil
 	})
+	if err != nil {
+		response.AjaxErr(c, "字典数据修改失败")
+		return
+	}
+	if !invalidateDictTypes(c, oldDictData.DictType, b.DictType) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 
 func (h *RuoYiSystemHandler) DictDataDelete(c *gin.Context) {
+	if _, ok := requireSystemPermission(c, "system:dict:remove"); !ok {
+		return
+	}
 	codes := strings.Split(c.Param("dictCodes"), ",")
-	h.db.Table("sys_dict_data").Where("dict_code IN ?", codes).Delete(nil)
+	types := make([]string, 0)
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Table("sys_dict_data").Where("dict_code IN ?", codes).Distinct().Pluck("dict_type", &types).Error; err != nil {
+			return err
+		}
+		if len(types) == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Table("sys_dict_data").Where("dict_code IN ?", codes).Delete(&sysDictData{}).Error
+	})
+	if err != nil {
+		response.AjaxErr(c, "字典数据删除失败")
+		return
+	}
+	if !invalidateDictTypes(c, types...) {
+		return
+	}
 	response.AjaxOK(c, nil)
 }
 

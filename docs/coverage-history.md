@@ -12,6 +12,25 @@
 | 2026-07-26 10:45 | 未重复运行 | 15文件95项（前序已通过） | 胜任力答题页3条Playwright E2E：响应式、保存恢复、认证/交卷门禁，最终退出码均0 | 全系统管理端浏览器回归未在本轮执行；正式报告/PDF延期 |
 | 2026-07-26 12:10 | 未重复运行 | 15文件96项 | FB-067完整胜任力结果通过路径参数打开测试报告；production build成功 | 尚未部署staging；正式报告/PDF延期 |
 | 2026-07-26 13:45 | 通过；全仓语句10.5%（handler 8.3%、service 33.8%） | 17文件100项；语句/行58.9%、分支93.87%、函数37.5%（Vitest配置范围） | temp-v1临时报告Schema/PDF/下载/审计/删除；管理端7流程E2E；FB-068～071 | 客户正式文案与正式题库仍为外部依赖；production未部署 |
+| 2026-07-26 17:31 | 通过；Windows build通过 | 17文件101项；production build成功 | REQ-048/049结果开始/完成时间、答题时长和维度得分合计本地RED→GREEN | 尚未部署staging；继续实施报告产品缺口 |
+| 2026-07-26 18:04 | 通过；Windows/Linux build通过 | 17文件103项；production build成功 | 00401参考模板、REQ-057/058/059/061；FB-072真实PDF分页RED→GREEN；9页PDF生成/下载/审计/视觉验收 | temp-v1仍非正式人才文案；SC-012双受众实证待补 |
+| 2026-07-26 18:18 | 未重复运行（前序通过） | 17文件103项；production build成功 | 5个独立配置×40题完整作答；3基层+2领导；5份A4×9页PDF；45页程序/视觉检查；FB-073 RED→GREEN | temp-v1仍非正式人才文案；SC-012要求同答案双受众，尚未由本轮不同分数样本关闭 |
+| 2026-07-26 18:55 | 通过；Windows/Linux build通过 | 17文件104项；production build成功 | 00401双示例模板；2题预览/导入；386题九列导出；完整40题结果双端点三Sheet一致；临时数据清零 | temp-v1正式文案和SC-012仍待后续处理；production未部署 |
+| 2026-07-26 19:10 | 通过；Windows build通过 | 未变更（前序17文件104项通过） | FB-074 RED→GREEN；缺失报告文案错误精确标识contentVersion/audience/dimension/level；REQ-076关闭 | SC-012同答案双受众PDF实证仍待后续处理；本切片未部署staging/production |
+| 2026-07-26 19:15 | 未重复运行（前序通过） | 未变更（前序17文件104项通过） | SC-012同答案40/40双受众真实PDF：计分/5维度/顺序一致，A4 9页×2，规范化文本9/9一致，文案精确匹配12/12，临时数据/孤儿清零 | 客户正式题库与正式文案仍为外部依赖；production未部署 |
+| 2026-07-26 19:45 | 未变更 | 18文件107项；production build成功 | UF-003/FB-075详情分流RED→GREEN；staging专用结果页9类按钮真实E2E通过，传统控件隐藏9/9，下载PDF 615336 bytes | 详情入口本地修复待staging部署；production未部署 |
+| 2026-07-26 20:55 | 未变更 | 18文件107项；production build成功 | FB-075前端部署staging；真实测评管理按标题查询→主“详情”→`CompetencyResults`；排序/详情/40题审计/测试报告/PDF生成下载/返回全部通过，传统控件隐藏9/9 | staging前端index SHA-256=`d9ffb611ccd8de4fc4ae348ba57e58a66a934565ddb7b3ae4383745fbd7abf15`；production未部署 |
+| 2026-07-26 21:08 | 未变更 | 18文件109项；production build成功 | UF-004/FB-076旧`exam/users`URL和首页最近测评分流RED→GREEN；staging旧URL+测评管理主详情双入口、专用页9类操作全部通过；传统控件隐藏9/9、传统generate-report调用0次 | staging前端index SHA-256=`c552833bd2149a3a5ae68f1522e9bee4c2c2b58c4bf26cfa1a80ba6f5fd0a5f1`；部署后相关错误0；production未部署 |
+| 2026-07-26 21:26 | Go全量通过；Windows build通过 | 18文件112项；production build成功 | 00401结果页本地对齐传统详情布局；新增姓名/电话/完成状态筛选、查询/重置、完整答卷选择、批量生成/下载、查看/答题详情/下载；后端与前端先RED后GREEN | 尚未部署staging，更新后的全按钮E2E脚本待部署后执行；production未部署 |
+| 2026-07-26 22:20 | 前序全量通过；Linux build通过 | 前序18文件112项通过；production build成功 | 00401最新后端/前端部署staging；旧URL与主详情、查询/重置/完整性、排序/维度、5维度/40题详情、查看、批量生成/下载、行下载、返回全部真实E2E通过；传统generate-report调用0次 | 后端SHA-256=`c9adf6df61a12fbb7aab607cfb4727f5f2ff88a866d372f006697e43b507d74d`；前端index=`fd7696c5b56302033e4e70fd7264d6697afd2a01ee19ef737be027f09e587950`；关键错误0；production未部署 |
+| 2026-07-26 22:33 | 未变更 | 19文件114项；production build成功 | FB-077本地RED→GREEN：HTTP 200 JSON错误Blob不再保存为伪PDF；正常application/pdf仍原样返回；行下载显示后端错误 | 本地index SHA-256=`543fbdb8ad21c7faa58cff1bca44c48f0ecbe435bfdb437ded5fca515709320c`；尚未部署staging；production未部署 |
+| 2026-07-26 22:40 | Go全量通过；Windows build通过 | 未变更（19文件114项） | FB-078本地RED→GREEN：低权限后台用户访问胜任力结果分页、逐题详情和管理员报告数据均在查询前返回HTTP 403；管理员/exam:list/exam:export矩阵通过 | FB-077/078均尚未部署staging；production未部署 |
+| 2026-07-26 22:50 | Go全量通过；Windows build通过 | 19文件115项；production build成功 | FB-079本地前后端RED→GREEN：内部报告API仅接受`X-Internal-Token`，正确query token也返回401；前端请求query仅含paperId | 本地index SHA-256=`4b6f85721b137cec28fb7943e781df81c21015aa150c1f9bd1e628f62e958724`；FB-077～079尚未部署staging；历史nginx日志已有24行旧query请求，部署后需确认新增为0；production未部署 |
+| 2026-07-26 22:59 | Go全量通过；Windows build通过 | 未变更（19文件115项） | FB-080本地RED→GREEN：同paperId 8并发临界区最大并发数=1；稳定64分片索引有界；查询/渲染/落盘/替换/审计全程串行 | `go test -race`因本机`CGO_ENABLED=0`未执行；普通并发专项、Go全量和build通过；FB-077～080尚未部署staging；production未部署 |
+| 2026-07-26 23:05 | 未变更 | 19文件117项；production build成功 | FB-081本地RED→GREEN：列表旧响应和详情旧响应均不得覆盖最新筛选/人员；列表请求冻结query快照；仅最新请求控制loading | 本地index SHA-256=`a055a9b08951551ea770a8d4fb276bddee77963d06b0e4d77f1d8c9794f22217`；FB-077～081尚未部署staging；production未部署 |
+| 2026-07-26 23:14 | 未变更 | 19文件119项；production build成功 | FB-082本地RED→GREEN：批量生成/下载启动时冻结完整答卷目标；运行中清空或替换表格选择不改变处理对象、进度及成功数 | 本地index SHA-256=`f22ba02e9bf143a05dad544a8dfdc66f9cffa2dc04469742094e85aa4a6618a2`；FB-077～082尚未部署staging；production未部署 |
+| 2026-07-26 23:29 | Go全量通过；Windows/Linux build通过 | 19文件122项；production build成功 | FB-083～087本地RED→GREEN：JSON绑定、成功审计原子性、唯一/RFC5987文件名、E2E真实计数、移动端全屏单列详情；最终E2E脚本语法通过 | 后端SHA-256=`fcfaa85819702b8f9ab333e1f4ef834fe4bd858464098f740d7dc1cb29247348`；前端index=`fa12099adef2e656a9d12a47338a7f810c5ea18ac57ae0dfd7952f7523ee3787`；FB-077～087待staging部署验收；production未部署 |
+| 2026-07-26 23:40 | 同上 | 同上 | FB-077～087部署staging；全按钮+API负例+390×844移动E2E通过；低权限三端点403；同paper双并发重生成均completed；实例1、当前PDF1、同paper文件1；真实内部token新增query日志0 | 数据库备份SHA-256=`cf81d677926d7c261741ac5ba771219fbc5d5e58bb89e2182265fafa7988b40a`；服务/health正常、关键错误0、临时状态0；production未部署 |
 
 ## 当前已验证规模
 
@@ -20,8 +39,10 @@
 - 单测评发布快照：48维度、384题。
 - 容量链：100名参与者、100份试卷、38,400条试卷题。
 - 随机性样本：100份持久化题序，100个不同SHA-256；100次刷新全部稳定。
-- 前端：17个Vitest文件、100项测试；胜任力答题页3个Playwright E2E文件；管理端7流程E2E。
+- 前端：18个Vitest文件、107项测试；胜任力答题页3个Playwright E2E文件；管理端7流程E2E；胜任力结果页9类按钮E2E。
 - Go：`go test ./... -count=1` 全量通过。
+- 五报告样本：5个独立配置、200道完整作答、25条维度结果、5个报告实例、45页PDF，孤儿0。
+- 双受众对照样本：同答案40题、2个报告对象、2份A4×9页PDF；整体/维度计分一致，受众文案精确匹配12/12。
 
 ## 仍需补充的量化数据
 

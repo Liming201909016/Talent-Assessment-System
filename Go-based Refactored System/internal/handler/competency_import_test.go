@@ -45,7 +45,7 @@ func TestCompetencyImportTemplate_ReturnsXLSX(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 3 || len(rows[0]) != len(service.CompetencyImportHeaders) {
+	if len(rows) != 4 || len(rows[0]) != len(service.CompetencyImportHeaders) {
 		t.Fatalf("template rows/columns = %d/%d", len(rows), len(rows[0]))
 	}
 	for index, header := range service.CompetencyImportHeaders {
@@ -59,6 +59,15 @@ func TestCompetencyImportTemplate_ReturnsXLSX(t *testing.T) {
 	}
 	if len(merged) != 0 {
 		t.Fatalf("template must not contain merged cells: %v", merged)
+	}
+	validation := service.ValidateCompetencyImportRows(rows, []service.CompetencyImportDimension{
+		{ID: "competency-d01", Order: 1, Name: "沟通表达", Status: 0},
+	}, map[string]struct{}{}, map[string]struct{}{})
+	if len(validation.Errors) != 0 || len(validation.ValidRows) != 2 {
+		t.Fatalf("template examples validation errors/valid = %v/%d", validation.Errors, len(validation.ValidRows))
+	}
+	if validation.ValidRows[0].Direction != "forward" || validation.ValidRows[1].Direction != "reverse" {
+		t.Fatalf("template example directions = %q/%q", validation.ValidRows[0].Direction, validation.ValidRows[1].Direction)
 	}
 }
 
@@ -180,6 +189,7 @@ func TestCompetencyImportRoutes_AreAdminOnly(t *testing.T) {
 		`GET("/import-template", competencyImportH.ImportTemplate)`,
 		`POST("/import-preview", competencyImportH.ImportPreview)`,
 		`POST("/import", competencyImportH.Import)`,
+		`GET("/export", competencyImportH.Export)`,
 	} {
 		if !strings.Contains(src, required) {
 			t.Errorf("router missing %q", required)

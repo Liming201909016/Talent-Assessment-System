@@ -181,6 +181,7 @@ import {
   updateCandidate
 } from "@/api/candidate/candidate";
 import team from "@/views/user/exam/team.vue";
+import {fetchDetail} from '@/api/exam/exam'
 import {pdfTeamDownload} from "@/api/exam/exam";
 import {Loading, Message} from "element-ui";
 import request from '@/utils/request';
@@ -243,11 +244,12 @@ export default {
       }
     };
   },
-  created() {
+  async created() {
     this.queryParams.examId = this.$route.params.examId
     this.stuFlag = this.$route.params.stuFlag
     this.isOpen = this.$route.params.isOpen
     this.testTitle = this.$route.params.title
+    if (await this.redirectCompetencyDetail()) return
     this.getList(this.$route.params.isOpen);
   },
   computed:{
@@ -267,6 +269,16 @@ export default {
     }
   },
   methods: {
+    async redirectCompetencyDetail() {
+      const response = await fetchDetail(this.$route.params.examId)
+      const exam = response.data || response
+      if (exam.assessmentType !== 'competency') return false
+      await this.$router.replace({
+        name: 'CompetencyResults',
+        params: { examId: this.$route.params.examId }
+      })
+      return true
+    },
     handleDinpmalogClose(){
 
     },

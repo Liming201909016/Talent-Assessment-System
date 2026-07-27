@@ -36,3 +36,48 @@ func TestTemporaryCompetencyReportVersion_IsExplicitlyNonProduction(t *testing.T
 		t.Fatalf("temporary disclaimer is not explicit: %s", CompetencyTemporaryDisclaimer)
 	}
 }
+
+// TestBugFB074_MissingReportTextIdentifiesExactLookupKey
+// 对应：docs/regression-tests.md #FB-074
+// 复现：总体或维度文案精确匹配失败时，旧错误只说明文案类型。
+// 期望：错误明确包含 contentVersion、audience、dimension 和 level。
+func TestBugFB074_MissingReportTextIdentifiesExactLookupKey(t *testing.T) {
+	tests := []struct {
+		name            string
+		audience        string
+		overallLevel    string
+		dimensionLevels map[string]string
+		rows            []model.CompetencyReportText
+		want            []string
+	}{
+		{
+			name:     "missing overall text",
+			audience: CompetencyReportAudienceFrontlineEmployee, overallLevel: CompetencyLevelHigh,
+			dimensionLevels: map[string]string{}, rows: nil,
+			want: []string{"contentVersion=temp-v1", "audience=frontline_employee", "dimension=overall", "level=high"},
+		},
+		{
+			name:     "missing dimension text",
+			audience: CompetencyReportAudienceLeader, overallLevel: CompetencyLevelHigh,
+			dimensionLevels: map[string]string{"competency-d01": CompetencyLevelGood},
+			rows: []model.CompetencyReportText{{
+				ContentVersion: CompetencyTemporaryContentVersion, ContentType: CompetencyReportContentOverall,
+				Audience: CompetencyReportAudienceLeader, LevelCode: CompetencyLevelHigh, Content: "总体评价",
+			}},
+			want: []string{"contentVersion=temp-v1", "audience=leader", "dimension=competency-d01", "level=good"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := BuildCompetencyReportTextSnapshot(test.audience, test.overallLevel, test.dimensionLevels, test.rows)
+			if err == nil {
+				t.Fatal("missing report text must fail")
+			}
+			for _, value := range test.want {
+				if !strings.Contains(err.Error(), value) {
+					t.Errorf("error %q missing %q", err.Error(), value)
+				}
+			}
+		})
+	}
+}

@@ -673,6 +673,37 @@ func (s *CompetencyRuntimeService) FormalReportData(paperID string) (map[string]
 	data["reportTextMessage"] = CompetencyTemporaryDisclaimer
 	data["reportText"] = snapshot
 	data["contentVersion"] = CompetencyTemporaryContentVersion
+	var meta struct {
+		ExamTitle      string     `gorm:"column:exam_title"`
+		RequiredFields string     `gorm:"column:required_fields"`
+		StartedAt      *time.Time `gorm:"column:started_at"`
+		UserTime       int        `gorm:"column:user_time"`
+	}
+	if err := s.db.Table("el_paper p").
+		Select("e.title AS exam_title, COALESCE(e.required_fields, '') AS required_fields, p.create_time AS started_at, p.user_time").
+		Joins("INNER JOIN el_exam e ON e.id = p.exam_id").
+		Where("p.id = ?", paperID).Take(&meta).Error; err != nil {
+		return nil, err
+	}
+	type dimensionMeaningRow struct {
+		DimensionID string `gorm:"column:dimension_id"`
+		CoreMeaning string `gorm:"column:core_meaning"`
+	}
+	meaningRows := make([]dimensionMeaningRow, 0)
+	if err := s.db.Table("el_exam_competency_dimension").
+		Select("dimension_id, core_meaning").Where("exam_id = ?", result.ExamID).
+		Find(&meaningRows).Error; err != nil {
+		return nil, err
+	}
+	dimensionCoreMeanings := make(map[string]string, len(meaningRows))
+	for _, row := range meaningRows {
+		dimensionCoreMeanings[row.DimensionID] = row.CoreMeaning
+	}
+	data["meta"] = map[string]any{
+		"examTitle": meta.ExamTitle, "requiredFields": meta.RequiredFields,
+		"startedAt": meta.StartedAt, "userTime": meta.UserTime, "generatedAt": time.Now(),
+		"dimensionCoreMeanings": dimensionCoreMeanings,
+	}
 	return data, nil
 }
 
@@ -680,6 +711,9 @@ type CompetencyResultPageRequest struct {
 	ExamID        string
 	Current       int
 	Size          int
+	Name          string
+	Telephone     string
+	Completion    string
 	SortBy        string
 	SortDirection string
 	DimensionID   string
@@ -691,6 +725,7 @@ type CompetencyResultPageRow struct {
 	ParticipantName      string           `gorm:"column:participant_name" json:"participantName"`
 	ParticipantTelephone string           `gorm:"column:participant_telephone" json:"participantTelephone"`
 	ParticipantType      string           `gorm:"column:participant_type" json:"participantType"`
+	StartedAt            *time.Time       `gorm:"column:started_at" json:"startedAt"`
 	UserTime             int              `gorm:"column:user_time" json:"userTime"`
 	DimensionScore       *decimal.Decimal `gorm:"column:sort_dimension_score" json:"sortDimensionScore"`
 }
@@ -698,6 +733,45 @@ type CompetencyResultPageRow struct {
 type competencyResultSort struct {
 	OrderClause string
 	DimensionID string
+}
+
+type competencyResultFilters struct {
+	Name       string
+	Telephone  string
+	IsComplete *int
+}
+
+func normalizeCompetencyResultFilters(name, telephone, completion string) (competencyResultFilters, error) {
+	filters := competencyResultFilters{
+		Name:      strings.TrimSpace(name),
+		Telephone: strings.TrimSpace(telephone),
+	}
+	switch strings.TrimSpace(completion) {
+	case "", "all":
+		return filters, nil
+	case "complete":
+		value := 1
+		filters.IsComplete = &value
+	case "incomplete":
+		value := 0
+		filters.IsComplete = &value
+	default:
+		return competencyResultFilters{}, errors.New("完成状态只能是complete或incomplete")
+	}
+	return filters, nil
+}
+
+func applyCompetencyResultFilters(query *gorm.DB, filters competencyResultFilters) *gorm.DB {
+	if filters.Name != "" {
+		query = query.Where("r.participant_name LIKE ?", "%"+filters.Name+"%")
+	}
+	if filters.Telephone != "" {
+		query = query.Where("r.participant_telephone LIKE ?", "%"+filters.Telephone+"%")
+	}
+	if filters.IsComplete != nil {
+		query = query.Where("r.is_complete = ?", *filters.IsComplete)
+	}
+	return query
 }
 
 func validateCompetencyResultSort(sortBy, direction, dimensionID string) (competencyResultSort, error) {
@@ -748,6 +822,10 @@ func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest)
 	if err != nil {
 		return nil, 0, err
 	}
+	filters, err := normalizeCompetencyResultFilters(req.Name, req.Telephone, req.Completion)
+	if err != nil {
+		return nil, 0, err
+	}
 	if sortSpec.DimensionID != "" {
 		var dimensionCount int64
 		if err := s.db.Model(&model.ExamCompetencyDimension{}).
@@ -759,13 +837,13 @@ func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest)
 			return nil, 0, errors.New("所选维度不属于此测评")
 		}
 	}
-	base := s.db.Table("el_competency_result r").Where("r.exam_id = ?", req.ExamID)
+	base := applyCompetencyResultFilters(s.db.Table("el_competency_result r").Where("r.exam_id = ?", req.ExamID), filters)
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	rows := make([]CompetencyResultPageRow, 0)
-	selectClause := `r.*, p.user_time,
+	selectClause := `r.*, p.create_time AS started_at, p.user_time,
 			COALESCE(NULLIF(r.participant_id, ''), c.id, t.id, '') AS participant_id,
 			COALESCE(NULLIF(r.participant_name, ''), c.name, t.name, '') AS participant_name,
 			COALESCE(NULLIF(r.participant_telephone, ''), c.telephone, t.telephone, '') AS participant_telephone,
@@ -780,6 +858,7 @@ func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest)
 		Joins("LEFT JOIN el_candidate c ON c.paper_id = r.paper_id").
 		Joins("LEFT JOIN el_tester t ON t.paper_id = r.paper_id").
 		Where("r.exam_id = ?", req.ExamID)
+	query = applyCompetencyResultFilters(query, filters)
 	if sortSpec.DimensionID != "" {
 		query = query.Joins("LEFT JOIN el_competency_dimension_result dr ON dr.paper_id = r.paper_id AND dr.dimension_id = ?", sortSpec.DimensionID)
 	}

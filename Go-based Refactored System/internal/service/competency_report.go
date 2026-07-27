@@ -2,7 +2,7 @@ package service
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/talent-assessment/refactored/internal/model"
@@ -52,7 +52,10 @@ func BuildCompetencyReportTextSnapshot(audience, overallLevel string, dimensionL
 		}
 	}
 	if snapshot.OverallText == "" {
-		return "", errors.New("当前报告版本缺少总体评价临时文案")
+		return "", fmt.Errorf(
+			"报告文案缺失: contentVersion=%s, audience=%s, dimension=overall, level=%s",
+			CompetencyTemporaryContentVersion, audience, overallLevel,
+		)
 	}
 	ids := make([]string, 0, len(dimensionLevels))
 	for id := range dimensionLevels {
@@ -61,7 +64,10 @@ func BuildCompetencyReportTextSnapshot(audience, overallLevel string, dimensionL
 	sort.Strings(ids)
 	for _, id := range ids {
 		if snapshot.DimensionTexts[id] == "" {
-			return "", errors.New("当前报告版本缺少维度临时文案")
+			return "", fmt.Errorf(
+				"报告文案缺失: contentVersion=%s, audience=%s, dimension=%s, level=%s",
+				CompetencyTemporaryContentVersion, audience, id, dimensionLevels[id],
+			)
 		}
 	}
 	data, err := json.Marshal(snapshot)

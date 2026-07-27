@@ -21,6 +21,10 @@ export function downloadCompetencyQuestionTemplate() {
   return request({ url: '/exam/api/competency/questions/import-template', method: 'get', responseType: 'blob' })
 }
 
+export function downloadCompetencyQuestions() {
+  return request({ url: '/exam/api/competency/questions/export', method: 'get', responseType: 'blob' })
+}
+
 export function previewCompetencyQuestions(file) {
   const data = new FormData()
   data.append('file', file)
@@ -43,6 +47,29 @@ export function submitCompetencyPaper(paperId, submitType, token) { return paper
 export function fetchCompetencyResults(data) { return post('/exam/api/competency/results/paging', data) }
 export function fetchCompetencyResultDetail(paperId) { return post('/exam/api/competency/results/detail', { paperId }) }
 export function fetchCompetencyReportData(paperId) { return request({ url: '/exam/api/competency/admin/report-data', method: 'get', params: { paperId } }) }
-export function fetchCompetencyInternalReportData(paperId, token) { return request({ url: '/exam/api/competency/internal/report-data', method: 'get', params: { paperId, token }, headers: { isToken: false } }) }
+export function fetchCompetencyInternalReportData(paperId, token) { return request({ url: '/exam/api/competency/internal/report-data', method: 'get', params: { paperId }, headers: { isToken: false, 'X-Internal-Token': token } }) }
 export function generateCompetencyReport(data) { return post('/exam/api/competency/reports/generate', data) }
-export function downloadCompetencyReport(paperId) { return request({ url: '/exam/api/competency/reports/download', method: 'get', params: { paperId }, responseType: 'blob' }) }
+
+function readBlobText(blob) {
+  if (typeof blob.text === 'function') return blob.text()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result || '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+}
+
+export async function downloadCompetencyReport(paperId) {
+  const blob = await request({ url: '/exam/api/competency/reports/download', method: 'get', params: { paperId }, responseType: 'blob' })
+  if ((blob.type || '').toLowerCase().includes('application/pdf')) return blob
+
+  let message = '下载胜任力报告失败'
+  try {
+    const payload = JSON.parse(await readBlobText(blob))
+    message = payload.msg || message
+  } catch (error) {
+    // Keep the controlled fallback for a non-PDF response that is not JSON.
+  }
+  throw new Error(message)
+}

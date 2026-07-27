@@ -96,6 +96,42 @@ func TestCompetencyManagementRoutesRequireAdminJWT(t *testing.T) {
 	}
 }
 
+// TestBugFB101_DictManagementUsesJWTWhileReadEndpointsStayAnonymous
+// 对应：docs/regression-tests.md #FB-101
+// 复现：`/system/dict/` 宽泛匿名前缀让字典管理请求跳过 JWT，handler 因无登录上下文固定返回 403。
+// 期望：仅公开字典读取端点匿名，type/data 管理端点必须进入 JWT 中间件。
+func TestBugFB101_DictManagementUsesJWTWhileReadEndpointsStayAnonymous(t *testing.T) {
+	for _, path := range []string{
+		"/system/dict/type",
+		"/system/dict/type/list",
+		"/system/dict/data",
+		"/system/dict/data/list",
+	} {
+		if IsAnonymous(path) || IsAnonymousMethod(http.MethodPost, path) {
+			t.Errorf("dict management route must require JWT: %s", path)
+		}
+	}
+	if !IsAnonymousMethod(http.MethodGet, "/system/dict/data/type/sys_user_sex") {
+		t.Error("public dictionary lookup must remain anonymous")
+	}
+	if !IsAnonymousMethod(http.MethodPost, "/system/dict/data/batch") {
+		t.Error("public dictionary batch lookup must remain anonymous")
+	}
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/system/dict/data/type/sys_user_sex"},
+		{http.MethodGet, "/system/dict/data/type/"},
+		{http.MethodGet, "/system/dict/data/batch"},
+		{http.MethodPost, "/system/dict/data/batch/extra"},
+	} {
+		if IsAnonymousMethod(tc.method, tc.path) {
+			t.Errorf("unexpected anonymous dictionary route: %s %s", tc.method, tc.path)
+		}
+	}
+}
+
 func TestCompetencyInternalReportRouteIsExact(t *testing.T) {
 	path := "/exam/api/competency/internal/report-data"
 	if !IsAnonymousMethod("GET", path) {

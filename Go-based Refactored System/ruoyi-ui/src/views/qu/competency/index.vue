@@ -7,6 +7,7 @@
       </div>
       <div class="heading-actions">
         <el-button icon="el-icon-setting" @click="$router.push({ name: 'CompetencyDimensionMaintenance' })">维度维护</el-button>
+        <el-button type="success" plain icon="el-icon-document" @click="exportQuestions">导出题目</el-button>
         <el-button type="success" plain icon="el-icon-download" @click="downloadTemplate">下载模板</el-button>
         <el-button type="primary" icon="el-icon-upload2" @click="openImport">导入题目</el-button>
         <el-button icon="el-icon-back" @click="$router.back()">返回题库</el-button>
@@ -119,7 +120,7 @@
 
 <script>
 import { saveAs } from 'file-saver'
-import { fetchCompetencyDimensions, fetchCompetencyQuestions, updateCompetencyQuestion, downloadCompetencyQuestionTemplate, previewCompetencyQuestions, importCompetencyQuestions } from '@/api/competency'
+import { fetchCompetencyDimensions, fetchCompetencyQuestions, updateCompetencyQuestion, downloadCompetencyQuestions, downloadCompetencyQuestionTemplate, previewCompetencyQuestions, importCompetencyQuestions } from '@/api/competency'
 
 export default {
   name: 'CompetencyQuestionList',
@@ -203,6 +204,9 @@ export default {
     },
     downloadTemplate() {
       return downloadCompetencyQuestionTemplate().then(blob => saveAs(blob, 'competency-question-import-template.xlsx'))
+    },
+    exportQuestions() {
+      return downloadCompetencyQuestions().then(blob => saveAs(blob, '00401-competency-questions.xlsx'))
     },
     openImport() {
       this.resetImport()

@@ -179,16 +179,39 @@ func (h *CompetencyRuntimeHandler) Submit(c *gin.Context) {
 	response.Rest(c, summary)
 }
 
+func requireCompetencyResultAccess(c *gin.Context) bool {
+	value, ok := c.Get("loginUser")
+	if !ok {
+		response.AjaxUnauthorized(c, "")
+		return false
+	}
+	login, ok := value.(*model.LoginUser)
+	if !ok || !canAccessExamResults(login) {
+		response.AjaxForbidden(c, "无权查看胜任力测评结果")
+		return false
+	}
+	return true
+}
+
 func (h *CompetencyRuntimeHandler) ResultsPaging(c *gin.Context) {
+	if !requireCompetencyResultAccess(c) {
+		return
+	}
 	var body struct {
 		ExamID        string `json:"examId"`
 		Current       int    `json:"current"`
 		Size          int    `json:"size"`
+		Name          string `json:"name"`
+		Telephone     string `json:"telephone"`
+		Completion    string `json:"completion"`
 		SortBy        string `json:"sortBy"`
 		SortDirection string `json:"sortDirection"`
 		DimensionID   string `json:"dimensionId"`
 	}
-	_ = c.ShouldBindJSON(&body)
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.RestErr(c, "参数格式错误")
+		return
+	}
 	if body.Current < 1 {
 		body.Current = 1
 	}
@@ -200,6 +223,7 @@ func (h *CompetencyRuntimeHandler) ResultsPaging(c *gin.Context) {
 	}
 	request := service.CompetencyResultPageRequest{
 		ExamID: body.ExamID, Current: body.Current, Size: body.Size,
+		Name: body.Name, Telephone: body.Telephone, Completion: body.Completion,
 		SortBy: body.SortBy, SortDirection: body.SortDirection, DimensionID: body.DimensionID,
 	}
 	rows, total, err := h.svc.ResultPaging(request)
@@ -210,6 +234,9 @@ func (h *CompetencyRuntimeHandler) ResultsPaging(c *gin.Context) {
 	response.Rest(c, gin.H{"records": rows, "total": total, "current": request.Current, "size": request.Size})
 }
 func (h *CompetencyRuntimeHandler) ResultDetail(c *gin.Context) {
+	if !requireCompetencyResultAccess(c) {
+		return
+	}
 	var body struct {
 		PaperID string `json:"paperId"`
 	}
@@ -225,6 +252,12 @@ func (h *CompetencyRuntimeHandler) ResultDetail(c *gin.Context) {
 	response.Rest(c, data)
 }
 func (h *CompetencyRuntimeHandler) AdminReportData(c *gin.Context) {
+	if !requireCompetencyResultAccess(c) {
+		return
+	}
+	h.respondFormalReportData(c)
+}
+func (h *CompetencyRuntimeHandler) respondFormalReportData(c *gin.Context) {
 	paperID := c.Query("paperId")
 	if paperID == "" {
 		paperID = c.PostForm("paperId")
@@ -242,14 +275,11 @@ func (h *CompetencyRuntimeHandler) AdminReportData(c *gin.Context) {
 }
 func (h *CompetencyRuntimeHandler) InternalReportData(c *gin.Context) {
 	token := c.GetHeader("X-Internal-Token")
-	if token == "" {
-		token = c.Query("token")
-	}
 	if h.cfg.PdfGen.InternalToken == "" || subtle.ConstantTimeCompare([]byte(token), []byte(h.cfg.PdfGen.InternalToken)) != 1 {
 		response.AjaxUnauthorized(c, "内部报告认证失败")
 		return
 	}
-	h.AdminReportData(c)
+	h.respondFormalReportData(c)
 }
 
 func createParticipantToken(cfg *config.Config, participantType, participantID, examID string) (string, error) {

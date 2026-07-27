@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import CompetencyQuestionList from '@/views/qu/competency/index.vue'
-import { fetchCompetencyDimensions, fetchCompetencyQuestions, updateCompetencyQuestion, previewCompetencyQuestions, importCompetencyQuestions } from '@/api/competency'
+import { saveAs } from 'file-saver'
+import { fetchCompetencyDimensions, fetchCompetencyQuestions, updateCompetencyQuestion, downloadCompetencyQuestions, previewCompetencyQuestions, importCompetencyQuestions } from '@/api/competency'
+
+vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 
 vi.mock('@/api/competency', () => ({
   fetchCompetencyDimensions: vi.fn(() => Promise.resolve({ data: [] })),
   fetchCompetencyQuestions: vi.fn(() => Promise.resolve({ data: { records: [], total: 0 } })),
   updateCompetencyQuestion: vi.fn(() => Promise.resolve({ data: {} })),
+  downloadCompetencyQuestions: vi.fn(() => Promise.resolve(new Blob(['xlsx']))),
   downloadCompetencyQuestionTemplate: vi.fn(() => Promise.resolve(new Blob(['xlsx']))),
   previewCompetencyQuestions: vi.fn(() => Promise.resolve({ data: { sha256: 'abc', successCount: 1, errorCount: 0, successRows: [{ questionCode: 'D01-Q09' }], errorRows: [] } })),
   importCompetencyQuestions: vi.fn(() => Promise.resolve({ data: { importedCount: 1 } }))
@@ -26,6 +30,15 @@ describe('00401 competency question bank', () => {
     await CompetencyQuestionList.methods.loadDimensions.call(vm)
     expect(fetchCompetencyDimensions).toHaveBeenCalled()
     expect(vm.dimensions).toEqual([])
+  })
+
+  it('exports all 00401 source questions as xlsx', async () => {
+    downloadCompetencyQuestions.mockClear()
+    saveAs.mockClear()
+    const vm = { ...CompetencyQuestionList.data() }
+    await CompetencyQuestionList.methods.exportQuestions.call(vm)
+    expect(downloadCompetencyQuestions).toHaveBeenCalled()
+    expect(saveAs).toHaveBeenCalledWith(expect.any(Blob), '00401-competency-questions.xlsx')
   })
 
   it('opens an editable copy while preserving identity context', () => {

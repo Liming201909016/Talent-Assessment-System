@@ -37,17 +37,26 @@ func (h *DictHandler) DataByType(c *gin.Context) {
 	defer cancel()
 	key := redisx.SysDictKey + dictType
 
-	if b, err := redisx.Client.Get(ctx, key).Bytes(); err == nil && len(b) > 0 {
-		var rows []sysDictData
-		if json.Unmarshal(b, &rows) == nil {
-			response.AjaxOK(c, rows)
-			return
+	if redisx.Client != nil {
+		b, err := redisx.Client.Get(ctx, key).Bytes()
+		if err == nil && len(b) > 0 {
+			var rows []sysDictData
+			if json.Unmarshal(b, &rows) == nil {
+				if rows == nil {
+					rows = make([]sysDictData, 0)
+				}
+				response.AjaxOK(c, rows)
+				return
+			}
 		}
 	}
-	var rows []sysDictData
-	h.db.Where("dict_type = ? AND status = '0'", dictType).Order("dict_sort").Find(&rows)
-	if b, err := json.Marshal(rows); err == nil {
-		redisx.Client.Set(ctx, key, b, time.Hour)
+	rows := make([]sysDictData, 0)
+	if err := h.db.Where("dict_type = ? AND status = '0'", dictType).Order("dict_sort").Find(&rows).Error; err != nil {
+		response.AjaxErr(c, "字典读取失败")
+		return
+	}
+	if b, err := json.Marshal(rows); err == nil && redisx.Client != nil {
+		_ = redisx.Client.Set(ctx, key, b, time.Hour).Err()
 	}
 	response.AjaxOK(c, rows)
 }
@@ -76,11 +85,17 @@ func (h *DictHandler) BatchData(c *gin.Context) {
 	// 1. 先批量从 Redis 取
 	for _, t := range req.Types {
 		key := redisx.SysDictKey + t
-		if b, err := redisx.Client.Get(ctx, key).Bytes(); err == nil && len(b) > 0 {
-			var rows []sysDictData
-			if json.Unmarshal(b, &rows) == nil {
-				result[t] = rows
-				continue
+		if redisx.Client != nil {
+			b, err := redisx.Client.Get(ctx, key).Bytes()
+			if err == nil && len(b) > 0 {
+				var rows []sysDictData
+				if json.Unmarshal(b, &rows) == nil {
+					if rows == nil {
+						rows = make([]sysDictData, 0)
+					}
+					result[t] = rows
+					continue
+				}
 			}
 		}
 		missing = append(missing, t)
@@ -88,9 +103,12 @@ func (h *DictHandler) BatchData(c *gin.Context) {
 
 	// 2. 缺失的一次性 SQL 查（IN 子句）
 	if len(missing) > 0 {
-		var rows []sysDictData
-		h.db.Where("dict_type IN ? AND status = '0'", missing).
-			Order("dict_type, dict_sort").Find(&rows)
+		rows := make([]sysDictData, 0)
+		if err := h.db.Where("dict_type IN ? AND status = '0'", missing).
+			Order("dict_type, dict_sort").Find(&rows).Error; err != nil {
+			response.AjaxErr(c, "字典读取失败")
+			return
+		}
 		// 按 dict_type 分组
 		grouped := make(map[string][]sysDictData, len(missing))
 		for _, r := range rows {
@@ -100,11 +118,11 @@ func (h *DictHandler) BatchData(c *gin.Context) {
 		for _, t := range missing {
 			rs := grouped[t]
 			if rs == nil {
-				rs = []sysDictData{}
+				rs = make([]sysDictData, 0)
 			}
 			result[t] = rs
-			if b, err := json.Marshal(rs); err == nil {
-				redisx.Client.Set(ctx, redisx.SysDictKey+t, b, time.Hour)
+			if b, err := json.Marshal(rs); err == nil && redisx.Client != nil {
+				_ = redisx.Client.Set(ctx, redisx.SysDictKey+t, b, time.Hour).Err()
 			}
 		}
 	}
