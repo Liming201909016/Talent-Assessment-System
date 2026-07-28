@@ -370,3 +370,8 @@
 - [生产15分钟观察 - 2026-07-27] 服务15:58:34启动，16:13:40复核仍active，8092/8090 health均ok；部署后journal关键错误0，精确部署日期/时间窗Nginx新增5xx=0。阶段性数据库终验仍为48维度、胜任力题/测评0、temp-v1=392、报告实例/审计0、非法模式0。生产`/tmp/prod-release-d743d06`目录及一个同名前缀归档仍在，删除需单独破坏性操作确认；正式备份目录必须保留。
 - [纠正 - 2026-07-27] 用户随后明确确认删除上述两个临时上传项；`/tmp/prod-release-d743d06`和同名tar.gz残留数为0。正式备份目录仍存在，清理后service active、8090 health ok。
 - [生产旧8088停用 - 2026-07-27] 经用户明确确认，从宝塔Nginx主配置移除旧8088 server块；修改前备份为`/opt/talent-assessment/backups/release_00401_20260727_153001/nginx.conf.before-disable-8088.20260727_162121`，SHA-256=`c18bc433bdfc5771133ae31f453896e20cbfe89cfd686fe02cb46918df774511`。配置检查和reload通过，Nginx配置8088引用0，本机/公网8088不可达；公网8090首页200、health ok，服务active。旧`/www/wwwroot/dist`及备份未删除。
+
+## 2026-07-28
+
+- [UF-005 / FB-102 本地修复] 生产00401开放测评二维码白屏根因是胜任力测评不关联物理题库，在线列表`repoCode`为空，而candidate路由要求必填`:repoCode`；二维码URL因此止于stuFlag且Vue不匹配组件。新增统一resolver将competency映射为虚拟code `00401`，开放/封闭二维码和直接导航共用该值，legacy继续保留真实repoCode。
+- RED专项3/3失败；GREEN专项3/3、前端全量22文件130项、production build均通过，构建index SHA-256=`a1c2a83d5f480f0277188273a96060a95651631ffeac47c329ddbbf64e60f2c8`。8089本地开发服务器真实打开`/#/my/exam/candidate/local-competency/0/00401`并显示考生信息表单；因本地8092未运行，detail请求返回500，此错误只反映本地后端未启动，不影响路由匹配证据。本切片尚未部署staging或production。

@@ -142,8 +142,8 @@
 | Result navigation | competency legacy `exam/users` stale URL, bookmark or existing tab | P0 | ✅ | FB-076 component fetches exam type before loading participants and replace-routes competency to `CompetencyResults`; staging stale-URL E2E hid legacy controls 9/9 and called legacy generate-report 0 times |
 | Result navigation | dashboard recent competency exam action | P0 | ✅ | FB-076 explicitly routes competency to `CompetencyResults`, preserves legacy `exam/users`; dedicated RED→GREEN source regression passed |
 | Participant QR navigation | open legacy exam has a physical repo code | P0 | ✅ | Existing QR path includes the required `:repoCode` segment |
-| Participant QR navigation | open competency exam has no physical repo association and `repoCode` is empty | P0 | 🔥 | UF-005 production reproduction: generated candidate URL ends after `:stuFlag/`, required `:repoCode` route does not match, `#app` is empty; appending `/00401` loads the form |
-| Participant QR navigation | closed competency exam uses tester QR with empty optional repo code | P0 | ⚠️ | Same QR builder consumes empty competency `repoCode`; route is optional but tester/prepare flow needs regression coverage |
+| Participant QR navigation | open competency exam has no physical repo association and `repoCode` is empty | P0 | ✅ | FB-102 resolves virtual code 00401 before building the required candidate route; exact URL unit assertion and local 8089 browser route render passed |
+| Participant QR navigation | closed competency exam uses tester QR with empty optional repo code | P0 | ✅ | FB-102 uses the same resolver and URL builder; exact tester URL assertion includes `/00401` |
 
 ### G. Competency Exam Creation Configuration
 

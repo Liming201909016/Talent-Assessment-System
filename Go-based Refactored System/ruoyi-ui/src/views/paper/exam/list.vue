@@ -51,7 +51,7 @@
           width="100"
         >
           <template slot-scope="scope">
-            {{ scope.row.stuFlag == 1 ? (scope.row.repoCode.startsWith("002") ? "基层员工版" : "学生版") : (scope.row.repoCode.startsWith("002") ? "管理干部版" : "职场版") }}
+            {{ scope.row.stuFlag == 1 ? (resolveRepoCode(scope.row).startsWith("002") ? "基层员工版" : "学生版") : (resolveRepoCode(scope.row).startsWith("002") ? "管理干部版" : "职场版") }}
 
           </template>
         </el-table-column>
@@ -157,6 +157,7 @@
 import DataTable from '@/components/DataTable'
 import QRCode from 'qrcodejs2'
 import fa from "element-ui/src/locale/lang/fa";
+import { buildExamEntryURL, resolveExamRepoCode } from './repoCode'
 
 export default {
   components: { DataTable },
@@ -187,23 +188,25 @@ export default {
 
   methods: {
 
+    resolveRepoCode(row) {
+      return resolveExamRepoCode(row)
+    },
+
     // // 开始考试
     // handlePre(examId) {
     //   this.$router.push({ name: 'PreExam', params: { examId: examId }})
     // }
      creatQrCode(row) {
-      const examId = row.id
       const isOpen = row.isOpen
-      const stuFlag = row.stuFlag
-      const repoCode = row.repoCode
 
       this.qrExamInfo = row
       this.dialogVisible1 = true
       let that = this;
+      const origin = window.location.protocol + '//' + window.location.host
+      that.QRCodeURL = buildExamEntryURL(row, origin)
 
       if (isOpen === 1) {
         // V-004 修复 (2026-05-11): 协议自适应，HTTPS 站点不再产生混合内容警告
-        that.QRCodeURL = window.location.protocol + '//' + window.location.host + '/#/my/exam/candidate/' + examId + '/' + stuFlag + '/' + repoCode
         that.$nextTick(() => {
           let qrcode = new QRCode(this.$refs.qrCodeUrl, {
             // text: 'http://172.22.222.143:81/my/exam/candidate/' + examId, // 需要转换为二维码的内容
@@ -219,7 +222,6 @@ export default {
         });
       } else if (isOpen === 2) {
         // V-004 修复 (2026-05-11): 协议自适应
-        that.QRCodeURL = window.location.protocol + '//' + window.location.host + '/#/my/exam/tester/' + examId + '/' + repoCode
         that.$nextTick(() => {
           let qrcode = new QRCode(this.$refs.qrCodeUrl, {
             // text: 'http://172.22.222.143:81/my/exam/candidate/' + examId, // 需要转换为二维码的内容
@@ -237,10 +239,11 @@ export default {
     },
 
     handlePre(row) {
+      const repoCode = this.resolveRepoCode(row)
       if (row.isOpen === 1) {
-        this.$router.push({ name: 'candidateInfo', params: { examId: row.id ,stuFlag: row.stuFlag,repoCode: row.repoCode}})
+        this.$router.push({ name: 'candidateInfo', params: { examId: row.id, stuFlag: row.stuFlag, repoCode }})
       } else if (row.isOpen === 2) {
-        this.$router.push({ name: 'tester', params: { examId: row.id ,stuFlag: row.stuFlag,repoCode: row.repoCode}})
+        this.$router.push({ name: 'tester', params: { examId: row.id, stuFlag: row.stuFlag, repoCode }})
       }
     },
 
