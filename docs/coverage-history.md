@@ -31,6 +31,15 @@
 | 2026-07-26 23:14 | 未变更 | 19文件119项；production build成功 | FB-082本地RED→GREEN：批量生成/下载启动时冻结完整答卷目标；运行中清空或替换表格选择不改变处理对象、进度及成功数 | 本地index SHA-256=`f22ba02e9bf143a05dad544a8dfdc66f9cffa2dc04469742094e85aa4a6618a2`；FB-077～082尚未部署staging；production未部署 |
 | 2026-07-26 23:29 | Go全量通过；Windows/Linux build通过 | 19文件122项；production build成功 | FB-083～087本地RED→GREEN：JSON绑定、成功审计原子性、唯一/RFC5987文件名、E2E真实计数、移动端全屏单列详情；最终E2E脚本语法通过 | 后端SHA-256=`fcfaa85819702b8f9ab333e1f4ef834fe4bd858464098f740d7dc1cb29247348`；前端index=`fa12099adef2e656a9d12a47338a7f810c5ea18ac57ae0dfd7952f7523ee3787`；FB-077～087待staging部署验收；production未部署 |
 | 2026-07-26 23:40 | 同上 | 同上 | FB-077～087部署staging；全按钮+API负例+390×844移动E2E通过；低权限三端点403；同paper双并发重生成均completed；实例1、当前PDF1、同paper文件1；真实内部token新增query日志0 | 数据库备份SHA-256=`cf81d677926d7c261741ac5ba771219fbc5d5e58bb89e2182265fafa7988b40a`；服务/health正常、关键错误0、临时状态0；production未部署 |
+| 2026-08-09 | Go全量通过；Windows build通过 | 23文件132项；production build成功（2个既有体积warning） | 通用胜任力产品/评分/内容/模板版本：草稿默认与校验、发布冻结、结果快照、报告精确匹配、legacy清空；真实Gin HTTP非法产品版本在数据库前拒绝 | 007迁移静态幂等检查通过；本地MySQL `127.0.0.1:23306` 拒绝连接，真实迁移与回填未验证；未部署staging/production |
+| 2026-08-10 | 前序Go全量通过；Linux build通过 | 23文件132项通过；production build成功（2个既有体积warning） | 007在staging连续执行2次；8个版本列、9个胜任力配置、10个结果、7个报告实例完成兼容回填；分页/详情API及管理表单真实显示四类版本；不支持产品版本真实请求拒绝且写入0行 | 数据库备份SHA-256=`0f31bf3dea7e67292406f1732f19c982b2ea80624335f6d753e3722cfe30f11c`；后端=`44df29bcf09a55ab4a1d61b94d408d9eb649cdc40645ea5c48e75753cf063fc7`、前端index=`1e60ac06cfb4ff219428151d91b1a6f3231001ff8748ea0bb80228ea34ad5163`；service/nginx/mysql/内外health正常，关键错误0；production未部署 |
+| 2026-08-10 17:10 | Go全量、`go vet`、Windows build通过 | 23文件137项通过；production build成功（2个既有体积warning） | I2固定一期配置本地RED→GREEN：基层员工、十维、四版本、每维8+1库存；前端隐藏可选受众/维度；一期运行时完成前前后端禁止发布 | 本切片仅本地完成，未部署staging/production；下一依赖为一期五档、一级聚合和效度运行时 |
+| 2026-08-10 17:20 | Go全量、`go vet`、Windows build通过 | 未变更（前序23文件137项） | I3一期纯评分引擎RED→GREEN：二级L1-L5精确边界、十维`sum(scoreSum/8)`、总体25/32.5/40/45五档、顺序无关和不完整不出正式分 | 提交持久化接入仍保持❌，等待一级聚合与效度结果一起接入；发布门禁保持关闭；未部署staging/production |
+| 2026-08-10 17:30 | Go全量、`go vet`、Windows build通过 | 未变更（前序23文件137项） | I4一级聚合纯函数RED→GREEN：固定通用能力/心理素养各5维、精确平均、L1-L5边界、不完整计数与畸形输入拒绝 | group snapshot/result持久化仍保持❌，等待效度算法后统一接入；发布门禁保持关闭；未部署staging/production |
+| 2026-08-11 | Go全量、`go vet`、Windows build通过 | 未变更（前序23文件137项） | I5效度纯函数RED→GREEN：10道原始分正向累加、35/36边界、10/50极值、9/10未完成和8类畸形输入拒绝 | validity持久化与默认统计隔离仍保持❌，下一步统一接入90题发布/提交；发布门禁保持关闭；未部署staging/production |
+| 2026-08-11 09:27 | Go全量、`go vet`、Windows build通过 | 23文件139项；production build成功（2个既有体积warning） | I6本地RED→GREEN：2组/10维/90题发布、80/10拆分、10+2+1+1结果、NULL不完整分、效度筛选与排名默认、扩展导出、发布权限、一期报告门禁；staging E2E脚本语法通过 | 尚未部署staging/production；一期正式报告渲染器仍关闭 |
+| 2026-08-11 09:35 | Go全量、`go vet`、Linux build通过 | 23文件139项；production build成功（2个既有体积warning） | staging真实90题发布→组卷→全答→提交→结果→筛选→三Sheet导出；2/10/90快照、10+2+1+1结果、3/L3、30/weak、10/good、重复请求幂等、清理0、传统签名不变 | 一期正式报告渲染器仍关闭；timeout不完整统一运行时本轮未在staging重复造数；production未部署 |
+| 2026-08-11 10:31 | 前序Go/构建结果不变 | 前序23文件139项不变 | staging三组负向链：88/90 timeout产生overall/二级/一级/效度NULL并拒绝报告；40/questionable显式可查但默认排名排除且导出正确；快照INSERT强制失败后发布事务零残留、同草稿可重试；最终清理与传统签名通过 | 独立常模/汇总统计端点及一期正式报告渲染器仍未实现；production未部署 |
 
 ## 当前已验证规模
 

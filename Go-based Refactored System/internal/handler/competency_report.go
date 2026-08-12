@@ -58,6 +58,17 @@ func (h *CompetencyReportHandler) lockReportGeneration(paperID string) func() {
 	return lock.Unlock
 }
 
+func competencyReportVersions(data map[string]any) (string, string, error) {
+	contentVersion, contentOK := data["contentVersion"].(string)
+	templateVersion, templateOK := data["reportTemplateVersion"].(string)
+	contentVersion = strings.TrimSpace(contentVersion)
+	templateVersion = strings.TrimSpace(templateVersion)
+	if !contentOK || !templateOK || contentVersion == "" || templateVersion == "" {
+		return "", "", errors.New("报告内容或模板版本未冻结")
+	}
+	return contentVersion, templateVersion, nil
+}
+
 func (h *CompetencyReportHandler) reportIdentity(c *gin.Context) (*model.LoginUser, bool) {
 	value, ok := c.Get("loginUser")
 	if !ok {
@@ -103,14 +114,19 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 		response.RestErr(c, err.Error())
 		return
 	}
-	result, ok := data["result"].(model.CompetencyResult)
-	if !ok {
-		response.RestErr(c, "报告结果数据异常")
+	var result model.CompetencyResult
+	if err := h.db.Where("paper_id = ?", body.PaperID).Take(&result).Error; err != nil {
+		response.RestErr(c, "读取报告结果失败")
+		return
+	}
+	contentVersion, templateVersion, err := competencyReportVersions(data)
+	if err != nil {
+		response.RestErr(c, err.Error())
 		return
 	}
 
 	var existing model.CompetencyReport
-	err = h.db.Where("paper_id = ? AND content_version = ?", body.PaperID, service.CompetencyTemporaryContentVersion).Take(&existing).Error
+	err = h.db.Where("paper_id = ? AND content_version = ? AND template_version = ?", body.PaperID, contentVersion, templateVersion).Take(&existing).Error
 	if err == nil && !body.Force && existing.Status == competencyReportStatusCompleted && existing.PDFPath != "" {
 		if info, statErr := os.Stat(existing.PDFPath); statErr == nil && info.Size() > 0 {
 			if err := h.writeReportAudit(c, existing.ID, body.PaperID, "reuse", &login.UserID, 1, ""); err != nil {
@@ -131,7 +147,8 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 		report.ID = uuid.NewString()
 		report.PaperID = body.PaperID
 		report.ExamID = result.ExamID
-		report.ContentVersion = service.CompetencyTemporaryContentVersion
+		report.ContentVersion = contentVersion
+		report.TemplateVersion = templateVersion
 		report.CreateTime = &now
 	}
 	report.Audience = result.ReportAudience
@@ -259,7 +276,27 @@ func (h *CompetencyReportHandler) Download(c *gin.Context) {
 		return
 	}
 	var report model.CompetencyReport
-	if err := h.db.Where("paper_id = ? AND content_version = ? AND status = ?", paperID, service.CompetencyTemporaryContentVersion, competencyReportStatusCompleted).
+	var result model.CompetencyResult
+	if err := h.db.Select("product_version, scoring_version, content_version, report_template_version").Where("paper_id = ?", paperID).Take(&result).Error; err != nil {
+		response.RestErr(c, "报告结果不存在")
+		return
+	}
+	versions := service.CompetencyVersionSetFromResult(result)
+	if service.IsPhase1CompetencyVersionSet(versions) {
+		var contentPackage model.CompetencyReportContentPackage
+		if err := h.db.Where("product_version = ? AND scoring_version = ? AND content_version = ? AND template_version = ? AND audience = ?", versions.ProductVersion, versions.ScoringVersion, versions.ContentVersion, versions.ReportTemplateVersion, service.CompetencyReportAudienceFrontlineEmployee).Take(&contentPackage).Error; err != nil {
+			response.RestErr(c, service.ErrPhase1ReportContentNotApproved.Error())
+			return
+		}
+		if err := service.ValidatePhase1ReportContentApproval(contentPackage); err != nil {
+			response.RestErr(c, err.Error())
+			return
+		}
+	} else if err := service.ValidateFrozenCompetencyVersionSet(versions); err != nil {
+		response.RestErr(c, err.Error())
+		return
+	}
+	if err := h.db.Where("paper_id = ? AND content_version = ? AND template_version = ? AND status = ?", paperID, versions.ContentVersion, versions.ReportTemplateVersion, competencyReportStatusCompleted).
 		Take(&report).Error; err != nil {
 		response.RestErr(c, "报告尚未生成")
 		return

@@ -15,7 +15,8 @@ var (
 func hasCompetencyQuestionMetadata(question model.Qu) bool {
 	return question.QuestionCode != nil || question.DimensionID != nil ||
 		question.DimensionItemNo != nil || question.ObservationPoint != nil ||
-		question.ScoringDirection != nil || question.QuestionStatus != 0
+		question.ScoringDirection != nil || question.CompetencyQuestionType != nil ||
+		question.QuestionStatus != 0
 }
 
 func rejectCompetencyQuestionIDs(db *gorm.DB, questionIDs []string) error {
@@ -24,7 +25,7 @@ func rejectCompetencyQuestionIDs(db *gorm.DB, questionIDs []string) error {
 	}
 	var count int64
 	if err := db.Model(&model.Qu{}).
-		Where("id IN ? AND dimension_id IS NOT NULL", questionIDs).
+		Where("id IN ? AND (dimension_id IS NOT NULL OR competency_question_type IS NOT NULL)", questionIDs).
 		Count(&count).Error; err != nil {
 		return err
 	}

@@ -72,6 +72,21 @@ func TestBugFB085_ReportFilenameUsesRFC5987PercentEncoding(t *testing.T) {
 	}
 }
 
+// TestBugFB106_Phase1ApprovedReportDownloadSkipsGenericVersionValidator
+// 对应：docs/regression-tests.md #FB-106
+// 复现：一期报告已生成，但下载在专属批准门禁后继续调用只支持generic的版本校验器。
+// 期望：一期走专属批准校验；仅generic报告调用ValidateFrozenCompetencyVersionSet。
+func TestBugFB106_Phase1ApprovedReportDownloadSkipsGenericVersionValidator(t *testing.T) {
+	source := readSourceFile(t, "competency_report.go")
+	download := extractFunctionBody(t, source, "func (h *CompetencyReportHandler) Download(c *gin.Context) {")
+	if !strings.Contains(download, "if service.IsPhase1CompetencyVersionSet(versions) {") {
+		t.Fatal("phase-1 download approval branch missing")
+	}
+	if !strings.Contains(download, "} else if err := service.ValidateFrozenCompetencyVersionSet(versions); err != nil {") {
+		t.Fatal("generic version validator still runs after the phase-1 approval branch")
+	}
+}
+
 func TestReportGenerationLockIndex_IsStableAndBounded(t *testing.T) {
 	for _, paperID := range []string{"paper-1", "paper-2", "fc743d2b-0b72-49b2-803f-f285d62730ed"} {
 		first := reportGenerationLockIndex(paperID)

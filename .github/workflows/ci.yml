@@ -5,10 +5,25 @@ on:
     branches: [main, master]
     paths:
       - 'Go-based Refactored System/**'
+      - 'scripts/tools/convert-competency-phase1-workbook.js'
+      - 'scripts/test/competency-phase1-identity-test.js'
+      - 'scripts/test/package.json'
+      - 'scripts/test/package-lock.json'
+      - 'scripts/data/competency-phase1-candidate-20260807.json'
+      - 'scripts/data/competency-phase1-import-20260810.xlsx'
+      - 'docs/260807胜任力开发资料/260807基层员工胜任力测评题本+等级评价+总体评价.xlsx'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - 'Go-based Refactored System/**'
+      - 'scripts/tools/convert-competency-phase1-workbook.js'
+      - 'scripts/test/competency-phase1-identity-test.js'
+      - 'scripts/test/package.json'
+      - 'scripts/test/package-lock.json'
+      - 'scripts/data/competency-phase1-candidate-20260807.json'
+      - 'scripts/data/competency-phase1-import-20260810.xlsx'
+      - 'docs/260807胜任力开发资料/260807基层员工胜任力测评题本+等级评价+总体评价.xlsx'
+      - '.github/workflows/ci.yml'
 
 # 取消同分支上的旧运行
 concurrency:
@@ -20,6 +35,34 @@ defaults:
     working-directory: 'Go-based Refactored System'
 
 jobs:
+  competency-phase1-candidate:
+    name: Competency Phase-1 Candidate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 'scripts/test'
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'scripts/test/package-lock.json'
+
+      - name: Install script dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify deterministic candidate
+        run: node ../tools/convert-competency-phase1-workbook.js --check
+
+      - name: Verify A/B identities
+        run: node competency-phase1-identity-test.js
+
   # ===== Job 1: Go 后端测试 =====
   go-test:
     name: Go Test

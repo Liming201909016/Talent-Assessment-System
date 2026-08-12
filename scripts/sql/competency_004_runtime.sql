@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS `el_competency_result` (
   `total_question_count` int NOT NULL,
   `answered_question_count` int NOT NULL,
   `effective_dimension_count` int NOT NULL,
-  `overall_score` decimal(18,6) NOT NULL,
+  `overall_score` decimal(18,6) DEFAULT NULL,
   `evaluation_average` decimal(18,6) DEFAULT NULL,
   `evaluation_level` varchar(16) DEFAULT NULL,
   `report_audience` varchar(32) NOT NULL,

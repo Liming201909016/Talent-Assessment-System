@@ -3,7 +3,7 @@
     <div class="page-heading">
       <div>
         <h2>胜任力维度维护</h2>
-        <p>维护未来测评使用的48个维度；已发布测评继续使用原快照。</p>
+        <p>维护第一期基层员工测评使用的10个A/B维度。</p>
       </div>
       <el-button icon="el-icon-back" @click="$router.push({ name: 'CompetencyQuestionList' })">返回题库</el-button>
     </div>
@@ -12,7 +12,7 @@
       <el-form-item label="关键词">
         <el-input v-model="query.keyword" clearable placeholder="编号或名称" style="width:180px" @input="query.current=1" />
       </el-form-item>
-      <el-form-item label="VIRD层级">
+      <el-form-item label="能力层级">
         <el-select v-model="query.virdLevel" clearable placeholder="全部" style="width:190px" @change="query.current=1">
           <el-option v-for="item in virdOptions" :key="item" :label="item" :value="item" />
         </el-select>
@@ -26,14 +26,14 @@
       <el-form-item><el-button icon="el-icon-refresh" @click="resetQuery">重置</el-button></el-form-item>
     </el-form>
 
-    <el-alert title="编号和稳定ID不可修改。停用维度后不能用于新建或编辑草稿，但不会改变已发布测评、历史结果或题目。" type="info" :closable="false" show-icon class="mb12" />
+    <el-alert title="编号和稳定ID不可修改。当前仅维护已确认的第一期10个维度；第二、三期维度待总体矩阵定稿后另行扩展。" type="info" :closable="false" show-icon class="mb12" />
 
     <el-table v-loading="loading" :data="pagedRows" border stripe>
       <el-table-column label="顺序" prop="displayOrder" width="70" align="right" />
       <el-table-column label="编号" prop="code" width="80" align="center" />
       <el-table-column label="维度名称" prop="name" min-width="120" />
-      <el-table-column label="VIRD层级" prop="virdLevel" min-width="150" />
-      <el-table-column label="适用类别" prop="applicableCategory" width="100" align="center" />
+      <el-table-column label="能力层级" prop="virdLevel" min-width="120" />
+      <el-table-column label="适用对象" prop="applicableCategory" width="100" align="center" />
       <el-table-column label="核心含义" prop="coreMeaning" min-width="220" show-overflow-tooltip />
       <el-table-column label="启用题数" prop="questionCount" width="90" align="right" />
       <el-table-column label="状态" width="80" align="center">
@@ -55,9 +55,9 @@
       <el-form ref="editForm" :model="editForm" :rules="editRules" label-width="100px">
         <el-row :gutter="16">
           <el-col :xs="24" :sm="12"><el-form-item label="维度名称" prop="name"><el-input v-model="editForm.name" maxlength="100" show-word-limit /></el-form-item></el-col>
-          <el-col :xs="24" :sm="12"><el-form-item label="显示顺序" prop="displayOrder"><el-input-number v-model="editForm.displayOrder" :min="1" :max="48" controls-position="right" /></el-form-item></el-col>
-          <el-col :xs="24" :sm="12"><el-form-item label="VIRD层级" prop="virdLevel"><el-select v-model="editForm.virdLevel" style="width:100%"><el-option v-for="item in allVirdLevels" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
-          <el-col :xs="24" :sm="12"><el-form-item label="适用类别" prop="applicableCategory"><el-select v-model="editForm.applicableCategory" style="width:100%"><el-option label="基层通用" value="基层通用" /><el-option label="管理通用" value="管理通用" /></el-select></el-form-item></el-col>
+          <el-col :xs="24" :sm="12"><el-form-item label="显示顺序" prop="displayOrder"><el-input-number v-model="editForm.displayOrder" :min="1" :max="maxDisplayOrder" controls-position="right" /></el-form-item></el-col>
+          <el-col :xs="24" :sm="12"><el-form-item label="能力层级" prop="virdLevel"><el-select v-model="editForm.virdLevel" style="width:100%"><el-option v-for="item in allVirdLevels" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
+          <el-col :xs="24" :sm="12"><el-form-item label="适用对象" prop="applicableCategory"><el-select v-model="editForm.applicableCategory" style="width:100%"><el-option v-for="item in allApplicableCategories" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="核心含义" prop="coreMeaning"><el-input v-model="editForm.coreMeaning" type="textarea" :rows="3" maxlength="500" show-word-limit /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="状态" prop="status"><el-radio-group v-model="editForm.status"><el-radio :label="0">启用</el-radio><el-radio :label="1">停用</el-radio></el-radio-group></el-form-item></el-col>
         </el-row>
@@ -78,15 +78,17 @@ export default {
       saving: false,
       rows: [],
       query: { keyword: '', virdLevel: '', status: '', current: 1, size: 20 },
-      allVirdLevels: ['Versatility 胜任力', 'Integrity 信念力', 'Resilience 人格力', 'Drive 内驱力'],
+      allVirdLevels: ['通用能力', '心理素养'],
+      allApplicableCategories: ['基层员工'],
+      maxDisplayOrder: 10,
       editVisible: false,
       editIdentity: {},
       originalStatus: 0,
       editForm: { id: '', name: '', virdLevel: '', applicableCategory: '', coreMeaning: '', displayOrder: 1, status: 0 },
       editRules: {
         name: [{ required: true, message: '维度名称不能为空', trigger: 'blur' }],
-        virdLevel: [{ required: true, message: '请选择VIRD层级', trigger: 'change' }],
-        applicableCategory: [{ required: true, message: '请选择适用类别', trigger: 'change' }],
+        virdLevel: [{ required: true, message: '请选择能力层级', trigger: 'change' }],
+        applicableCategory: [{ required: true, message: '请选择适用对象', trigger: 'change' }],
         coreMeaning: [{ required: true, message: '核心含义不能为空', trigger: 'blur' }],
         displayOrder: [{ required: true, message: '显示顺序不能为空', trigger: 'change' }],
         status: [{ required: true, message: '请选择状态', trigger: 'change' }]

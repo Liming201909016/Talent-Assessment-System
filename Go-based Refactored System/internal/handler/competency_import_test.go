@@ -45,7 +45,7 @@ func TestCompetencyImportTemplate_ReturnsXLSX(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 4 || len(rows[0]) != len(service.CompetencyImportHeaders) {
+	if len(rows) != 5 || len(rows[0]) != len(service.CompetencyImportHeaders) {
 		t.Fatalf("template rows/columns = %d/%d", len(rows), len(rows[0]))
 	}
 	for index, header := range service.CompetencyImportHeaders {
@@ -61,13 +61,19 @@ func TestCompetencyImportTemplate_ReturnsXLSX(t *testing.T) {
 		t.Fatalf("template must not contain merged cells: %v", merged)
 	}
 	validation := service.ValidateCompetencyImportRows(rows, []service.CompetencyImportDimension{
-		{ID: "competency-d01", Order: 1, Name: "沟通表达", Status: 0},
+		{ID: "competency-a1-01", Order: 1, Name: "逻辑思维", Status: 0},
 	}, map[string]struct{}{}, map[string]struct{}{})
-	if len(validation.Errors) != 0 || len(validation.ValidRows) != 2 {
+	if len(validation.Errors) != 0 || len(validation.ValidRows) != 3 {
 		t.Fatalf("template examples validation errors/valid = %v/%d", validation.Errors, len(validation.ValidRows))
 	}
 	if validation.ValidRows[0].Direction != "forward" || validation.ValidRows[1].Direction != "reverse" {
 		t.Fatalf("template example directions = %q/%q", validation.ValidRows[0].Direction, validation.ValidRows[1].Direction)
+	}
+	if validation.ValidRows[0].DimensionID != "competency-a1-01" || validation.ValidRows[0].QuestionCode != "A1-01-EXAMPLE-F" {
+		t.Fatalf("template must use current A/B identity: %+v", validation.ValidRows[0])
+	}
+	if validation.ValidRows[2].QuestionType != "validity" || validation.ValidRows[2].Direction != "forward" {
+		t.Fatalf("template validity example = %+v", validation.ValidRows[2])
 	}
 }
 
@@ -85,6 +91,9 @@ func TestCompetencyImportHandlers_PreviewIsReadOnlyAndImportIsAtomic(t *testing.
 		if !strings.Contains(formal, required) {
 			t.Errorf("formal import missing %q", required)
 		}
+	}
+	if !strings.Contains(formal, "questionType := row.QuestionType") || !strings.Contains(formal, "CompetencyQuestionType: &questionType") {
+		t.Error("phase-1 import must persist each validated dimension/validity question type")
 	}
 }
 

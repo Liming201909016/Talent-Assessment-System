@@ -1,5 +1,61 @@
 # Project Memory
 
+## 2026-08-11 客户 V1 题本与报告模板复核
+
+- 新版客户题本 `260810基层员工胜任力测评题本+等级评价+总体评价V1.xlsx` SHA-256=`f33b878e6fa3f3b8496a838c1a8e648dda29b1e75a41a21a73e90362a978b42f`。实读为3个Sheet、10个A/B维度、80道维度题、10道效度题；维度题62正向/18反向，效度题10道正向；90个题号和题干均唯一。题目、方向、10×5维度文案和5条总体文案与既有候选JSON逐字段一致。
+- 新版题本把维度单元格从名称改为“编号+换行+名称”，当前转换器按整个单元格匹配名称，真实执行报`unknown phase-1 dimension: A1-01 / 逻辑思维`；正式导入前必须单独修复并回归转换契约。效度题的“题目类型”列仍为空，必须继续按效度量表层级明确识别，不能当普通维度题。
+- `胜任力测评报告样例.docx` SHA-256=`71648879883952f2199df0ec1f973bcd462d7bb9674f0960b4a6c11da7c4d053`；随附PDF实证为A4 10页。结构为封面、阅读说明、个人/总体/效度提示、一级维度、十维概览、10个二级维度诊断建议。Word可提供2个一级说明、效度存疑提示和特别说明，但没有独立的“效度良好”正式提示，最终免责声明/使用边界仍需批准确认。
+- 当前一期Vue十页框架与物理页数一致，但“十维能力全景”实际为横向柱状图而非决策基线要求的10轴雷达图；一级页未显示等级；二级详情未展示Excel中的完整定义；封面未显示测评名称。正式内容导入前需作为独立实现切片处理。
+- [FB-108本地修复 - 2026-08-12] 转换器现同时支持旧“名称”和V1“编号+换行+名称”维度单元格；新版格式会对A/B编号与名称执行精确配对，错配在生成任何候选/导入产物前确定性拒绝。默认来源切换为260810 V1题本，工具版本升至1.3.0、材料日期升至2026-08-10。RED真实报`unknown phase-1 dimension`；GREEN契约测试、转换器语法检查和既有一期身份/导入回归均通过。本切片未覆盖或重新生成现有候选JSON/XLSX，未写数据库、未部署。
+- [规范化CSV人工审阅包 - 2026-08-12] 用户确认采用4个规范化业务CSV、Windows Excel兼容UTF-8 BOM，并在人工修订后替换90题和正式报告文案。转换器1.4.0新增`--csv-output-dir`与`--csv-only`，已从260810 V1题本生成`phase1-questions.csv` 90行、`phase1-dimensions.csv` 10行、`phase1-dimension-levels.csv` 50行、`phase1-overall-levels.csv` 5行，目录为`scripts/data/competency-phase1-csv/`。实际产物BOM/表头/行数/SHA和62正向+18反向+10效度均验证通过；既有候选JSON/XLSX未覆盖。人工检查期间不得修改题目编号、题型、一级/二级维度ID/编号、顺序、等级编号等身份列；正式替换前另行实现CSV导入预览、全量校验、事务替换及备份，不直接把人工CSV写入数据库。
+- [CSV长期导入契约优化 - 2026-08-12] 上述4文件审阅包已扩展为6文件`competency-phase1-csv-v1`：新增`phase1-package.csv`承载四版本、双来源SHA、双批准、环境和最终免责声明；新增`phase1-report-static-texts.csv`承载2条一级说明与good/questionable效度提示。题目/维度/文案文件增加稳定顺序、审核状态/备注；维度和总体等级增加内部等级码与精确上下界，包含标志用Excel稳定的1/0。效度good内容保持空白并标`missing_required`，package保持draft，不伪造批准或免责声明。转换器升至1.5.0；新增校验器支持manual-review和approved-import两模式，检查6文件集、BOM、表头、身份、唯一性、题型、精确方向、边界、审核状态、公式注入和正式内容源SHA。当前manual-review通过，内容源SHA=`c5f343938587f5680328749083caf3b3ea62703be9899d7261f253303cd18289`；approved-import按设计因draft失败。本轮未写数据库、未替换现有候选JSON/XLSX、未部署。
+- [计分与CSV一致性审计 - 2026-08-12] 核心后端计分与确认后的CSV精确边界一致：单题正向raw/反向6-raw，二级保存8题转换后`score_sum`并除以8，一级为5个二级平均，总体为10个二级平均之和，效度仅累加10道效度题raw。原说明“各维度原始得分”应改称“转换后计分总和”；“效度所有题目”应明确为10道效度题；总体“65%以下尚未胜任”与50%–65%薄弱胜任重叠，确定应为低于50%，当前代码/CSV已按`>=45/>=40/>=32.5/>=25/<25`修正。8题整数分使二级实际可达均分以0.125递增：L1 1–1.625、L2 1.75–2.625、L3 2.75–3.5、L4 3.625–4.25、L5 4.375–5；统一理论边界仍适用于一级0.025步长。定向计分测试18项通过。当前剩余冲突在报告显示：Vue把L1-L5显示为起步/发展/胜任/熟练/卓越，且总体显示较弱/待提升，与CSV二级、一级和总体正式标签不一致，需独立RED→GREEN修复。完整证据见`docs/phase1-scoring-data-consistency-audit-20260812.md`。
+- [CSV驱动客户样例报告模板 - 2026-08-12] 用户选择实际系统Vue/PDF模板，缺失效度良好提示和最终免责声明继续保留门禁。新增确定性目录生成器，将已校验CSV的一级/二级名称、一级说明、核心含义、定义、二级/一级/总体正式标签及区间生成到前端运行目录；Vue不再维护这些业务名称和描述。模板按客户样例实现封面、阅读说明/十维矩阵、个人/总体/效度、一级结果、10轴雷达、5页每页2维定义与诊断，共10页。旧起步/发展/胜任/熟练/卓越及较弱/待提升标签已移除；一期后端DTO补齐examTitle/requiredFields/startedAt/userTime/generatedAt。RED为前端2失败和后端meta 6项缺失；GREEN为前端专项11/11、全量23文件142项、后端相关125项、Go全量/Build及production build通过。真实Chromium 1440和390视口均10页/5详情/10卡/2组/1雷达且无溢出、console错误和效度分泄露；移除模板内额外硬编码免责声明并重新构建后，真实PDF为A4 10页、378868 bytes并已清理。当前CSV仍draft，缺失正式内容时报告门禁保持关闭；未部署staging/production。详见`docs/phase1-report-template-implementation-20260812.md`。
+- [效度良好提示建议稿 - 2026-08-12] 用户明确要求先生成建议稿，后续由客户修改CSV和报告模板。`phase1-report-static-texts.csv`的good行已写入“本次测评作答效度良好……”建议文案，来源标记`AI建议稿-待客户确认`、状态`pending_review`、备注要求客户及心理测量负责人确认或修改；转换器1.5.1同步维护同一默认建议，防止重新生成时丢失。CSV manual-review通过，新内容源SHA=`7ffe7fa7a2145a6de4fd8d349adbaf19a011c333557cd457494c75c5f478cf9d`，前端目录已重新生成并通过新鲜度检查。package仍为draft，最终免责声明、双批准、环境和正式内容SHA仍为空，approved-import和正式报告门禁没有放开；未写数据库、未部署。
+- [客户DOCX报告模板权威口径 - 2026-08-12] 用户明确`胜任力测评报告样例.docx`是客户提供的完整报告样例，不是单纯视觉参考；它同时规定固定格式、固定文本、条件变化文本、人员/时间/分数/等级变量及其展示位置。DOCX内示例日期、人员和分数只作变量位置样例，不得固化。后续客户修改业务内容时维护CSV；修改格式、固定说明、页面顺序或视觉时维护DOCX；程序需分别同步到内容版本和Vue/PDF模板，再执行DOM及10页A4验收。详细分类见`docs/phase1-report-template-contract-20260812.md`。本轮只纠正文档与项目口径，未改业务代码、数据库或部署环境。
+- [一期候选数据staging导入与模拟 - 2026-08-12] 用户选择staging、候选测试身份和Go+Vue+测试修复范围。导入前CSV与staging逐字段核对90题和10维一致；完整备份位于`/opt/talent-assessment/backups/phase1_90_import_20260812_113308`，数据库12,116,623 bytes、gzip/清单通过。FB-109修复备份权限0755/0644为0700/0600，并纠正root-owned 0700目录下普通glob失效为`sudo find`。候选导入器以确定性ID和UTF-8 UNHEX事务连续执行两次，最终66条临时非活动文案（5 overall+7 template+2 group+50 dimension+2 validity）及1个draft包；内容SHA=`3060bf06f3f52715c7cf9b05f277e4ccd723a7f571785c5a26918cc98d8dbb42`。真实90题draft门禁链、临时激活的DTO→Chromium→下载及超时/存疑/发布回滚负向链全部完成并清理。完整客户文本引出FB-110英文标题被强制大写、FB-111本地11页、FB-112 Linux服务端16/20页；均RED→GREEN，最终staging DOM为10页/5详情/10卡/2组/1雷达，打印逐页无有效内容溢出，Windows与Linux服务端PDF均A4 10页。最终候选文案恢复`is_temporary=1,status=1`、包恢复draft，测评/结果/报告/审计0，传统签名不变，服务健康，production未修改。证据见`docs/phase1-candidate-staging-import-verification-20260812.md`。
+- [一期staging独立E2E复测 - 2026-08-12] 写入前完整备份位于`/opt/talent-assessment/backups/phase1_90_import_20260812_120247`，数据库/后端/前端SHA清单、gzip及0700/0600权限均通过。重新执行真实90题正向链、88/90超时不完整、效度40存疑、发布回滚、桌面/移动浏览器报告和Linux服务端临时批准报告链，全部通过；浏览器PDF为A4 10页、363233 bytes，服务端下载同为10页。终验候选状态=`10|80|10|66|7|66|1|0|0|0|0`，传统三组签名不变，服务均active、短时会话和关键错误为0，临时脚本/PDF已清理，内容包恢复draft，production未修改。
+- [一期代码提交与本地产物清理 - 2026-08-12] 已清理本地后端构建目录、运行日志、临时目录、前端dist、Go覆盖率文件以及脚本日志/测试结果/截图；保留node_modules依赖。提交前Go全量测试、Go Build、前端23文件142项及production build通过；暂存差异通过格式和硬编码凭据扫描。用户`.vscode/settings.json`明确排除，未纳入提交；一期代码、迁移、CSV契约、客户材料、测试和验收文档形成提交`feat: complete phase-one competency assessment`，未push。
+
+## 2026-08-11 一期正式报告框架（本地）
+
+- 已新增独立的 `competency-phase1-report-data-v1` 强类型契约：固定总分/50、一级/二级维度各/5，严格要求完整的2个一级维度、10个按固定顺序的二级维度及效度good/questionable；受测者DTO不含效度原始分、35分阈值或旧generic `evaluationAverage`。
+- 已新增固定十页一期Vue分支：封面、阅读说明、个人/总体/效度、一级维度、十维全景，以及5页每页2个二级维度。旧generic四档动态报告保留在独立else分支，未改其数据和布局契约。
+- 已新增010报告框架迁移和内容包模型，仅创建双重批准门禁表，不插入任何approved内容包。批准必须精确匹配四类一期版本与基层员工对象，并同时具备内容批准、测量批准、两个SHA-256、适用环境和免责声明。
+- 一期生成数据和下载入口已接入稳定批准门禁；当前没有approved内容包，仍返回“一期正式报告内容尚未完成双重批准”，不会创建报告实例、渲染PDF或下载历史文件。候选JSON中的 `productionContentApproved=false` 未被冒充为正式批准。
+- RED证据：Go最初因内容包模型/批准校验/一期快照/十页DTO缺失而编译失败，Schema测试因010不存在而失败，Vue因无一期分支失败。GREEN证据：报告相关Go三包通过；Go全量通过；Go Build通过；前端23文件140项通过；production build完成；相关编辑器诊断0。
+- [未执行/未部署] 010尚未对本地或staging数据库执行；本切片未导入正式文案、未创建approved内容包、未开放一期报告生成/下载、未部署staging或production。
+- [纠正 / staging部署完成 - 2026-08-11] 上述“010尚未执行、未部署staging”已失效；production仍未修改。部署前完整备份位于`/opt/talent-assessment/backups/phase1_90_import_20260811_145819`，目录/数据库归档权限为0700/0600；`element.sql.gz`为12,116,097 bytes，`gzip -t`通过，SHA-256=`6e21f8760fcf0e2f261a38fa771ed88f8334a8073e2815107af7e824274f0891`。应用替换前备份为`server.bak.20260811_145954`和`dist.bak.20260811_145954`，旧后端/index SHA-256=`71f9bb0df79ed0e5a21d39a484db75a1e45957ee133820604dfe06ceb5d178ab`/`2b4555c78cea87db227629ce91c0b91691459061cc43965469126c76c9bcbdc3`。
+- 010迁移在staging连续执行两次成功；内容包表为17列，主键、五版本/受众唯一索引和状态查询索引签名正确，approved/任何内容包行数为0。迁移后传统题、题库关系和答案三组签名与备份一致。
+- 部署后后端/index SHA-256=`9dc345fda54cc8bc3f975532254a45a20732b45b0208b0cd89d18d9a2be1e9f2`/`00bded900e719b99022f76bbf6e9bcdf450404aff15b5cbec02f7d774e930784`，本地、远端和公网index一致；生产bundle包含一期隔离分支，远端真实Chromium可加载登录页DOM。
+- staging完整正向链再次通过：发布2组/10维/90题并幂等，90题选项快照、试卷恢复、全答、重复提交、10+2+1+1结果、维度/一级3/L3、总体30/weak、效度10/good、筛选和三Sheet导出全部正确。报告数据、生成、下载三个入口均精确返回“一期正式报告内容尚未完成双重批准”，Content-Type非PDF，内容包/报告实例/审计=`0|0|0`。
+- 三组负向链再次通过：超时88/90且总体/相关一级二级/效度正式分为NULL；效度40/questionable且默认排名排除；强制发布快照失败后组/题/关联事务回滚为0并可重试。全部验收finally清理成功。
+- 终验维度/维度题/效度题/测评/总体/一级/效度/内容包/报告/审计=`10|80|10|0|0|0|0|0|0|0`，新增孤儿和测试触发器=`0|0|0|0`，传统签名不变，临时Redis会话0，talent-assessment/nginx/mysql均active，内外health正常，部署窗口应用关键错误和Nginx 5xx均0；远端部署/验收临时文件已清理。正式内容仍未导入，报告生成/下载继续关闭。
+- [追加测试 - 2026-08-11] 使用本机Puppeteer Core加载staging真实production bundle，并仅mock内部报告数据响应。1440×900桌面和390×844移动端均真实渲染恰好10个报告页、5个双维详情页、10个维度卡和2个一级组；十个A/B编号/名称、总体30/50和效度提示均可见，无横向溢出、浏览器console错误0。页面与网络请求均未出现效度原始分、35/36阈值或`validityScore`，内部token未进入API query，输出`STAGING_PHASE1_REPORT_FRAMEWORK_UI_PASS`。
+- [追加测试 - 2026-08-11] 在staging按主键临时插入四版本与受众精确匹配、两个SHA/批准人/时间均填写但`approval_status=draft`的内容包；重新执行完整90题真实链后，报告数据/生成/下载仍全部被同一双批准错误拒绝，报告实例/审计均0。EXIT trap按主键删除draft包及远端脚本。终验内容包/胜任力测评/总体结果/报告/审计=`0|0|0|0|0`、短时Redis会话0、三服务active、内外health正常、追加窗口关键日志0。
+- [FB-105/106修复与staging实证 - 2026-08-11] 继续测试发现两个已获批路径缺陷：`FormalReportData`在内容包通过双批准后固定返回“内容尚未导入”，导致一期强类型构建器永远不可达；修复后又由真实E2E发现下载入口在一期专属批准门禁后仍调用只支持generic的版本校验器，已生成PDF返回JSON而非文件。两项均先登记并取得RED，再实现GREEN。
+- FB-105现从DB读取精确版本/受众的总体、2组说明、10个当前L1-L5维度文案、当前效度提示和免责声明，拒绝临时文案、缺项及批准包免责声明不一致，然后调用`BuildPhase1ReportTextSnapshot`与`BuildPhase1FormalReportData`输出`competency-phase1-report-data-v1`。报告生成handler独立读取持久化结果，不再假定generic map中的result是model值。FB-106使一期下载在专属批准校验通过后跳过generic-only版本校验，generic历史路径保持原校验。
+- 本地证据：FB-105/106定向RED→GREEN；Go全量、`go vet`、Windows/Linux build通过；前端既有23文件140项保持通过。FB-106最终部署前完整备份为`/opt/talent-assessment/backups/phase1_90_import_20260811_152747`，数据库归档12,116,520 bytes、`gzip -t`通过、SHA-256=`b3a292ee6d9cd7086c64aea36d26b91fd6d03b59359a3f5a5514c0da3d01ac6a`，旧后端SHA-256=`98e573fe738c20e094e171c3babb3437232f2ba3e03fbb5f7dee6c5ac513f54a`；最终后端SHA-256=`b971a72bb5e9dea36334bd6a9ee622e446e6b395ddbce7b8427529ed93677290`。
+- staging临时approved实证仅安装当前测试结果所需的14条英文框架文案和1个测试批准包：真实发布/90题作答/10+2+1+1结果后，报告数据返回10页/2组/10维DTO且不含`validityScore`；Chromium生成completed报告，下载为`application/pdf`且`pdfinfo`恰为10页，成功生成/下载审计2条。finally删除生成PDF、下载副本、测试报告/结果/测评、14条文案和批准包。
+- 清理approved测试内容后再次执行默认正向门禁及超时不完整、效度存疑、发布回滚三组负向链，全部通过。最终内容包/一期正式文案/胜任力测评/总体/一级/效度/报告/审计/测试触发器=`0|0|0|0|0|0|0|0|0`，测试PDF和短时Redis会话0，传统签名不变，三服务active、内外health正常、修复窗口关键日志0。正式内容仍未获批，正常staging报告入口继续关闭；production未修改。
+- [P0/P1启动 / FB-107本地修复 - 2026-08-11] 扩展一期内容包批准负向矩阵，现覆盖四版本、受众、draft/retired、两类批准人及时间、双SHA、环境和免责声明。正式文案矩阵首次RED为24项中4项失败，证明空白总体文案、空白效度文案和多行免责声明不一致会被接受；实现后构建器对必需文本统一执行trim校验，并拒绝非空免责声明冲突。定向24/24、Go全量、Go Build、`go vet ./...`和无改写gofmt检查均通过，相关文件诊断0。该修复仅收紧一期正式文案校验；generic报告路径和公开契约无需修改。正式内容、双批准资料和production授权仍未提供，本轮未部署staging/production。
+
+## 2026-08-11 一期90题统一运行时（本地）
+
+- 发布已冻结2个一级组、10个A/B维度和80道dimension+10道forward validity题；确认的五级选项文字进入快照，效度全局序号强制完整覆盖1–10。
+- 提交已按80/10拆分并原子写10条二级、2条一级、1条效度、1条总体结果；不完整总体分改为数据库NULL，重复提交保持幂等。
+- 管理端可筛选/查看效度和一级结果；分数排名默认完整+效度良好；三Sheet导出增加一级分、效度分/状态和题型。
+- 发布仅允许管理员或全局权限账号。一期正式报告L1-L5/一级/效度渲染器尚未实现，后端和前端报告入口继续关闭，但测评发布/答题/结果链已解除临时门禁。
+- 本地证据：Go全量、go vet、Windows build通过；前端23文件139项及production build通过；Python staging E2E脚本语法通过。尚未部署staging/production。
+- [纠正 / staging部署完成 - 2026-08-11] 上述“尚未部署staging”已失效；production仍未修改。独立备份位于`/opt/talent-assessment/backups/phase1_90_import_20260811_093237`，数据库gzip SHA-256=`2d9090cbc62d8b5b3265f76d48b19f50b38b9fbe130f02f83deacb343b5eb7d1`且`gzip -t`通过；旧后端SHA-256=`eb0766cd5a98535c876457eb012f7bc1780f9e39bc4dc09ea75f80f4fe2d65a7`，传统题/关系/答案签名已保存并在终验确认不变。
+- 008迁移连续执行两轮成功，`el_competency_result.overall_score=decimal(18,6)|YES`；部署后后端SHA-256=`71f9bb0df79ed0e5a21d39a484db75a1e45957ee133820604dfe06ceb5d178ab`，远端/本地/公网index SHA-256=`2b4555c78cea87db227629ce91c0b91691459061cc43965469126c76c9bcbdc3`。
+- staging真实完整链通过：发布2组/10维/90题（80 dimension+10 validity）并幂等；90个确认选项快照、试卷恢复、全答提交与重复提交通过；结果恰为10二级+2一级+1效度+1总体，十维和两组均3/L3、总体30/weak、效度10/good；good筛选1、questionable筛选0；三Sheet导出包含一级、效度和题型；一期正式报告仍按设计拒绝。
+- 验收finally清理`exam|paper|candidate|result=0|0|0|0`。终验维度/维度题/效度题/测评/总体/一级/效度结果=`10|80|10|0|0|0|0`，三类新增孤儿=`0|0|0`，传统签名不变，临时Redis会话0，服务/nginx/mysql均active，内外health正常，部署窗口关键日志0。
+- [三组staging负向验收 - 2026-08-11] 独立备份位于`/opt/talent-assessment/backups/phase1_90_import_20260811_103057`，数据库gzip SHA-256=`6a76a96682d8620b2b62674bf82f169dd7bd47a6b2d03dae7018166f545d9308`且可解压；当前后端哈希与部署版本一致，传统题/关系/答案签名终验不变。
+- 超时不完整真实链：故意留空`A1-01-Q01`和`P1-VAL-Q01`并将limit_time置于过去，经manual入口由服务端可信转换timeout。结果为88/90、维度79/80、overall/evaluation均NULL、恰1条二级和1条一级NULL、效度9/10+incomplete+NULL；管理不完整+效度未完成筛选返回1，默认分数排名返回0，正式报告明确拒绝。
+- 效度存疑真实链：80道维度题raw=3、10道效度题raw=4，得到十维/两组均3/L3、总体30/weak、效度40/questionable。显式all和questionable筛选均返回1，默认overallScore排名返回0，三Sheet导出包含效度原始分、效度状态和questionable。
+- 发布回滚真实链：临时`BEFORE INSERT`触发器对题目快照强制抛出`PHASE1_RUNTIME_FORCED_SNAPSHOT_FAILURE`。发布拒绝后publish status/group/question/group links=`0|0|0|0`，证明组快照和维度更新随事务回滚；删除触发器后同一草稿成功发布2组/10维/90题。最终三组统一输出`STAGING_PHASE1_NEGATIVE_RUNTIME_PASS`，清理exam/result/group/validity/trigger=`0|0|0|0|0`，短时会话0、孤儿0、服务和内外health正常、关键日志0。production未修改。
+
 ## 2026-06-24
 
 - 项目规则要求维护本文件；本次任务开始时文件不存在，已补建。
@@ -375,3 +431,88 @@
 
 - [UF-005 / FB-102 本地修复] 生产00401开放测评二维码白屏根因是胜任力测评不关联物理题库，在线列表`repoCode`为空，而candidate路由要求必填`:repoCode`；二维码URL因此止于stuFlag且Vue不匹配组件。新增统一resolver将competency映射为虚拟code `00401`，开放/封闭二维码和直接导航共用该值，legacy继续保留真实repoCode。
 - RED专项3/3失败；GREEN专项3/3、前端全量22文件130项、production build均通过，构建index SHA-256=`a1c2a83d5f480f0277188273a96060a95651631ffeac47c329ddbbf64e60f2c8`。8089本地开发服务器真实打开`/#/my/exam/candidate/local-competency/0/00401`并显示考生信息表单；因本地8092未运行，detail请求返回500，此错误只反映本地后端未启动，不影响路由匹配证据。本切片尚未部署staging或production。
+- [VIRD新材料需求分析 - 2026-07-28] 已只读核验`260728VIRD测评方案.docx`、`260728-VIRD维度评价+总体评价.xlsx`和`260728VIRD测验报告示例V2.3.docx/pdf`，完整分析见`docs/00401-vird-requirements-gap-analysis-20260728.md`；本轮未修改Go/Vue/SQL、未写数据库、未部署。
+- 新评价表包含48个连续唯一维度、48条完整定义、240条维度1～5分行为描述，以及基层岗位/管理岗位各5档总体诊断和发展建议共10组；与现有主数据仅D03核心含义、D42名称、D43核心含义三项不同。D42新材料写“权利动机”，与此前客户确认并已落地的“权力动机”冲突，未覆盖现有值。
+- 新材料候选规则与V1.2存在实质冲突：维度从四档改五档；总体从有效维度均值四档改为总分占满分比例五档；五级选项文字变化；报告改为VIRD品牌、五档仪表、雷达图、完整定义、表现评估及总体发展建议。维度区间存在4个数学空档，总体末档“65%以下”与上一档重叠，均须客户确认后才能编码。
+- 新报告样例还存在内容错配：7维度总分24.13/满分35=68.94%，总体标签“合格胜任者”和4条发展建议均匹配基层岗位合格档，但诊断段实际取自工作簿“优秀胜任者”行；正式映射不能照抄样例，需按岗位+等级精确确认。
+- 当前00401的48维度、全量取题、发布快照、独立随机、正反向计分、自动提交、双受众、结果/导出、PDF生成下载审计均可复用；主要Gap为新评分版本、正式内容Schema/版本冻结和V2.3报告模板。生产00401正式题目仍为0，新材料不含题目明细。
+
+## 2026-08-09
+
+- [260807基层员工第一期需求与Gap分析] 已只读核验`docs/260807胜任力开发资料/`的开发方案、题本/评价工作簿和DOCX/PDF报告样例；完整分析见`docs/00401-phase1-requirements-gap-analysis-20260809.md`。本轮未修改Go/Vue/SQL，未导入题目，未写数据库，未部署或连接远端环境。
+- 260807材料把第一期收缩为固定基层员工10个二级维度，跳过选维度；一级分组为通用能力（逻辑思维、数字应用、计划执行、持续学习、沟通表达）和心理素养（敬业奉献、求真务实、自律性、成就导向、合作意识）。该一期顺序与现有48维度全局顺序不同；成就导向/合作意识与现有D41成就动机/D35合作性不是同名，需确认稳定ID映射。
+- 题本经逐行复核为80道维度题+10道效度题=90题。每个二级维度8题；逻辑思维、数字应用、计划执行、持续学习、沟通表达、敬业奉献、求真务实、自律性、合作意识均为6正向+2反向（第7/8题反向），成就导向为8道正向；合计62正向、18反向。效度10题均未填写方向或题目类型，方案所称“伪装维度”也没有独立ID/名称。
+- 新候选计分为：二级维度8题平均；两个一级维度各取5个二级维度平均；总体为10个二级维度分相加、满分50；二级/一级区间边界为1.7/2.7/3.5/4.3且原文写“上包含”；效度10题候选总分>35存疑、<=35良好。DOCX末档“65%以下”与上一档重叠，XLSX明确总体档位为45以上、40-45、32.5-40、25-32.5、25以下；边界包含关系和效度题方向仍须客户确认。
+- 新报告样例为A4、10个物理页（封面+正文第1～9页），包含阅读说明、个人信息/总体评价/效度提示、两个一级维度、10轴二级雷达图和10个维度定义/得分/五档诊断建议。样例一级维度图将两个独立1～5得分画成近似构成比，存在误导风险；第9页留白较多但无额外空白页。
+- 当前00401核心答题链可复用，但一期P0 Gap为固定10维产品配置与顺序、题目类型、一级结果、效度结果、三套五档标签/算法、客户题本导入转换、评分/内容版本发布冻结及正式10页报告。现有四档`competency-v1`、动态维度选择、九列严格导入、`temp-v1`和每维一页模板均不能直接满足260807一期。
+- 本轮未重新核验生产实时数据；生产题目0、胜任力测评0、`temp-v1`392条等仅是2026-07-27最后一次已验证基线，不能表述为2026-08-09实时状态。
+- [260807一期题本候选转换完成] 新增本地工具`scripts/tools/convert-competency-phase1-workbook.js`，将客户多级表头XLSX确定性转换为`scripts/data/competency-phase1-candidate-20260807.json`。源文件SHA-256=`2debf83ffcbda000a016f4ea591b688afca7dcfd26730f5c963b131e8477e0b9`，候选JSON SHA-256=`153ad2c45e8c30e43ab2c86f33472568fd4fc76d7d082044b2a0553fa0baa162`；`--check`重现校验和独立结构断言均通过。该工具当前命中根目录`.gitignore`的`scripts/tools/*.js`规则，仍是未纳入Git跟踪的本地工具；本轮未改变忽略策略。
+- [纠正 - 2026-08-09] 上述转换工具忽略状态已失效。根目录`.gitignore`已增加精确例外`!scripts/tools/convert-competency-phase1-workbook.js`；转换器现为Git可见的未跟踪文件，其他`scripts/tools/*.js`继续保持忽略。候选JSON同为Git可见的未跟踪文件；本轮未暂存、提交或推送。
+- 候选JSON已验证为90题（80维度+10效度）、62正向+18反向、10个效度方向空值、8个同名映射+2个待确认映射、50条维度分档文案+5条总体文案，并显式保持`importReady=false`、`databaseWritten=false`。当前有6个阻塞项和3个警告项；未修改Go/Vue/SQL，未导入题目、未写数据库、未连接远端或部署。
+- [通用胜任力版本化基础本地完成 - 2026-08-09] 四类默认版本为产品`competency-generic-v1`、评分`competency-v1`、内容`temp-v1`、报告模板`competency-report-v1`。版本标识只允许小写字母、数字、点、下划线和连字符，最长32字符；产品、评分、报告模板必须由当前程序支持，内容版本允许保留合法的未来标识。
+- 冻结链已建立：胜任力草稿保存时规范化版本；发布时与题目快照一并冻结且发布后不可修改；交卷时复制到`el_competency_result`；正式报告按结果中的内容版本和模板版本精确读取，不跨版本回退。传统测评清空四个胜任力版本字段。
+- 新增幂等迁移`scripts/sql/competency_007_versions.sql`，增加Exam、Result、Report所需版本列，并只对空版本的既有胜任力数据回填当前兼容版本；legacy Exam保持空版本。模型与迁移静态测试已通过。
+- 本地验证：Go全量测试通过，Windows Go build通过；前端Vitest 23文件132项通过，production build通过并保留2个既有资源体积warning；真实Gin HTTP测试确认不支持的产品版本在进入数据库事务前被拒绝。
+- [未验证 - 2026-08-09] 本地MySQL `127.0.0.1:23306`返回`ECONNREFUSED`，因此007尚未取得真实执行、重复执行和数据回填查询证据。迁移必须在可用数据库环境执行并核对列、胜任力回填及legacy空值后，才能标记完成。
+- 本版本化切片未部署staging/production，未暂存、未提交、未推送；未导入260807的90道题，也未实现效度方向、新五档算法或一级维度聚合。
+- [纠正 / 通用胜任力版本化基础 staging 完成 - 2026-08-10] 上述 007 与 staging 未验证状态已失效。目标仅为用户确认的 `20.200.136.133` staging；production 未部署。SSH 初始因 TCP/22 超时受阻，放通当前客户端公网 IP `20.239.176.250` 后，以 `liming` 和既有密钥登录 `vm-ubuntu-go-dev` 成功。
+- 部署前完整数据库备份为`/opt/talent-assessment/backups/element_before_competency_20260810_100113.sql.gz`，12,219,312 bytes，gzip校验通过，SHA-256=`0f31bf3dea7e67292406f1732f19c982b2ea80624335f6d753e3722cfe30f11c`。
+- `competency_007_versions.sql`在staging连续执行两次成功。新增版本列总数8；9个competency exam、10个result和7个report实例版本缺口均为0；60个legacy exam非空版本数为0；业务行数迁移前后保持exam/result/report=`69/10/7`。9个胜任力配置均回填`competency-generic-v1 / competency-v1 / temp-v1 / competency-report-v1`。
+- 应用部署备份为`server.bak.20260810_100311`和`dist.bak.20260810_100311`，旧后端/index SHA-256分别为`703f2eb988faebe36d81db64a7ae0c026c5e905d3b82225ab7b9f0f43a8d62c1`和`f5cd615b7a8f968b4ffba6fef61953c067fb86519d1a75987128f797bbb93136`。部署后后端/index SHA-256分别为`44df29bcf09a55ab4a1d61b94d408d9eb649cdc40645ea5c48e75753cf063fc7`和`1e60ac06cfb4ff219428151d91b1a6f3231001ff8748ea0bb80228ea34ad5163`，本地、远端和公网index一致；dist为`root:root 0755`。
+- staging真实验证：管理员分页返回9/9胜任力配置均为四类兼容版本；真实详情返回同一版本集；不支持产品版本`unsupported-v9`在写库前返回受控错误，临时标题数据库残留0；Chromium真实打开既有胜任力编辑页并显示产品/评分/内容/模板标签及“发布后与题目快照一并冻结”提示。短时Redis会话残留0。
+- 最终状态：talent-assessment/nginx/mysql均active，内外health均`{"status":"ok"}`，部署窗口panic/fatal/unknown-column/report-failed计数0；远端发布临时文件已清理，数据库和应用备份保留。此次部署仍不包含260807的90题正式导入、效度规则、五档算法、一级维度结果或10页正式报告模板。
+- [260807一期数据结构本地完成 - 2026-08-10] 新增 `scripts/sql/competency_008_phase1_structures.sql`：源题与发布快照增加可空 `competency_question_type`；已有 `dimension_id` 非空源题和既有发布快照兼容回填为 `dimension`；新增测评一级分组快照、维度到分组的可空多对一关联、一级结果、效度结果，以及整体结果的维度题总数/已答数。一级得分/等级、效度得分/状态均保持 NULL 可表达，未写死一期分组名称或维度映射。
+- 008 只对冻结版本 `competency-generic-v1 + competency-v1` 的历史结果以现有总题数兼容回填维度题计数，不重算分数；当前九列导入显式写 `dimension`，发布快照复制题型，当前提交继续按原 `competency-v1` 计算并将现有计数同时写入维度题计数。传统题目读写隔离扩展为 `dimension_id IS NOT NULL OR competency_question_type IS NOT NULL`，可防止未来 `dimension_id` 为空的效度题进入传统页面/API。
+- 新增表全部使用 RESTRICT 外键并已同步完整链删除顺序：报告 → 一级/效度/二级/整体结果 → 试卷子表/人员/试卷 → 题目快照 → 二级维度快照 → 一级分组快照 → 测评。迁移动态对齐 exam/paper/group 外键列字符集与 collation；原维度题号唯一索引升级为 `(dimension_id, competency_question_type, dimension_item_no)`。
+- TDD 证据：初始聚焦 RED 为 64 通过/4 失败，模型单测因三个新模型未定义而编译失败；实现后最终聚焦测试 89/89。Go 全量测试退出码0，Windows与Linux amd64构建退出码均0，`go vet ./...`退出码0，所有改动Go文件编辑器诊断0，scoped `git diff --check`退出码0。
+- [未验证 - 2026-08-10] 本机 `mysql/mysqld/docker` 均不可用，WSL未安装，因此008尚未取得真实MySQL 5.7/8首次执行、第二次幂等执行、SQL回填查询和真实HTTP/数据库结果证据。本切片未连接或部署staging/production；未导入260807的90题，未实现效度方向/阈值、一级聚合、新五档、D41/D35映射或10页报告。
+- [纠正 / 008 staging 数据库迁移完成 - 2026-08-10] 上述 008 数据库未验证状态已失效。目标仅为用户确认的 `20.200.136.133` staging（`vm-ubuntu-go-dev`）；MySQL 8.0.46、talent-assessment和nginx预检均active，根分区迁移前可用约51.7GiB。迁移前核心计数为exam/qu/question-snapshot/result=`69/1239/344/10`，008目标列/表/外键均为0。
+- 完整数据库备份为`/opt/talent-assessment/backups/element_before_competency_20260810_114814.sql.gz`，12,219,416 bytes、0600，gzip校验通过，SHA-256=`0061da2e26bbeba2c4c5bd233efc8dbddb90741d64fb38d6b8cbcf45128dfba2`。本地与远端008 SHA-256一致：`b34ee8d491243fccb0626f2742cc325f7d3d5027bec842b07d32377089edd96b`。
+- `competency_008_phase1_structures.sql`在staging连续执行两次成功，第一轮5,248ms、第二轮2,884ms，两轮SQL错误数均0。两轮后均为5个目标列、3张新表、5个新外键；核心计数持续为`69/1239/344/10`，新增分组/一级结果/效度结果/维度分组链接均为0，证明迁移未伪造尚未计算的数据。
+- 题型回填证据：源题`dimension/validity/NULL/非法=384/0/855/0`，发布快照=`344/0/0/0`；10条`competency-generic-v1 + competency-v1`历史结果的维度题计数差异为0，实际分布为`40/4`、`40/8`、`40/40`、`104/0`、`104/104`（总题/已答与维度题/已答维度题一一一致），未重算得分。
+- 结构终验证据：三张新表列数为`9/15/9`；题号唯一索引精确为`UNIQUE(dimension_id,competency_question_type,dimension_item_no)`且临时替代索引残留0；题型、分组和结果查询索引签名全部正确。5个新外键均为RESTRICT/RESTRICT，原15个胜任力外键保留，总数20；exam/group/paper五组关联列collation全部匹配，五类孤儿计数均为0。
+- 迁移后talent-assessment/nginx/mysql均active，内部和公网health均`{"status":"ok"}`，公网登录页可加载；近20分钟应用panic/fatal/unknown-column/missing-table/segmentation计数0。此次仅迁移数据库，没有上传或部署后端/前端，production未修改；仍未导入260807的90题，也未实现效度方向/阈值、一级聚合、新五档、D41/D35映射或10页报告。
+- 当前staging `/tmp` 保留本任务创建的迁移SQL及两份执行日志共3个文件，不含凭据；因删除文件属于破坏性清理，未在无单独确认时删除。正式数据库备份必须保留。
+- [一期A/B维度身份口径确认 - 2026-08-10] 用户确认总体维度数量本期暂不确定；总体正文“40维”与图片可数“34维”均不得作为完整池结论。一期稳定身份优先并用A/B替换D体系：`A1-01`逻辑思维、`A1-02`数字应用、`A1-03`计划执行、`A1-04`持续学习、`A1-05`沟通表达、`B1-01`敬业奉献、`B1-02`求真务实、`B1-03`自律性、`B1-04`成就导向、`B1-05`合作意识；A层为通用能力、B层为心理素养，适用对象为基层员工。
+- 用户确认旧胜任力历史无保留负担，选择“本地改造 + `20.200.136.133` staging全量重置”；传统001/002/003必须保留，production不动。安全顺序固定为：完整数据库/PDF备份和传统摘要 → 停止写流量 → 应用既有整链删除每个胜任力测评并核验PDF路径 → 009预检/锁/一次性替换 → 009第二次no-op → 十维/零D/零旧题文案/传统摘要复核 → 恢复写流量。
+- [一期A/B身份本地实现完成 - 2026-08-10] `competency_002_dimensions.sql`的新库种子已改为且仅为上述一期十维；新增staging-only `competency_009_phase1_identity_reset.sql`，要求同会话显式设置staging和写流量已停止变量、获取会话级锁、检查测评/快照/试卷题/答案/错题本/结果/报告依赖为零，再用持久化marker在事务内清胜任力源题关系/答案、源题、旧`temp-v1`文案和退役主数据并插入十维。009不直接删除exam/paper/candidate/tester/result/report实例，也不推断34/40维。
+- [SQL兼容性纠正 - 2026-08-10] MySQL 5.7官方可预处理语句列表不包含`SIGNAL`；最初的动态`PREPARE SIGNAL`方案已纠正。009使用MySQL 5.7可预处理的`SELECT JSON_EXTRACT(无效JSON)`作为条件失败门，并以确定性错误标识区分未显式授权、迁移锁失败和残留依赖；移除了mysql2执行器不支持的`DELIMITER`/临时存储过程。
+- 维度维护API/UI当前只接受`通用能力/心理素养 + 基层员工 + 顺序1-10`，稳定ID/code继续不可编辑；九列导入说明和示例改为A/B，顺序只要求正整数并必须命中当前维度主数据，不再硬编码1-48，保留未来已确认维度顺序的扩展能力。
+- 候选转换器升级为`competency-phase1-candidate-v2 / 1.1.0`，所有维度题/效度关联/评价文案均绑定A/B ID/code，80道维度题使用`A1-01-Q01`类稳定前缀；退役D映射字段和`MAP-001`已移除。源XLSX SHA-256仍为`2debf83ffcbda000a016f4ea591b688afca7dcfd26730f5c963b131e8477e0b9`，新候选SHA-256=`0210adbe649a56c6af64de8ec24f1320d4a2d82fe0803373c766ec16f2c5c732`；90题、80维度/10效度、62正向/18反向、50条维度分档、5条总体文案保持不变。候选仍为`importReady=false/databaseWritten=false`，剩5个阻塞和3个警告。
+- TDD证据：RED为Go聚焦71通过/8失败、前端132通过/1失败、候选身份首维失败；GREEN为聚焦Go 79/79、Go全量退出码0、前端Vitest 23文件133项全通过、Windows和Linux amd64构建、`go vet ./...`、前端production build、候选身份与字节级确定性检查全部通过。相关编辑器诊断0，scoped `git diff --check`为0；候选身份脚本已精确解除忽略并加入CI定向作业。
+- [未验证 / staging阻塞 - 2026-08-10] 009尚未在真实MySQL 5.7/8执行，首次替换、残留依赖阻断、第二次no-op、传统摘要和报告PDF残留均未取得数据库/文件证据。当前客户端公网IP仍为`20.239.176.250`；`20.200.136.133:22` TCP不可达，使用既有`liming`和密钥只读握手超时，但公网`/prod-api/health`仍返回`{"status":"ok"}`。因此本轮未登录、未备份、未停服务、未删除、未迁移、未部署，production未修改。
+- 本身份切片仍不导入90题，不实现效度方向/阈值、一级聚合、新五档、固定一期产品选择限制或10页正式报告。
+- [纠正 / 一期A/B身份 staging 重置完成 - 2026-08-10] 上述 SSH 与009未验证状态已失效。`20.200.136.133` staging（MySQL 8.0.46）完整备份位于`/opt/talent-assessment/backups/phase1_ab_reset_20260810_141544`，目录0700；数据库归档SHA-256=`50da89e91d7559fe589bae3544bcbf3f4b0f6c06577ecaaec069e965f0ea303c`，7个报告PDF归档SHA-256=`82c24632fe9dff91c0a619a313ea5a1095ce58d240d05c6df255fac0ca50091e`，备份清单复核通过。
+- 重置前有9个胜任力测评、384道源题、48个D维度、392条旧报告文案、62条二级快照、344条题目快照、528条胜任力试卷题、66条二级结果、10条整体结果、7个报告实例和756条审计。停止Nginx写流量后，通过既有整链删除API一次删除9个测评；全部运行/报告依赖归零，7个原PDF路径和胜任力报告目录PDF均归零，临时Redis管理员会话归零。
+- 009脚本上传SHA-256=`428e0fae36fe8b274bb5d07c08dde7298b6f51652f64faded5247e1dfa2441e1`。同一MySQL会话显式设置staging与停写授权后，首次执行`apply_reset=1`，得到marker=1、十个A/B身份逐字段匹配、D=0、源题=0、报告文案=0、运行依赖=0；第二次执行`apply_reset=0`，marker与十维完整行签名不变。十组传统数据签名在整链删除、009和部署后均与基线完全一致。
+- staging部署产物与本地一致：后端SHA-256=`2018167ca515fc9c5f2ac957e9e75720fc2727febf6e15e2c9595c1b845655df`，前端归档SHA-256=`fdb120e61ddb667e25578889e3f483e2410fa6fbf68c69a3472a29057c8e8f03`，index SHA-256=`da918edb9307c03202e925839b8d97e4f3e7653eb58fc6e33c6564b56b3ecef5`；dist为root:root 0755，talent-assessment/nginx/mysql均active，内外health正常，部署窗口后端关键错误0。
+- 真实Nginx API验证维度10、A/B code 10、每维题数0，00401题库total/records均0；真实Chromium验证维度维护表10行、题库0行、维度下拉10项，API失败、console error和page error均0。所有reset/acceptance/UI临时Redis会话与本地令牌状态文件已清理为0；production未修改。
+- [验证边界 - 2026-08-10] `competency_002_dimensions.sql`尚未在全新真实Schema执行；009缺显式授权和残留依赖两类失败门已有静态测试但未做真实数据库负向执行。远端YAML为CRLF，安全解析配置键前必须先移除`\r`；否则会把存在的JWT配置误判为空。
+- [00401 一期 P0/P1 决策闭环 - 2026-08-10] 用户确认：2026-08-07一期方案完全覆盖00401旧胜任力产品逻辑，覆盖范围不含传统001/002/003；产品固定为基层员工、固定`frontline_employee`和十个A/B维度，隐藏维度/报告对象选择并由后端强制校验。其余P0和P1全部采用建议口径，P2继续延期。权威记录为`docs/00401-phase1-customer-decisions-20260810.md`。
+- 一期固定90题全部启用和必答并统一随机混排；80道维度题按原正反向规则计分，B1-04八题全部正向；10道效度题全部标记`validity`并按原始1～5正向累计，不建立伪装维度。效度`<=35`良好、`>35`存疑、未答完为未完成，且不影响二级/一级/总体得分。
+- 二级/一级采用上包含五档边界`1.7/2.7/3.5/4.3`，一级L3统一“中分”；总体按十个二级维度分之和使用`>=45 / >=40 / >=32.5 / >=25 / <25`五档。默认时长20分钟且可配置为任意正值；新五级选项文字随评分版本冻结。
+- 效度存疑完整答卷仍可生成带显著警示的报告，但默认不进入排名/常模/汇总决策统计，并允许关联重测且保留历史。报告采用绿色视觉和A4十页目标但修正一级构成比误导及分页问题；受测者不显示效度原分/阈值，管理端与导出显示；个人信息继续按requiredFields动态展示，一期默认六项。
+- 四类一期版本名确认为`competency-frontline-phase1-v1 / competency-phase1-scoring-v1 / competency-phase1-content-v1 / competency-phase1-report-v1`。允许后续在staging将90题作为候选测试内容导入，但不等于production正式内容批准；production仍需内容负责人、心理测量负责人审批和单独上线授权。
+- 本轮仅记录决策，未改Go/Vue/SQL、未修改转换器或候选JSON、未导入90题、未写数据库、未部署。候选JSON继续保持`importReady=false`，直到后续RED→GREEN实现并重新生成。当前剩余客户交付为批准人/日期、效度良好与存疑最终文案、最终免责声明、正式文案源文件及production上线授权，不再存在P0/P1算法选择歧义。
+- [纠正 / 00401一期90题staging正式导入完成 - 2026-08-10] 上述“未导入90题”状态已失效。staging导入前独立完整备份位于`/opt/talent-assessment/backups/phase1_90_import_20260810_161855`，包含数据库、旧后端、旧前端及传统题/题库关系/答案签名；数据库归档`gzip -t`通过，导入后三组传统签名全部不变。
+- 一期候选已升级为`competency-phase1-import-v3 / converter 1.2.0`，`importReady=true`、blockers/warnings均为0；确定性十列工作簿SHA-256=`828c4267e6c7ad387a73ddb0e923b461d5a336ef225bd7414216c0def814de9f`。正式预览API返回90成功/0错误，正式导入返回90；重复预览返回0成功/90错误，重复正式导入被拒且行数保持90。
+- staging最终数据为总题/唯一题号/维度题/效度题/维度正向/维度反向/效度正向/启用=`90/90/80/10/62/18/10/90`；10个A/B维度各8道维度题+1道关联效度题；胜任力题的`el_qu_answer`和`el_qu_repo`关联均为0，胜任力测评仍为0。
+- FB-103按RED→GREEN修复维度启用题数误计效度题，维度API现在10维合计80题；FB-104按RED→GREEN修正导入弹窗“九列模板”为“十列模板”。Go全量、`go vet`、Linux build和前端23文件135项、production build全部通过。
+- staging最终部署后端SHA-256=`eb0766cd5a98535c876457eb012f7bc1780f9e39bc4dc09ea75f80f4fe2d65a7`，前端归档=`1670a327e7cc1cead0b68b36a64eaead59e4b0509f4f1723b3dcded941c514a0`，index=`7c912375ed212515dafeedc4b717c75fcd8ce38ae0a98cc0a98231a5ca639366`。真实导出十列表头+90行并与导入文件按题号逐行一致；真实Chromium首屏含维度题/效度题标签、总数90、十列提示，console/request错误均0。
+- 终验service/nginx/mysql均active、health ok、应用关键错误0、短时`phase1-*` Redis会话0、远端临时上传文件已清理。完整证据见`docs/00401-phase1-90-import-verification-20260810.md`。本切片仍不实现固定一期测评运行时、新五档、一级聚合、效度结果算法或正式十页报告；production未修改。
+- [00401一期固定产品配置本地完成 - 2026-08-10] 用户选择先完成固定配置，并明确在新五档、一级聚合和效度算法尚未实现时禁止发布。后端固定报告对象`frontline_employee`、十个A/B维度及顺序、四类一期版本；空固定字段按一期画像补齐，leader、缺失/换序维度或任一其他版本在数据库事务前拒绝。
+- 草稿保存新增一次题型分组查询，要求十维全部启用且每维恰有8道启用`dimension`和1道启用`validity`，未知题型为0；关联草稿的`question_count`仍只保存维度题数8。发布服务识别一期版本后立即返回`ErrPhase1CompetencyRuntimePending`，不读取或写入快照，避免旧`competency-v1`算法冒充一期评分。
+- 前端隐藏领导人员版和维度选择器，显示只读“基层员工·10个A/B维度·90题”及四版本；切换胜任力自动写固定字段、新建默认20分钟和六项个人信息；切回legacy继续清空一期字段并恢复题库控件。发布按钮禁用且显示“一期五档、一级维度和效度运行时完成后方可发布”。
+- TDD证据：后端RED为8个一期符号未定义，前端RED为2项固定画像缺失；GREEN后聚焦Go与前端通过，Go全量、`go vet`、Windows build、前端23文件137项和production build通过，编辑器诊断0。该切片未部署staging/production；下一独立任务为一期五档计分、一级聚合或效度结果算法。
+- [00401一期五档纯评分引擎本地完成 - 2026-08-10] 新增`CalculatePhase1CompetencyResult`，只接收80道`dimension`输入并强制十个A/B身份、固定顺序、每维8题；维度分使用精确`big.Rat(scoreSum/8)`，总体分为十个精确维度分之和，不提前四舍五入，也不复用旧四档所需的维度均值。
+- 二级L1-L5精确使用上包含边界1.7/2.7/3.5/4.3；总体使用`<25 / >=25 / >=32.5 / >=40 / >=45`，内部码为`not_qualified/weak/qualified/good/excellent`。可信超时的不完整输入保留80题及已答计数，但不输出正式维度分、总体分或等级；缺行、混入validity、未知维度或顺序不匹配直接拒绝。
+- TDD证据：RED为一期等级常量和评分函数均未定义；GREEN覆盖二级边界、总体边界、十维精确总分30、反序输入仍按A/B输出、不完整无正式分和畸形输入拒绝。Go全量、`go vet`和Windows build通过，编辑器诊断0。
+- 本切片只完成无DB依赖纯评分引擎，未接入Submit持久化，未修改现有历史`CalculateCompetencyResult`；原因是一期提交必须同时正确拆分80道维度题/10道效度题并写一级与效度结果，不能先写半套正式结果。I3运行时接入仍标❌，发布门禁继续关闭；未部署staging/production。
+- [00401一期一级维度聚合纯函数本地完成 - 2026-08-10] 新增`CalculatePhase1GroupResults`：无论十个二级结果输入顺序如何，固定输出`general_ability/通用能力`（A1-01～A1-05）和`psychological_quality/心理素养`（B1-01～B1-05），顺序1/2，子维度集合不可替换。
+- 完整一级分为五个精确二级`big.Rat`的平均值，并复用一期二级上包含L1-L5边界；不提前四舍五入。任一子维度不完整时，一级结果保留总/有效维度数和总/已答题数，但`Score=nil`、level为空且`IsComplete=false`；另一组不受影响。缺失、重复、未知身份、顺序错误、题数/已答数非法、完整但无分或分数/等级不一致均拒绝。
+- TDD证据：RED为固定一级码和`CalculatePhase1GroupResults`未定义；GREEN覆盖反序输入固定输出、两组精确均值3/L3、单维未答后的5/4与40/39计数、1.7/2.7/3.5/4.3边界和5类畸形输入。Go全量、`go vet`、Windows build通过，编辑器诊断0。
+- 本切片仍只实现无DB依赖聚合纯函数，未创建`el_exam_competency_group`快照或写`el_competency_group_result`；必须等待效度算法后与一期90题发布/提交事务统一接入。I4运行时接入仍为❌，发布门禁继续关闭；未部署staging/production。
+- [00401一期效度计算纯函数本地完成 - 2026-08-11] 新增`CalculatePhase1ValidityResult`，严格接收10道唯一、有序、`validity + forward`题，只累加原始1～5分，不执行反向转换，也不读取/修改二级、一级或总体结果。
+- 10题完成时`V<=35`返回`good`、`V>35`返回`questionable`；35/36边界和10/50极值均有测试。可信超时未完成时保留总题/已答计数，`Score=nil`、status=`incomplete`、`IsComplete=false`。题数非10、混入dimension、raw越界、反向元数据、空/重复题号或顺序错误均拒绝。
+- TDD证据：RED为效度输入/结果类型、三状态常量和计算函数未定义；GREEN后聚焦效度测试通过，Go全量、`go vet`和Windows build通过，编辑器诊断0。
+- 五档、一级聚合和效度三套纯函数现已齐备，但仍未接入DB。下一独立切片应统一完成：90题发布快照（含两个一级快照）→ Submit按题型拆分80/10 → 写10条二级、2条一级、1条效度和1条总体结果 → 默认统计排除不完整/存疑 → 解除发布门禁。I3/I4/I5运行时分支继续为❌；未部署staging/production。

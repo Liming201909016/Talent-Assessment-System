@@ -107,8 +107,8 @@ func TestBugFB019_RepoIDResolution(t *testing.T) {
 
 // TestBugFB051_LegacyQuestionAPIsExcludeCompetencyQuestions
 // 对应：docs/regression-tests.md FB-051
-// 复现：全局传统题目页混入 dimension_id 非空且无 answerList 的胜任力题，页面崩溃；传统写接口还能编辑或删除胜任力源题。
-// 期望：传统读接口仅返回 dimension_id IS NULL；所有传统写入口在写入前拒绝胜任力题目 ID/元数据。
+// 复现：全局传统题目页混入胜任力题且无 answerList，页面崩溃；传统写接口还能编辑或删除胜任力源题。
+// 期望：传统读接口排除 dimension_id 或 competency_question_type 非空的题；所有传统写入口在写入前拒绝胜任力题目 ID/元数据。
 func TestBugFB051_LegacyQuestionAPIsExcludeCompetencyQuestions(t *testing.T) {
 	quSource := readSourceFile(t, "qu.go")
 	checks := []struct {
@@ -127,6 +127,12 @@ func TestBugFB051_LegacyQuestionAPIsExcludeCompetencyQuestions(t *testing.T) {
 			if !strings.Contains(body, required) {
 				t.Errorf("%s missing competency isolation %q", check.signature, required)
 			}
+		}
+	}
+	guard := readSourceFile(t, "qu_competency_guard.go")
+	for _, required := range []string{"question.CompetencyQuestionType != nil", "competency_question_type IS NOT NULL"} {
+		if !strings.Contains(guard, required) {
+			t.Errorf("competency question guard missing question-type isolation %q", required)
 		}
 	}
 

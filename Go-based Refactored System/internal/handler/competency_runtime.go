@@ -27,6 +27,16 @@ func NewCompetencyRuntimeHandler(db *gorm.DB, cfg *config.Config) *CompetencyRun
 func (h *CompetencyRuntimeHandler) RuntimeService() *service.CompetencyRuntimeService { return h.svc }
 
 func (h *CompetencyRuntimeHandler) Publish(c *gin.Context) {
+	value, ok := c.Get("loginUser")
+	if !ok {
+		response.AjaxUnauthorized(c, "")
+		return
+	}
+	login, ok := value.(*model.LoginUser)
+	if !ok || !canPublishCompetencyExam(login) {
+		response.AjaxForbidden(c, "无权发布胜任力测评")
+		return
+	}
 	var body struct {
 		ExamID string `json:"examId"`
 	}
@@ -34,19 +44,28 @@ func (h *CompetencyRuntimeHandler) Publish(c *gin.Context) {
 		response.RestErr(c, "examId 为空")
 		return
 	}
-	var publishedBy *int64
-	if value, ok := c.Get("loginUser"); ok {
-		if login, ok := value.(*model.LoginUser); ok {
-			id := login.UserID
-			publishedBy = &id
-		}
-	}
+	publishedBy := &login.UserID
 	summary, err := h.svc.Publish(body.ExamID, publishedBy)
 	if err != nil {
 		response.RestErr(c, err.Error())
 		return
 	}
 	response.Rest(c, summary)
+}
+
+func canPublishCompetencyExam(login *model.LoginUser) bool {
+	if login == nil {
+		return false
+	}
+	if login.UserID == 1 {
+		return true
+	}
+	for _, permission := range login.Permissions {
+		if permission == "*:*:*" {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *CompetencyRuntimeHandler) CreatePaper(c *gin.Context) {
@@ -204,6 +223,7 @@ func (h *CompetencyRuntimeHandler) ResultsPaging(c *gin.Context) {
 		Name          string `json:"name"`
 		Telephone     string `json:"telephone"`
 		Completion    string `json:"completion"`
+		Validity      string `json:"validity"`
 		SortBy        string `json:"sortBy"`
 		SortDirection string `json:"sortDirection"`
 		DimensionID   string `json:"dimensionId"`
@@ -223,7 +243,7 @@ func (h *CompetencyRuntimeHandler) ResultsPaging(c *gin.Context) {
 	}
 	request := service.CompetencyResultPageRequest{
 		ExamID: body.ExamID, Current: body.Current, Size: body.Size,
-		Name: body.Name, Telephone: body.Telephone, Completion: body.Completion,
+		Name: body.Name, Telephone: body.Telephone, Completion: body.Completion, Validity: body.Validity,
 		SortBy: body.SortBy, SortDirection: body.SortDirection, DimensionID: body.DimensionID,
 	}
 	rows, total, err := h.svc.ResultPaging(request)

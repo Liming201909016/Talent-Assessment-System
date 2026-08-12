@@ -3,7 +3,7 @@
     <div class="page-heading">
       <div>
         <h2>00401 胜任力测验题库</h2>
-        <p>按48个胜任力维度管理的专用题目视图</p>
+        <p>按当前A/B胜任力维度管理的专用题目视图</p>
       </div>
       <div class="heading-actions">
         <el-button icon="el-icon-setting" @click="$router.push({ name: 'CompetencyDimensionMaintenance' })">维度维护</el-button>
@@ -27,7 +27,7 @@
         </el-select>
       </el-form-item>
       <el-form-item label="题目编号">
-        <el-input v-model="query.params.questionCode" clearable placeholder="如 D01-Q01" @keyup.enter.native="handleQuery" />
+        <el-input v-model="query.params.questionCode" clearable placeholder="如 A1-01-Q01" @keyup.enter.native="handleQuery" />
       </el-form-item>
       <el-form-item label="题干">
         <el-input v-model="query.params.content" clearable placeholder="输入题干关键词" @keyup.enter.native="handleQuery" />
@@ -41,7 +41,10 @@
     <el-alert title="题号、所属维度和维度内题号为身份字段，不可修改；内容修改仅影响未来发布，已发布测评继续使用原快照。" type="info" :closable="false" show-icon class="mb12" />
 
     <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column label="题目编号" prop="questionCode" width="120" align="center" />
+      <el-table-column label="题目编号" prop="questionCode" width="130" align="center" />
+      <el-table-column label="题目类型" width="80" align="center">
+        <template slot-scope="scope"><el-tag :type="scope.row.competencyQuestionType === 'validity' ? 'warning' : 'primary'" size="mini">{{ scope.row.competencyQuestionType === 'validity' ? '效度题' : '维度题' }}</el-tag></template>
+      </el-table-column>
       <el-table-column label="维度" min-width="150">
         <template slot-scope="scope">{{ scope.row.dimensionCode }} {{ scope.row.dimensionName }}</template>
       </el-table-column>
@@ -91,7 +94,7 @@
     <el-dialog title="导入胜任力题目" :visible.sync="importVisible" width="760px" append-to-body @closed="resetImport">
       <el-upload ref="importUpload" action="#" accept=".xlsx" :auto-upload="false" :limit="1" :on-change="selectImportFile" :on-remove="clearImportFile" :file-list="importFileList">
         <el-button icon="el-icon-folder-opened">选择xlsx文件</el-button>
-        <span slot="tip" class="el-upload__tip">必须使用专用九列模板，文件不超过10 MiB；先预览校验，再正式导入。</span>
+        <span slot="tip" class="el-upload__tip">必须使用专用十列模板，文件不超过10 MiB；先预览校验，再正式导入。</span>
       </el-upload>
       <div class="preview-actions">
         <el-button type="primary" plain :disabled="!importFile" :loading="previewLoading" @click="previewImport">预览校验</el-button>
@@ -103,7 +106,8 @@
           <el-table-column label="错误信息"><template slot-scope="scope">{{ (scope.row.messages || []).join('；') }}</template></el-table-column>
         </el-table>
         <el-table v-else :data="(importPreview.successRows || []).slice(0, 20)" border size="mini" max-height="300" class="preview-table">
-          <el-table-column label="题目编号" prop="questionCode" width="120" />
+          <el-table-column label="题目编号" prop="questionCode" width="130" />
+          <el-table-column label="题目类型" width="80"><template slot-scope="scope">{{ scope.row.questionType === 'validity' ? '效度题' : '维度题' }}</template></el-table-column>
           <el-table-column label="维度" prop="dimensionName" width="140" />
           <el-table-column label="题目内容" prop="content" show-overflow-tooltip />
           <el-table-column label="方向" width="70"><template slot-scope="scope">{{ scope.row.direction === 'reverse' ? '反向' : '正向' }}</template></el-table-column>

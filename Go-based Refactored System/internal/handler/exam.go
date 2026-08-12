@@ -228,9 +228,13 @@ func (h *ExamHandler) enrichExamRows(rows []model.Exam) []gin.H {
 			"openType": e.OpenType, "joinType": e.JoinType, "isOpen": e.IsOpen,
 			"answerType": e.AnswerType, "level": e.Level, "state": e.State,
 			"assessmentType": e.AssessmentType, "scoringMode": e.ScoringMode,
-			"competencyReportAudience": e.CompetencyReportAudience,
-			"publishStatus":            e.PublishStatus,
-			"timeLimit":                e.TimeLimit != 0, "showPdf": e.ShowPdf != 0,
+			"competencyReportAudience":        e.CompetencyReportAudience,
+			"competencyProductVersion":        e.CompetencyProductVersion,
+			"competencyScoringVersion":        e.CompetencyScoringVersion,
+			"competencyContentVersion":        e.CompetencyContentVersion,
+			"competencyReportTemplateVersion": e.CompetencyReportTemplateVersion,
+			"publishStatus":                   e.PublishStatus,
+			"timeLimit":                       e.TimeLimit != 0, "showPdf": e.ShowPdf != 0,
 			"startTime": fmtExamTime(e.StartTime), "endTime": fmtExamTime(e.EndTime),
 			"createTime": e.CreateTime, "updateTime": e.UpdateTime,
 			"totalScore": e.TotalScore, "totalTime": e.TotalTime,
@@ -323,9 +327,13 @@ func (h *ExamHandler) Detail(c *gin.Context) {
 		"openType": e.OpenType, "joinType": e.JoinType, "isOpen": e.IsOpen,
 		"answerType": e.AnswerType, "level": e.Level, "state": e.State,
 		"assessmentType": e.AssessmentType, "scoringMode": e.ScoringMode,
-		"competencyReportAudience": e.CompetencyReportAudience,
-		"publishStatus":            e.PublishStatus,
-		"publishedAt":              e.PublishedAt, "publishedBy": e.PublishedBy,
+		"competencyReportAudience":        e.CompetencyReportAudience,
+		"competencyProductVersion":        e.CompetencyProductVersion,
+		"competencyScoringVersion":        e.CompetencyScoringVersion,
+		"competencyContentVersion":        e.CompetencyContentVersion,
+		"competencyReportTemplateVersion": e.CompetencyReportTemplateVersion,
+		"publishStatus":                   e.PublishStatus,
+		"publishedAt":                     e.PublishedAt, "publishedBy": e.PublishedBy,
 		"timeLimit": e.TimeLimit != 0, "showPdf": e.ShowPdf != 0,
 		"startTime": fmtExamTime(e.StartTime), "endTime": fmtExamTime(e.EndTime),
 		"createTime": e.CreateTime, "updateTime": e.UpdateTime,
@@ -376,27 +384,31 @@ func (h *ExamHandler) Save(c *gin.Context) {
 
 	// 用扁平 struct 接收（避免 model.Exam 嵌入导致的 JSON tag 冲突）
 	var body struct {
-		ID                       string           `json:"id"`
-		Title                    string           `json:"title"`
-		Content                  string           `json:"content"`
-		OpenType                 int              `json:"openType"`
-		JoinType                 int              `json:"joinType"`
-		IsOpen                   int              `json:"isOpen"`
-		AnswerType               int              `json:"answerType"`
-		Level                    int              `json:"level"`
-		State                    int              `json:"state"`
-		TotalScore               int              `json:"totalScore"`
-		TotalTime                int              `json:"totalTime"`
-		QualifyScore             int              `json:"qualifyScore"`
-		PdfPath                  string           `json:"pdfPath"`
-		RequiredFields           string           `json:"requiredFields"`
-		StuFlag                  int8             `json:"stuFlag"`
-		AssessmentType           string           `json:"assessmentType"`
-		ScoringMode              string           `json:"scoringMode"`
-		CompetencyReportAudience string           `json:"competencyReportAudience"`
-		DimensionIDs             []string         `json:"dimensionIds"`
-		RepoList                 []model.ExamRepo `json:"repoList"`
-		DepartIDs                []string         `json:"departIds"`
+		ID                              string           `json:"id"`
+		Title                           string           `json:"title"`
+		Content                         string           `json:"content"`
+		OpenType                        int              `json:"openType"`
+		JoinType                        int              `json:"joinType"`
+		IsOpen                          int              `json:"isOpen"`
+		AnswerType                      int              `json:"answerType"`
+		Level                           int              `json:"level"`
+		State                           int              `json:"state"`
+		TotalScore                      int              `json:"totalScore"`
+		TotalTime                       int              `json:"totalTime"`
+		QualifyScore                    int              `json:"qualifyScore"`
+		PdfPath                         string           `json:"pdfPath"`
+		RequiredFields                  string           `json:"requiredFields"`
+		StuFlag                         int8             `json:"stuFlag"`
+		AssessmentType                  string           `json:"assessmentType"`
+		ScoringMode                     string           `json:"scoringMode"`
+		CompetencyReportAudience        string           `json:"competencyReportAudience"`
+		CompetencyProductVersion        string           `json:"competencyProductVersion"`
+		CompetencyScoringVersion        string           `json:"competencyScoringVersion"`
+		CompetencyContentVersion        string           `json:"competencyContentVersion"`
+		CompetencyReportTemplateVersion string           `json:"competencyReportTemplateVersion"`
+		DimensionIDs                    []string         `json:"dimensionIds"`
+		RepoList                        []model.ExamRepo `json:"repoList"`
+		DepartIDs                       []string         `json:"departIds"`
 	}
 	if err := json.Unmarshal(rawBytes, &body); err != nil {
 		slog.Info("exam-save: unmarshal error", "value", err)
@@ -418,18 +430,37 @@ func (h *ExamHandler) Save(c *gin.Context) {
 		response.RestErr(c, "测评类型与计分模式不匹配")
 		return
 	}
+	versions := service.CompetencyVersionSet{}
 	if isCompetency {
+		phase1Profile := service.NormalizePhase1CompetencyConfiguration()
 		if body.TotalTime <= 0 {
 			response.RestErr(c, "胜任力测评必须配置大于0的答题时长")
 			return
 		}
-		if err := service.ValidateCompetencyReportAudience(body.CompetencyReportAudience); err != nil {
-			response.RestErr(c, "请选择基层员工版或领导人员版")
-			return
+		if body.CompetencyReportAudience == "" {
+			body.CompetencyReportAudience = phase1Profile.ReportAudience
 		}
-		body.DimensionIDs, err = service.ValidateCompetencyDimensionIDs(body.DimensionIDs)
-		if err != nil {
-			response.RestErr(c, "请至少选择一个不重复的测评维度")
+		if len(body.DimensionIDs) == 0 {
+			body.DimensionIDs = append([]string(nil), phase1Profile.DimensionIDs...)
+		}
+		versions = service.CompetencyVersionSet{
+			ProductVersion: body.CompetencyProductVersion, ScoringVersion: body.CompetencyScoringVersion,
+			ContentVersion: body.CompetencyContentVersion, ReportTemplateVersion: body.CompetencyReportTemplateVersion,
+		}
+		if versions.ProductVersion == "" {
+			versions.ProductVersion = phase1Profile.Versions.ProductVersion
+		}
+		if versions.ScoringVersion == "" {
+			versions.ScoringVersion = phase1Profile.Versions.ScoringVersion
+		}
+		if versions.ContentVersion == "" {
+			versions.ContentVersion = phase1Profile.Versions.ContentVersion
+		}
+		if versions.ReportTemplateVersion == "" {
+			versions.ReportTemplateVersion = phase1Profile.Versions.ReportTemplateVersion
+		}
+		if err := service.ValidatePhase1CompetencyConfiguration(body.CompetencyReportAudience, body.DimensionIDs, versions); err != nil {
+			response.RestErr(c, "00401一期固定配置只能使用基层员工、十个A/B维度和已确认版本")
 			return
 		}
 		body.RepoList = make([]model.ExamRepo, 0)
@@ -502,6 +533,11 @@ func (h *ExamHandler) Save(c *gin.Context) {
 		CompetencyReportAudience: reportAudience,
 		StartTime:                startTime, EndTime: endTime, TimeLimit: timeLimit, ShowPdf: showPdf,
 	}
+	if isCompetency {
+		service.ApplyCompetencyVersions(&exam, versions)
+	} else {
+		service.ClearCompetencyVersions(&exam)
+	}
 
 	// 1. 计算总分（仅题库组卷）
 	if !isCompetency && body.JoinType == joinTypeRepoJoin {
@@ -532,6 +568,7 @@ func (h *ExamHandler) Save(c *gin.Context) {
 		wasPublishedCompetency := false
 		selectedDimensions := make([]model.CompetencyDimension, 0)
 		enabledQuestionCounts := make(map[string]int)
+		phase1QuestionInventory := make(map[string]service.Phase1QuestionTypeCounts)
 		if isNew {
 			exam.ID = strconv.FormatInt(nextID(), 10)
 			exam.CreateTime = &now
@@ -555,6 +592,9 @@ func (h *ExamHandler) Save(c *gin.Context) {
 					exam.CompetencyReportAudience == nil ||
 					*original.CompetencyReportAudience != *exam.CompetencyReportAudience {
 					return errors.New("已发布胜任力测评不能修改报告版本")
+				}
+				if service.CompetencyVersionSetFromExam(original) != service.CompetencyVersionSetFromExam(exam) {
+					return errors.New("已发布胜任力测评不能修改产品、评分、内容或模板版本")
 				}
 				var existingDimensionIDs []string
 				if err := tx.Model(&model.ExamCompetencyDimension{}).
@@ -589,12 +629,15 @@ func (h *ExamHandler) Save(c *gin.Context) {
 			if len(selectedDimensions) != len(body.DimensionIDs) {
 				return errors.New("所选测评维度不存在或已停用")
 			}
-			enabledQuestionCounts, err = loadEnabledQuestionCounts(tx, body.DimensionIDs)
+			phase1QuestionInventory, err = loadPhase1QuestionInventory(tx, body.DimensionIDs)
 			if err != nil {
 				return err
 			}
-			if err := validateEnabledQuestionCounts(selectedDimensions, enabledQuestionCounts); err != nil {
-				return err
+			if err := service.ValidatePhase1QuestionInventory(body.DimensionIDs, phase1QuestionInventory); err != nil {
+				return errors.New("00401一期题本必须包含每维8道维度题和1道效度题")
+			}
+			for _, dimension := range selectedDimensions {
+				enabledQuestionCounts[dimension.ID] = phase1QuestionInventory[dimension.ID].Dimension
 			}
 		}
 		exam.UpdateTime = &now
@@ -789,6 +832,12 @@ func deleteCompetencyExamChain(tx *gorm.DB, examIDs []string) error {
 		if err := tx.Exec("DELETE FROM el_competency_report WHERE paper_id IN ?", paperIDs).Error; err != nil {
 			return err
 		}
+		if err := tx.Exec("DELETE FROM el_competency_group_result WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM el_competency_validity_result WHERE paper_id IN ?", paperIDs).Error; err != nil {
+			return err
+		}
 		if err := tx.Exec("DELETE FROM el_competency_dimension_result WHERE paper_id IN ?", paperIDs).Error; err != nil {
 			return err
 		}
@@ -823,6 +872,9 @@ func deleteCompetencyExamChain(tx *gorm.DB, examIDs []string) error {
 		return err
 	}
 	if err := tx.Where("exam_id IN ?", examIDs).Delete(&model.ExamCompetencyDimension{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("exam_id IN ?", examIDs).Delete(&model.ExamCompetencyGroup{}).Error; err != nil {
 		return err
 	}
 	if err := tx.Where("exam_id IN ?", examIDs).Delete(&model.ExamRepo{}).Error; err != nil {

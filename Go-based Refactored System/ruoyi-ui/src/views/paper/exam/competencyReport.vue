@@ -1,5 +1,28 @@
 <template>
-  <div v-if="data" class="competency-report">
+  <div v-if="data">
+  <div v-if="reportKind === 'frontline_phase1'" class="competency-report phase1-report">
+    <section class="cover report-page phase1-cover">
+      <div class="cover-corner" /><div class="cover-content"><p class="report-eyebrow">{{ phase1Catalog.fixedTexts.coverEnglish }}</p><h1>{{ phase1Catalog.fixedTexts.coverTitle }}</h1><p class="cover-slogan">{{ phase1Catalog.fixedTexts.coverSlogan }}</p><div class="phase1-cover-meta"><p>{{ data.meta && data.meta.examTitle || '—' }}</p><p>{{ data.result.participantName || '—' }}</p><p>{{ reportDate }}</p></div></div><div class="cover-rings" />
+    </section>
+    <section class="report-page phase1-guide">
+      <header class="page-title">报告阅读说明</header><p>{{ phase1Catalog.fixedTexts.readingBackground }}</p><p>{{ phase1Catalog.fixedTexts.readingDimensions }}</p><div class="phase1-matrix"><article v-for="group in phase1Catalog.groups" :key="group.code"><h2>{{ group.name }}</h2><p>{{ group.description }}</p><div><span v-for="dimension in dimensionsForGroup(group.code)" :key="dimension.id">{{ dimension.code }} {{ dimension.name }}</span></div></article></div><p>{{ phase1Catalog.fixedTexts.readingUsage }}</p><div class="notice-box"><h3>特别说明</h3><p>{{ phase1Catalog.fixedTexts.specialNotice }}</p></div>
+    </section>
+    <section class="report-page phase1-overview">
+      <header class="page-title">报告详细解读</header><h2 class="section-title"><i />个人信息</h2><div class="person-grid"><div v-for="field in personFields" :key="field.key"><span>{{ field.label }}</span><strong>{{ field.value || '—' }}</strong></div><div><span>完成时间</span><strong>{{ completedAt }}</strong></div><div><span>答题时长</span><strong>{{ data.meta && data.meta.userTime || '—' }} 分钟</strong></div></div><h2 class="section-title"><i />总体评价</h2><div class="overall-summary"><div class="overall-score"><strong>{{ format(data.result.overallScore) }}</strong><em>/ {{ data.overallMaxScore || 50 }}</em></div><div class="overall-copy"><p>您的胜任力总体等级为</p><h3>{{ overallLevelLabel(data.result.overallLevel) }}</h3></div></div><div class="interpretation"><h3>【诊断】</h3><p>{{ reportText.overallText }}</p></div><div class="notice-box validity-notice"><h3>作答有效性提示</h3><p>{{ reportText.validityText }}</p></div>
+    </section>
+    <section class="report-page phase1-groups">
+      <header class="page-title">一级维度测评结果分析</header><div class="group-score-grid"><article v-for="group in phase1Groups" :key="group.groupCode"><small>{{ groupLevelLabel(group.levelCode) }}</small><h2>{{ group.name }}</h2><strong>{{ format(group.groupScore) }} / {{ data.groupMaxScore || 5 }}</strong><p>{{ reportText.groupTexts && reportText.groupTexts[group.groupCode] || group.description }}</p></article></div><div class="level-legend"><span v-for="level in phase1Catalog.dimensions[0].levels" :key="level.code"><b>{{ level.groupLabel }}</b>{{ level.displayRange }}</span></div>
+    </section>
+    <section class="report-page phase1-radar">
+      <header class="page-title">二级维度测评结果</header><div class="radar-layout"><svg class="radar-chart" viewBox="0 0 360 360" role="img" aria-label="十个二级维度雷达图，满分5分"><g class="radar-grid"><polygon v-for="factor in [0.2,0.4,0.6,0.8,1]" :key="factor" :points="radarGridPoints(factor)" /><line v-for="axis in radarAxes" :key="axis.id" x1="180" y1="180" :x2="axis.x" :y2="axis.y" /></g><polygon class="radar-value" :points="radarPoints" /><circle v-for="point in radarValuePoints" :key="point.id" :cx="point.x" :cy="point.y" r="4" /></svg><div class="radar-legend"><article v-for="dimension in phase1Dimensions" :key="dimension.id"><span>{{ dimension.code }} {{ dimension.name }}</span><strong>{{ format(dimension.dimensionScore) }}</strong><em>{{ secondaryLevelLabel(dimension.levelCode) }}</em></article></div></div><div class="level-legend secondary"><span v-for="level in phase1Catalog.dimensions[0].levels" :key="level.code"><b>{{ level.secondaryLabel }}</b>{{ level.displayRange }}</span></div>
+    </section>
+    <section v-for="(pair, pairIndex) in phase1DimensionPairs" :key="pairIndex" class="report-page phase1-dimension-pair">
+      <header class="page-title">{{ pair[0].groupName }}结果及建议</header><article v-for="dimension in pair" :key="dimension.id" class="phase1-dimension-card"><div class="dimension-card-head"><div><small>{{ dimension.code }}</small><h2>{{ dimension.name }}</h2></div><div><strong>{{ format(dimension.dimensionScore) }} / {{ data.dimensionMaxScore || 5 }}</strong><em>{{ secondaryLevelLabel(dimension.levelCode) }}</em></div></div><p class="dimension-definition">{{ dimension.definition }}</p><div class="dimension-diagnosis"><h3>【诊断与建议】</h3><p>{{ reportText.dimensionTexts && reportText.dimensionTexts[dimension.id] }}</p></div></article>
+    </section>
+    <span v-if="phase1Pages.length === 10" class="page-contract" aria-hidden="true" />
+  </div>
+
+  <div v-else class="competency-report">
     <el-alert class="temporary-alert" :title="data.reportTextMessage" type="error" :closable="false" show-icon />
 
     <section class="cover report-page">
@@ -105,15 +128,36 @@
       </div>
     </section>
   </div>
+  </div>
 </template>
 
 <script>
 import { fetchCompetencyInternalReportData, fetchCompetencyReportData } from '@/api/competency'
+import phase1Catalog from '@/data/competencyPhase1ReportCatalog'
 
 export default {
   name: 'CompetencyReport',
   data() { return { data: null } },
   computed: {
+    phase1Catalog() { return phase1Catalog },
+    reportKind() { return this.data && this.data.reportKind || 'generic' },
+    phase1Pages() { return this.data && this.data.pages || [] },
+    phase1Dimensions() {
+      const scores = this.data && this.data.dimensions || []
+      return phase1Catalog.dimensions.map(dimension => ({ ...dimension, ...(scores.find(score => score.dimensionId === dimension.id) || {}) }))
+    },
+    phase1Groups() {
+      const scores = this.data && this.data.groups || []
+      return phase1Catalog.groups.map(group => ({ ...group, ...(scores.find(score => score.groupCode === group.code) || {}) }))
+    },
+    phase1DimensionPairs() {
+      const dimensions = this.phase1Dimensions
+      return Array.from({ length: 5 }, (_, index) => dimensions.slice(index * 2, index * 2 + 2))
+    },
+    radarAxes() { return this.phase1Dimensions.map((dimension, index) => ({ id: dimension.id, ...this.radarPoint(index, 1) })) },
+    radarValuePoints() { return this.phase1Dimensions.map((dimension, index) => ({ id: dimension.id, ...this.radarPoint(index, Number(dimension.dimensionScore || 0) / 5) })) },
+    radarPoints() { return this.radarValuePoints.map(point => `${point.x},${point.y}`).join(' ') },
+    showRawScoreToParticipant() { return false },
     audienceLabel() { return this.data.result.reportAudience === 'leader' ? '领导人员版' : '基层员工版' },
     reportDate() { return this.formatDate(this.data.meta && this.data.meta.generatedAt || this.data.result.submittedAt) },
     completedAt() { return this.formatDate(this.data.result.submittedAt, true) },
@@ -166,6 +210,13 @@ export default {
     },
     genderLabel(value) { return value === '0' ? '男' : value === '1' ? '女' : value || '—' },
     levelLabel(value) { return { low: '较低', average: '一般', good: '良好', high: '较高' }[value] || '—' },
+    catalogDimension(id) { return phase1Catalog.dimensions.find(dimension => dimension.id === id) || {} },
+    dimensionsForGroup(code) { return phase1Catalog.dimensions.filter(dimension => dimension.groupCode === code) },
+    secondaryLevelLabel(value) { const level = phase1Catalog.dimensions[0].levels.find(item => item.code === value); return level ? level.secondaryLabel : '—' },
+    groupLevelLabel(value) { const level = phase1Catalog.dimensions[0].levels.find(item => item.code === value); return level ? level.groupLabel : '—' },
+    overallLevelLabel(value) { const level = phase1Catalog.overallLevels.find(item => item.code === value); return level ? level.name : '—' },
+    radarPoint(index, factor) { const angle = -Math.PI / 2 + index * Math.PI * 2 / 10; const radius = 125 * factor; return { x: Number((180 + Math.cos(angle) * radius).toFixed(2)), y: Number((180 + Math.sin(angle) * radius).toFixed(2)) } },
+    radarGridPoints(factor) { return this.phase1Dimensions.map((dimension, index) => { const point = this.radarPoint(index, factor); return `${point.x},${point.y}` }).join(' ') },
     scoreWidth(value) { return Math.max(0, Math.min(100, Number(value || 0) / 5 * 100)) },
     pad(value) { return String(value).padStart(2, '0') },
     dimensionText(dimension) { return this.reportText.dimensionTexts[dimension.dimensionId] || '临时维度文案缺失' },
@@ -203,6 +254,13 @@ export default {
 .legend-box { padding:18px 26px; background:var(--mint); }.legend-box p { margin:8px 0; }
 .dimension-heading { display:flex; align-items:center; gap:45px; margin:55px 0 38px; }.score-ring { --score:50%; width:170px; height:170px; flex:none; border-radius:50%; background:conic-gradient(var(--green) var(--score),#e5e9e7 0); display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; }.score-ring:before { content:""; position:absolute; inset:18px; border-radius:50%; background:#fff; }.score-ring strong,.score-ring span { z-index:1; }.score-ring strong { font-size:40px; }.score-ring span { color:#7c8580; }.dimension-heading small { color:var(--green); font-weight:700; }.dimension-heading h2 { margin:0; font-size:30px; }.dimension-heading p { margin:3px 0; }
 .meaning-box,.dimension-copy,.development-box { margin:24px 0; }.development-box li { margin:10px 0; }.development-box>p { color:#f56c6c; font-size:13px; font-weight:700; }
+.phase1-report { --green:#25a55f; --deep:#165c3b; --mint:#edf8f1; }
+.phase1-cover .report-eyebrow { color:#4f7f67; letter-spacing:2px; }.phase1-cover h1 { color:#24342b; font-size:44px; line-height:1.35; }.phase1-cover h1 strong { color:var(--green); font-size:58px; }.phase1-cover-meta { width:420px; margin:180px auto 0; padding-top:22px; border-top:2px solid #b9dcc7; color:var(--deep); font-weight:700; }.phase1-cover-meta p { margin:4px; }
+.phase1-guide>p { text-align:justify; text-indent:2em; }.phase1-matrix { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:30px 0; }.phase1-matrix article { padding:20px; background:#f7fbf8; border-top:5px solid var(--green); }.phase1-matrix h2 { margin:0; color:var(--deep); }.phase1-matrix article>p { min-height:112px; text-align:justify; }.phase1-matrix article>div { display:flex; flex-wrap:wrap; gap:7px; }.phase1-matrix span { padding:4px 8px; border-radius:3px; background:var(--mint); font-size:12px; }
+.validity-notice { margin-top:20px; }.group-score-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin:30px 0; }.phase1-groups article { min-height:360px; padding:28px; border:1px solid #dfe9e2; border-top:7px solid var(--green); }.phase1-groups article small { color:var(--green); font-weight:700; }.phase1-groups article h2 { margin:6px 0 20px; }.phase1-groups article>strong { color:var(--deep); font-size:28px; }.phase1-groups article>p { margin-top:28px; text-align:justify; }
+.level-legend { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-top:24px; }.level-legend span { padding:8px 5px; background:var(--mint); text-align:center; font-size:11px; }.level-legend b { display:block; color:var(--deep); font-size:13px; }
+.radar-layout { display:grid; grid-template-columns:390px 1fr; align-items:center; gap:28px; margin-top:30px; }.radar-chart { width:390px; height:390px; }.radar-grid polygon { fill:none; stroke:#c8ddd0; stroke-width:1; }.radar-grid line { stroke:#dce9e1; stroke-width:1; }.radar-value { fill:rgba(37,165,95,.2); stroke:var(--green); stroke-width:3; }.radar-chart circle { fill:var(--green); stroke:#fff; stroke-width:2; }.radar-legend { display:grid; gap:5px; }.radar-legend article { display:grid; grid-template-columns:1fr 42px 48px; gap:8px; padding:5px 0; border-bottom:1px solid #e4ece7; font-size:12px; }.radar-legend strong { color:var(--deep); text-align:right; }.radar-legend em { color:var(--green); font-style:normal; }.level-legend.secondary { margin-top:30px; }
+.phase1-dimension-card { min-height:350px; margin:18px 0; padding:24px 26px; background:#fafcf9; border-top:5px solid var(--green); }.dimension-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:30px; }.dimension-card-head h2 { margin:0; font-size:25px; }.dimension-card-head small { color:var(--green); font-weight:700; }.dimension-card-head>div:last-child { text-align:right; }.dimension-card-head strong { display:block; color:var(--deep); font-size:25px; }.dimension-card-head em { color:var(--green); font-style:normal; font-weight:700; }.dimension-definition { margin:16px 0; color:#4c5951; text-align:justify; }.dimension-diagnosis { padding:14px 18px; background:var(--mint); }.dimension-diagnosis h3 { margin:0; color:var(--deep); }.dimension-diagnosis p { margin:7px 0 0; text-align:justify; }.page-contract { display:none; }
 @media (max-width:600px) { .report-page{min-height:auto;padding:35px 22px}.cover-content{padding:110px 22px 60px}.cover h1{font-size:28px}.cover h1 strong{font-size:38px}.person-grid{grid-template-columns:1fr}.chart-row{grid-template-columns:100px 1fr 45px}.dimension-heading{gap:20px}.score-ring{width:120px;height:120px}.reading-flow{gap:4px}.reading-flow div{width:100px} }
-@media print { .competency-report{max-width:none}.temporary-alert{display:none}.report-page{width:100%;min-height:auto;padding:58px 68px}.cover{min-height:850px;padding:0}.cover-content{padding-top:120px}.overview-page{font-size:14px;line-height:1.6;padding:38px 60px}.overview-page .page-title{margin-bottom:18px}.overview-page .section-title{margin:18px 0 12px}.overview-page .person-grid{padding:8px 20px}.overview-page .person-grid div{padding:5px 0}.overview-page .overall-summary{margin:10px 0;gap:32px}.overview-page .overall-score{width:120px;height:120px;border-width:14px}.overview-page .overall-score strong{font-size:30px}.overview-page .overall-scale{margin:18px 0 25px}.overview-page .interpretation{padding:14px 18px}.dimension-page{font-size:14px;line-height:1.6;padding:38px 60px}.dimension-page .page-title{margin-bottom:20px}.dimension-page .dimension-heading{margin:24px 0 18px}.dimension-page .score-ring{width:140px;height:140px}.dimension-page .meaning-box,.dimension-page .dimension-copy,.dimension-page .development-box{margin:14px 0;padding:14px 18px}.dimension-page .development-box li{margin:5px 0} }
+@media print { .competency-report{max-width:none}.temporary-alert{display:none}.report-page{width:100%;min-height:auto;padding:58px 68px}.phase1-report .report-page{height:850px;max-height:850px;break-inside:avoid;overflow:hidden}.cover{min-height:850px;padding:0}.cover-content{padding-top:120px}.phase1-cover .cover-content{padding:80px 50px 35px}.phase1-cover .phase1-cover-meta{margin-top:95px}.phase1-guide{font-size:12px;line-height:1.55;padding:34px 54px}.phase1-guide .page-title{margin-bottom:16px}.phase1-guide>p{margin:7px 0}.phase1-guide .phase1-matrix{gap:14px;margin:13px 0}.phase1-guide .phase1-matrix article{padding:12px}.phase1-guide .phase1-matrix article>p{min-height:86px;margin:7px 0}.phase1-guide .notice-box{padding:12px 18px}.phase1-overview{font-size:12px;line-height:1.5;padding:28px 50px}.phase1-overview .page-title{margin-bottom:14px}.phase1-overview .section-title{margin:14px 0 9px}.phase1-overview .person-grid{padding:6px 18px}.phase1-overview .person-grid div{padding:4px 0}.phase1-overview .overall-summary{margin:8px 0;gap:28px}.phase1-overview .overall-score{width:110px;height:110px;border-width:12px}.phase1-overview .interpretation,.phase1-overview .notice-box{padding:10px 16px}.phase1-overview .validity-notice{margin-top:10px}.phase1-dimension-pair{padding:28px 50px;font-size:12px;line-height:1.45}.phase1-dimension-pair .page-title{margin-bottom:12px}.phase1-dimension-pair .phase1-dimension-card{min-height:320px;margin:10px 0;padding:16px 20px}.phase1-dimension-pair .dimension-definition{margin:8px 0}.phase1-dimension-pair .dimension-diagnosis{padding:10px 14px}.overview-page{font-size:14px;line-height:1.6;padding:38px 60px}.overview-page .page-title{margin-bottom:18px}.overview-page .section-title{margin:18px 0 12px}.overview-page .person-grid{padding:8px 20px}.overview-page .person-grid div{padding:5px 0}.overview-page .overall-summary{margin:10px 0;gap:32px}.overview-page .overall-score{width:120px;height:120px;border-width:14px}.overview-page .overall-score strong{font-size:30px}.overview-page .overall-scale{margin:18px 0 25px}.overview-page .interpretation{padding:14px 18px}.dimension-page{font-size:14px;line-height:1.6;padding:38px 60px}.dimension-page .page-title{margin-bottom:20px}.dimension-page .dimension-heading{margin:24px 0 18px}.dimension-page .score-ring{width:140px;height:140px}.dimension-page .meaning-box,.dimension-page .dimension-copy,.dimension-page .development-box{margin:14px 0;padding:14px 18px}.dimension-page .development-box li{margin:5px 0} }
 </style>

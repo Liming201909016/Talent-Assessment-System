@@ -20,6 +20,10 @@ func TestExam_CompetencyDispatchFields(t *testing.T) {
 		{"AssessmentType", "column:assessment_type", "assessmentType"},
 		{"ScoringMode", "column:scoring_mode", "scoringMode"},
 		{"CompetencyReportAudience", "column:competency_report_audience", "competencyReportAudience"},
+		{"CompetencyProductVersion", "column:competency_product_version", "competencyProductVersion"},
+		{"CompetencyScoringVersion", "column:competency_scoring_version", "competencyScoringVersion"},
+		{"CompetencyContentVersion", "column:competency_content_version", "competencyContentVersion"},
+		{"CompetencyReportTemplateVersion", "column:competency_report_template_version", "competencyReportTemplateVersion"},
 		{"PublishStatus", "column:publish_status", "publishStatus"},
 		{"PublishedAt", "column:published_at", "publishedAt"},
 		{"PublishedBy", "column:published_by", "publishedBy"},
@@ -104,18 +108,92 @@ func TestCompetencyDimensionMigration_DefinesMasterAndExamSelection(t *testing.T
 		"INTO @exam_id_charset, @exam_id_collation",
 		"ALTER TABLE `el_exam_competency_dimension` MODIFY COLUMN `exam_id` varchar(64) CHARACTER SET ",
 		"ON DUPLICATE KEY UPDATE",
-		"'competency-d42','D42','权力动机'",
+		"'competency-a1-01','A1-01','逻辑思维','通用能力','基层员工','逻辑分析严谨，推理判断有据',1",
+		"'competency-b1-05','B1-05','合作意识','心理素养','基层员工','主动协作，乐于分享，促成共赢',10",
 	} {
 		if !strings.Contains(sql, required) {
 			t.Errorf("dimension migration missing required fragment %q", required)
 		}
 	}
-	if count := strings.Count(sql, "('competency-d"); count != 48 {
-		t.Errorf("dimension migration seed row count = %d, want 48", count)
+	if count := strings.Count(sql, "('competency-a1-") + strings.Count(sql, "('competency-b1-"); count != 10 {
+		t.Errorf("dimension migration phase-1 seed row count = %d, want 10", count)
+	}
+	if strings.Contains(sql, "('competency-d") {
+		t.Error("fresh dimension migration must not seed retired D identities")
 	}
 	for _, forbidden := range []string{"DROP TABLE", "DELETE FROM", "TRUNCATE TABLE"} {
 		if strings.Contains(sql, forbidden) {
 			t.Errorf("dimension migration contains destructive fragment %q", forbidden)
+		}
+	}
+}
+
+func TestCompetencyPhase1IdentityResetMigration_IsGuardedAndIdempotent(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Clean(filepath.Join(wd, "..", "..", "..", "scripts", "sql", "competency_009_phase1_identity_reset.sql"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read phase-1 identity reset migration failed: %v", err)
+	}
+	sql := string(data)
+
+	for _, required := range []string{
+		"CREATE TABLE IF NOT EXISTS `el_competency_migration`",
+		"competency-009-phase1-identity-reset",
+		"@competency_009_target_environment",
+		"@competency_009_writes_quiesced",
+		"GET_LOCK(",
+		"RELEASE_LOCK(",
+		"COMPETENCY_009_REQUIRES_EXPLICIT_STAGING_AUTHORIZATION",
+		"COMPETENCY_009_REMAINING_DEPENDENCIES",
+		"FROM `el_paper_qu_answer` pqa",
+		"FROM `el_user_book` ub",
+		"START TRANSACTION",
+		"INSERT IGNORE INTO `el_competency_migration`",
+		"SET @apply_reset=ROW_COUNT()",
+		"DELETE qa FROM `el_qu_answer` qa",
+		"DELETE qr FROM `el_qu_repo` qr",
+		"DELETE q FROM `el_qu` q",
+		"q.`id` IS NOT NULL",
+		"q.`dimension_id` IS NOT NULL OR q.`competency_question_type` IS NOT NULL",
+		"DELETE rt FROM `el_competency_report_text` rt",
+		"rt.`id` IS NOT NULL",
+		"DELETE d FROM `el_competency_dimension` d",
+		"d.`id` IS NOT NULL",
+		"WHERE @apply_reset=1",
+		"COMMIT",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Errorf("phase-1 identity reset migration missing %q", required)
+		}
+	}
+	for _, identity := range []string{
+		"'competency-a1-01','A1-01','逻辑思维','通用能力','基层员工','逻辑分析严谨，推理判断有据',1",
+		"'competency-a1-02','A1-02','数字应用','通用能力','基层员工','善用数字化工具与AI技术，具备数据思维',2",
+		"'competency-a1-03','A1-03','计划执行','通用能力','基层员工','高效推进计划并达成预期结果',3",
+		"'competency-a1-04','A1-04','持续学习','通用能力','基层员工','主动学习，多渠道获取知识并学以致用',4",
+		"'competency-a1-05','A1-05','沟通表达','通用能力','基层员工','清晰传递信息，重视倾听与反馈',5",
+		"'competency-b1-01','B1-01','敬业奉献','心理素养','基层员工','视工作为使命，全心投入，甘于奉献',6",
+		"'competency-b1-02','B1-02','求真务实','心理素养','基层员工','追求真理，尊重事实，注重实效',7",
+		"'competency-b1-03','B1-03','自律性','心理素养','基层员工','自我约束，规划在先，言行一致',8",
+		"'competency-b1-04','B1-04','成就导向','心理素养','基层员工','追求工作成功，不断挑战更高目标',9",
+		"'competency-b1-05','B1-05','合作意识','心理素养','基层员工','主动协作，乐于分享，促成共赢',10",
+	} {
+		if !strings.Contains(sql, identity) {
+			t.Errorf("phase-1 identity reset migration missing identity %q", identity)
+		}
+	}
+	for _, forbidden := range []string{
+		"DELETE FROM `el_exam`", "DELETE e FROM `el_exam`", "DELETE FROM `el_paper`",
+		"DELETE FROM `el_candidate`", "DELETE FROM `el_tester`", "DROP TABLE", "TRUNCATE TABLE",
+		"DELIMITER",
+		"'competency-d", "'D01'", "'D48'", "34个维度", "40个维度",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Errorf("phase-1 identity reset migration contains unsafe or unresolved fragment %q", forbidden)
 		}
 	}
 }
@@ -296,8 +374,8 @@ func TestCompetencyResult_UsesExactDecimalAndIdentitySnapshots(t *testing.T) {
 		}
 	}
 	decimalType := reflect.TypeOf(decimal.Decimal{})
-	if field, _ := resultType.FieldByName("OverallScore"); field.Type != decimalType {
-		t.Errorf("OverallScore type=%v want decimal.Decimal", field.Type)
+	if field, _ := resultType.FieldByName("OverallScore"); field.Type != reflect.PointerTo(decimalType) {
+		t.Errorf("OverallScore type=%v want *decimal.Decimal", field.Type)
 	}
 	if field, _ := resultType.FieldByName("EvaluationAverage"); field.Type != reflect.PointerTo(decimalType) {
 		t.Errorf("EvaluationAverage type=%v want *decimal.Decimal", field.Type)
@@ -345,6 +423,189 @@ func TestCompetencyReportModels_TableNames(t *testing.T) {
 	} {
 		if got != want {
 			t.Errorf("table name=%q want=%q", got, want)
+		}
+	}
+}
+
+func TestCompetencyPhase1ReportApprovalMigration_DefinesSafePackageGate(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Clean(filepath.Join(wd, "..", "..", "..", "scripts", "sql", "competency_010_phase1_report_framework.sql"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(data)
+	for _, required := range []string{
+		"CREATE TABLE IF NOT EXISTS `el_competency_report_content_package`",
+		"content_approved_by", "content_approved_at", "psychometric_approved_by", "psychometric_approved_at",
+		"question_source_sha256", "content_source_sha256", "effective_environment", "approval_status", "disclaimer",
+		"uk_competency_report_content_package", "idx_competency_report_content_package_status",
+		"information_schema.REFERENTIAL_CONSTRAINTS", "PREPARE stmt FROM @sql", "DEALLOCATE PREPARE stmt",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Errorf("phase-1 report migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP TABLE", "TRUNCATE TABLE", "AutoMigrate", "INSERT INTO `el_competency_report_content_package`"} {
+		if strings.Contains(sql, forbidden) {
+			t.Errorf("phase-1 report migration contains %q", forbidden)
+		}
+	}
+}
+
+func TestCompetencyVersionMigration_DefinesFrozenVersionFields(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Clean(filepath.Join(wd, "..", "..", "..", "scripts", "sql", "competency_007_versions.sql"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(data)
+	for _, required := range []string{
+		"competency_product_version", "competency_scoring_version", "competency_content_version", "competency_report_template_version",
+		"product_version", "scoring_version", "content_version", "report_template_version", "template_version",
+		"competency-generic-v1", "competency-v1", "temp-v1", "competency-report-v1",
+		"information_schema.COLUMNS", "TABLE_SCHEMA=DATABASE()", "PREPARE stmt FROM @sql", "DEALLOCATE PREPARE stmt",
+		"INDEX_NAME='uk_competency_report_paper_version'",
+		"GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX)",
+		"DROP INDEX `uk_competency_report_paper_version`",
+		"CREATE UNIQUE INDEX `uk_competency_report_paper_version` ON `el_competency_report` (`paper_id`,`content_version`,`template_version`)",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Errorf("version migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP TABLE", "DROP COLUMN", "TRUNCATE TABLE", "AutoMigrate", "ADD COLUMN IF NOT EXISTS"} {
+		if strings.Contains(sql, forbidden) {
+			t.Errorf("version migration contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
+func TestCompetencyVersionModels_FreezeResultAndReportVersions(t *testing.T) {
+	resultType := reflect.TypeOf(CompetencyResult{})
+	for _, name := range []string{"ProductVersion", "ScoringVersion", "ContentVersion", "ReportTemplateVersion"} {
+		if _, ok := resultType.FieldByName(name); !ok {
+			t.Errorf("CompetencyResult missing %s", name)
+		}
+	}
+	reportType := reflect.TypeOf(CompetencyReport{})
+	if _, ok := reportType.FieldByName("TemplateVersion"); !ok {
+		t.Error("CompetencyReport missing TemplateVersion")
+	}
+}
+
+func TestCompetencyPhase1StructureMigration_DefinesQuestionTypeValidityAndGroups(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Clean(filepath.Join(wd, "..", "..", "..", "scripts", "sql", "competency_008_phase1_structures.sql"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(data)
+	for _, required := range []string{
+		"COLUMN_NAME='competency_question_type'",
+		"ADD COLUMN `competency_question_type` varchar(32) DEFAULT NULL",
+		"CREATE TABLE IF NOT EXISTS `el_exam_competency_group`",
+		"ADD COLUMN `group_id` varchar(64) DEFAULT NULL",
+		"CREATE TABLE IF NOT EXISTS `el_competency_group_result`",
+		"CREATE TABLE IF NOT EXISTS `el_competency_validity_result`",
+		"ADD COLUMN `dimension_question_count` int NOT NULL DEFAULT 0",
+		"ADD COLUMN `answered_dimension_question_count` int NOT NULL DEFAULT 0",
+		"UPDATE `el_competency_result`",
+		"`competency_question_type`='dimension'",
+		"WHERE `id` IS NOT NULL",
+		"WHERE `paper_id` IS NOT NULL",
+		"`product_version`='competency-generic-v1'",
+		"`scoring_version`='competency-v1'",
+		"uk_qu_dimension_item_v2_tmp",
+		"RENAME INDEX `uk_qu_dimension_item_v2_tmp` TO `uk_qu_dimension_item`",
+		"uk_exam_competency_group_code",
+		"idx_exam_competency_dimension_group",
+		"uk_competency_group_result",
+		"fk_ecg_exam", "fk_ecdim_group", "fk_cgr_paper", "fk_cgr_exam_group", "fk_cvr_paper",
+		"information_schema.COLUMNS", "information_schema.STATISTICS", "information_schema.REFERENTIAL_CONSTRAINTS",
+		"TABLE_SCHEMA=DATABASE()", "PREPARE stmt FROM @sql", "DEALLOCATE PREPARE stmt",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Errorf("phase-1 structure migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP TABLE", "DROP COLUMN", "TRUNCATE TABLE", "AutoMigrate", "ADD COLUMN IF NOT EXISTS", "CHECK ("} {
+		if strings.Contains(sql, forbidden) {
+			t.Errorf("phase-1 structure migration contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
+func TestCompetencyPhase1Models_PreserveNullableUnresolvedValues(t *testing.T) {
+	stringPointerType := reflect.TypeOf((*string)(nil))
+	for _, target := range []struct {
+		name      string
+		typeOf    reflect.Type
+		fieldName string
+		gormTag   string
+		jsonTag   string
+	}{
+		{"source question type", reflect.TypeOf(Qu{}), "CompetencyQuestionType", "column:competency_question_type", "competencyQuestionType"},
+		{"snapshot question type", reflect.TypeOf(ExamCompetencyQuestion{}), "CompetencyQuestionType", "column:competency_question_type", "competencyQuestionType"},
+	} {
+		field, ok := target.typeOf.FieldByName(target.fieldName)
+		if !ok {
+			t.Errorf("%s missing field %s", target.name, target.fieldName)
+			continue
+		}
+		if field.Type != stringPointerType {
+			t.Errorf("%s type=%v want *string", target.name, field.Type)
+		}
+		if field.Tag.Get("gorm") != target.gormTag || field.Tag.Get("json") != target.jsonTag {
+			t.Errorf("%s tags gorm=%q json=%q", target.name, field.Tag.Get("gorm"), field.Tag.Get("json"))
+		}
+	}
+
+	resultType := reflect.TypeOf(CompetencyResult{})
+	for _, name := range []string{"DimensionQuestionCount", "AnsweredDimensionQuestionCount"} {
+		if _, ok := resultType.FieldByName(name); !ok {
+			t.Errorf("CompetencyResult missing %s", name)
+		}
+	}
+	groupIDField, ok := reflect.TypeOf(ExamCompetencyDimension{}).FieldByName("GroupID")
+	if !ok || groupIDField.Type != stringPointerType {
+		t.Error("ExamCompetencyDimension.GroupID must be nullable")
+	}
+	groupResultType := reflect.TypeOf(CompetencyGroupResult{})
+	for _, name := range []string{"GroupScore", "LevelCode"} {
+		field, ok := groupResultType.FieldByName(name)
+		if !ok || field.Type.Kind() != reflect.Pointer {
+			t.Errorf("CompetencyGroupResult.%s must be nullable", name)
+		}
+	}
+	validityType := reflect.TypeOf(CompetencyValidityResult{})
+	for _, name := range []string{"ValidityScore", "ValidityStatus"} {
+		field, ok := validityType.FieldByName(name)
+		if !ok || field.Type.Kind() != reflect.Pointer {
+			t.Errorf("CompetencyValidityResult.%s must be nullable", name)
+		}
+	}
+}
+
+func TestCompetencyPhase1Models_TableNames(t *testing.T) {
+	for got, want := range map[string]string{
+		(ExamCompetencyGroup{}).TableName():      "el_exam_competency_group",
+		(CompetencyGroupResult{}).TableName():    "el_competency_group_result",
+		(CompetencyValidityResult{}).TableName(): "el_competency_validity_result",
+	} {
+		if got != want {
+			t.Errorf("TableName()=%q want=%q", got, want)
 		}
 	}
 }

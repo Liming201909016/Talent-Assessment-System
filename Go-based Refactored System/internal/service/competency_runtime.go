@@ -21,7 +21,6 @@ import (
 const (
 	CompetencySubmitManual  = "manual"
 	CompetencySubmitTimeout = "timeout"
-	CompetencyScoringV1     = "competency-v1"
 )
 
 var (
@@ -77,6 +76,7 @@ type CompetencyPublishSummary struct {
 	QuestionCount  int        `json:"questionCount"`
 	PublishedAt    *time.Time `json:"publishedAt"`
 	AlreadyDone    bool       `json:"alreadyPublished"`
+	CompetencyVersionSet
 }
 
 func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (CompetencyPublishSummary, error) {
@@ -93,6 +93,11 @@ func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (C
 		if exam.TotalTime <= 0 {
 			return ErrCompetencyDurationRequired
 		}
+		frozenVersions := CompetencyVersionSetFromExam(exam)
+		if !IsPhase1CompetencyVersionSet(frozenVersions) {
+			return errors.New("00401一期固定配置只能使用基层员工、十个A/B维度和已确认版本")
+		}
+		versions := frozenVersions
 		if exam.PublishStatus == 1 {
 			var dimensionCount, questionCount int64
 			if err := tx.Model(&model.ExamCompetencyDimension{}).Where("exam_id = ?", examID).Count(&dimensionCount).Error; err != nil {
@@ -101,7 +106,7 @@ func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (C
 			if err := tx.Model(&model.ExamCompetencyQuestion{}).Where("exam_id = ?", examID).Count(&questionCount).Error; err != nil {
 				return err
 			}
-			summary = CompetencyPublishSummary{ExamID: examID, DimensionCount: int(dimensionCount), QuestionCount: int(questionCount), PublishedAt: exam.PublishedAt, AlreadyDone: true}
+			summary = CompetencyPublishSummary{ExamID: examID, DimensionCount: int(dimensionCount), QuestionCount: int(questionCount), PublishedAt: exam.PublishedAt, AlreadyDone: true, CompetencyVersionSet: versions}
 			return nil
 		}
 
@@ -117,6 +122,9 @@ func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (C
 		for _, dimension := range dimensions {
 			dimensionIDs = append(dimensionIDs, dimension.DimensionID)
 			associationByDimension[dimension.DimensionID] = dimension
+		}
+		if err := ValidatePhase1CompetencyConfiguration(*exam.CompetencyReportAudience, dimensionIDs, versions); err != nil {
+			return errors.New("00401一期固定配置只能使用基层员工、十个A/B维度和已确认版本")
 		}
 		var masterDimensions []model.CompetencyDimension
 		if err := tx.Where("id IN ? AND status = 0", dimensionIDs).Find(&masterDimensions).Error; err != nil {
@@ -139,9 +147,12 @@ func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (C
 			return err
 		}
 		for _, question := range questions {
-			if question.DimensionID == nil || question.QuestionCode == nil || question.DimensionItemNo == nil || question.ObservationPoint == nil || question.ScoringDirection == nil || question.Content == "" {
+			if question.DimensionID == nil || question.QuestionCode == nil || question.DimensionItemNo == nil || question.ObservationPoint == nil || question.ScoringDirection == nil || question.CompetencyQuestionType == nil || question.Content == "" {
 				return fmt.Errorf("题目 %s 的胜任力元数据不完整", question.ID)
 			}
+		}
+		if err := validatePhase1ValidityQuestionOrder(questions); err != nil {
+			return err
 		}
 		sort.Slice(questions, func(i, j int) bool {
 			leftOrder := masterByID[*questions[i].DimensionID].DisplayOrder
@@ -149,17 +160,38 @@ func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (C
 			if leftOrder != rightOrder {
 				return leftOrder < rightOrder
 			}
+			leftType := *questions[i].CompetencyQuestionType
+			rightType := *questions[j].CompetencyQuestionType
+			if leftType != rightType {
+				return leftType == model.CompetencyQuestionTypeDimension
+			}
 			if *questions[i].DimensionItemNo != *questions[j].DimensionItemNo {
 				return *questions[i].DimensionItemNo < *questions[j].DimensionItemNo
 			}
 			return *questions[i].QuestionCode < *questions[j].QuestionCode
 		})
-		counts := make(map[string]int, len(dimensions))
+		counts := make(map[string]Phase1QuestionTypeCounts, len(dimensions))
 		now := time.Now()
+		groupSnapshots := make([]model.ExamCompetencyGroup, 0, 2)
+		groupIDByDimension := make(map[string]string, len(dimensions))
+		for _, definition := range Phase1CompetencyGroups() {
+			groupID := uuid.NewString()
+			groupSnapshots = append(groupSnapshots, model.ExamCompetencyGroup{
+				ID: groupID, ExamID: examID, GroupCode: definition.Code, GroupName: definition.Name,
+				DisplayOrder: definition.DisplayOrder, DimensionCount: len(definition.ChildDimensionIDs),
+				QuestionCount: len(definition.ChildDimensionIDs) * 8, CreateTime: &now, SnapshotTime: &now,
+			})
+			for _, dimensionID := range definition.ChildDimensionIDs {
+				groupIDByDimension[dimensionID] = groupID
+			}
+		}
+		if err := tx.CreateInBatches(groupSnapshots, 100).Error; err != nil {
+			return err
+		}
 		snapshots := make([]model.ExamCompetencyQuestion, 0, len(questions))
 		seenCodes := make(map[string]struct{}, len(questions))
 		for _, question := range questions {
-			if question.DimensionID == nil || question.QuestionCode == nil || question.DimensionItemNo == nil || question.ObservationPoint == nil || question.ScoringDirection == nil || question.Content == "" {
+			if question.DimensionID == nil || question.QuestionCode == nil || question.DimensionItemNo == nil || question.ObservationPoint == nil || question.ScoringDirection == nil || question.CompetencyQuestionType == nil || question.Content == "" {
 				return fmt.Errorf("题目 %s 的胜任力元数据不完整", question.ID)
 			}
 			association, ok := associationByDimension[*question.DimensionID]
@@ -170,10 +202,23 @@ func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (C
 				return fmt.Errorf("题目编号 %s 重复", *question.QuestionCode)
 			}
 			seenCodes[*question.QuestionCode] = struct{}{}
+			questionType := *question.CompetencyQuestionType
+			if questionType != model.CompetencyQuestionTypeDimension && questionType != model.CompetencyQuestionTypeValidity {
+				return fmt.Errorf("%s 题目类型非法", *question.QuestionCode)
+			}
 			if *question.ScoringDirection != CompetencyDirectionForward && *question.ScoringDirection != CompetencyDirectionReverse {
 				return fmt.Errorf("%s 计分方向非法", *question.QuestionCode)
 			}
-			counts[*question.DimensionID]++
+			if questionType == model.CompetencyQuestionTypeValidity && *question.ScoringDirection != CompetencyDirectionForward {
+				return fmt.Errorf("%s 效度题必须正向计分", *question.QuestionCode)
+			}
+			count := counts[*question.DimensionID]
+			if questionType == model.CompetencyQuestionTypeDimension {
+				count.Dimension++
+			} else {
+				count.Validity++
+			}
+			counts[*question.DimensionID] = count
 			options, err := competencyOptionsJSON(*question.ScoringDirection)
 			if err != nil {
 				return err
@@ -182,17 +227,19 @@ func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (C
 				ID: uuid.NewString(), ExamID: examID, ExamDimensionID: association.ID, SourceQuID: question.ID,
 				QuestionCode: *question.QuestionCode, DimensionItemNo: *question.DimensionItemNo,
 				QuestionContent: question.Content, ObservationPoint: *question.ObservationPoint,
-				ScoringDirection: *question.ScoringDirection, OptionsSnapshot: options,
+				CompetencyQuestionType: question.CompetencyQuestionType,
+				ScoringDirection:       *question.ScoringDirection, OptionsSnapshot: options,
 				SourceUpdateTime: question.UpdateTime, SnapshotOrder: len(snapshots) + 1, CreateTime: &now,
 			})
 		}
+		if err := ValidatePhase1QuestionInventory(dimensionIDs, counts); err != nil {
+			return err
+		}
 		for _, dimension := range dimensions {
 			master := masterByID[dimension.DimensionID]
-			if counts[dimension.DimensionID] == 0 {
-				return fmt.Errorf("%s %s没有启用题目", master.Code, master.Name)
-			}
+			groupID := groupIDByDimension[dimension.DimensionID]
 			if err := tx.Model(&model.ExamCompetencyDimension{}).Where("id = ?", dimension.ID).
-				Updates(competencyDimensionSnapshotUpdates(master, counts[dimension.DimensionID], now)).Error; err != nil {
+				Updates(competencyDimensionSnapshotUpdates(master, groupID, counts[dimension.DimensionID].Dimension, now)).Error; err != nil {
 				return err
 			}
 		}
@@ -200,17 +247,42 @@ func (s *CompetencyRuntimeService) Publish(examID string, publishedBy *int64) (C
 			return err
 		}
 		if err := tx.Model(&model.Exam{}).Where("id = ? AND publish_status = 0", examID).
-			Updates(map[string]any{"publish_status": 1, "published_at": &now, "published_by": publishedBy, "total_score": 5 * len(dimensions)}).Error; err != nil {
+			Updates(map[string]any{
+				"publish_status": 1, "published_at": &now, "published_by": publishedBy, "total_score": 5 * len(dimensions),
+				"competency_product_version": versions.ProductVersion, "competency_scoring_version": versions.ScoringVersion,
+				"competency_content_version": versions.ContentVersion, "competency_report_template_version": versions.ReportTemplateVersion,
+			}).Error; err != nil {
 			return err
 		}
-		summary = CompetencyPublishSummary{ExamID: examID, DimensionCount: len(dimensions), QuestionCount: len(snapshots), PublishedAt: &now}
+		summary = CompetencyPublishSummary{ExamID: examID, DimensionCount: len(dimensions), QuestionCount: len(snapshots), PublishedAt: &now, CompetencyVersionSet: versions}
 		return nil
 	})
 	return summary, err
 }
 
-func competencyDimensionSnapshotUpdates(master model.CompetencyDimension, questionCount int, snapshotTime time.Time) map[string]any {
+func validatePhase1ValidityQuestionOrder(questions []model.Qu) error {
+	seen := make(map[int]struct{}, 10)
+	for _, question := range questions {
+		if question.CompetencyQuestionType == nil || *question.CompetencyQuestionType != model.CompetencyQuestionTypeValidity {
+			continue
+		}
+		if question.DimensionItemNo == nil || *question.DimensionItemNo < 1 || *question.DimensionItemNo > 10 {
+			return errors.New("00401一期效度题全局序号必须为1至10")
+		}
+		if _, exists := seen[*question.DimensionItemNo]; exists {
+			return errors.New("00401一期效度题全局序号不能重复")
+		}
+		seen[*question.DimensionItemNo] = struct{}{}
+	}
+	if len(seen) != 10 {
+		return errors.New("00401一期效度题全局序号必须完整覆盖1至10")
+	}
+	return nil
+}
+
+func competencyDimensionSnapshotUpdates(master model.CompetencyDimension, groupID string, questionCount int, snapshotTime time.Time) map[string]any {
 	return map[string]any{
+		"group_id":            groupID,
 		"dimension_code":      master.Code,
 		"dimension_name":      master.Name,
 		"vird_level":          master.VIRDLevel,
@@ -223,7 +295,7 @@ func competencyDimensionSnapshotUpdates(master model.CompetencyDimension, questi
 }
 
 func competencyOptionsJSON(direction string) (string, error) {
-	labels := []string{"非常不符合", "不太符合", "一般", "比较符合", "非常符合"}
+	labels := []string{"完全不符合", "比较不符合", "不确定", "比较符合", "完全符合"}
 	type option struct {
 		RawValue   int    `json:"rawValue"`
 		Label      string `json:"label"`
@@ -423,16 +495,28 @@ func (s *CompetencyRuntimeService) FillAnswer(claims CompetencyTokenClaims, pape
 			return ErrCompetencyPaperExpired
 		}
 		type answerRow struct {
-			ID        string
-			Direction string
+			ID           string
+			Direction    string
+			QuestionType string
 		}
 		var row answerRow
-		if err := tx.Table("el_paper_qu pq").Select("pq.id,q.scoring_direction AS direction").Joins("INNER JOIN el_exam_competency_question q ON q.id=pq.exam_question_id").Where("pq.id = ? AND pq.paper_id = ?", paperQuestionID, paper.ID).Take(&row).Error; err != nil {
+		if err := tx.Table("el_paper_qu pq").Select("pq.id,q.scoring_direction AS direction,q.competency_question_type AS question_type").Joins("INNER JOIN el_exam_competency_question q ON q.id=pq.exam_question_id").Where("pq.id = ? AND pq.paper_id = ?", paperQuestionID, paper.ID).Take(&row).Error; err != nil {
 			return errors.New("题目不属于此试卷")
 		}
-		finalScore, err := CalculateCompetencyQuestionScore(rawValue, row.Direction)
-		if err != nil {
-			return err
+		finalScore := rawValue
+		switch row.QuestionType {
+		case model.CompetencyQuestionTypeDimension:
+			var err error
+			finalScore, err = CalculateCompetencyQuestionScore(rawValue, row.Direction)
+			if err != nil {
+				return err
+			}
+		case model.CompetencyQuestionTypeValidity:
+			if row.Direction != CompetencyDirectionForward {
+				return errors.New("效度题必须正向计分")
+			}
+		default:
+			return errors.New("题目类型错误")
 		}
 		if err := tx.Model(&model.PaperQu{}).Where("id = ? AND paper_id = ?", row.ID, paper.ID).Updates(map[string]any{"raw_answer": rawValue, "final_score": finalScore, "answered": 1}).Error; err != nil {
 			return err
@@ -484,15 +568,21 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 			PaperQuestionID string
 			Sort            int
 			Answered        int8
+			RawAnswer       *int8
 			FinalScore      *int8
 			ExamDimensionID string
+			ExamGroupID     *string
 			DimensionID     string
 			DimensionCode   string
 			DimensionName   string
 			DisplayOrder    int
+			QuestionCode    string
+			QuestionType    string
+			DimensionItemNo int
+			Direction       string
 		}
 		var rows []scoreRow
-		if err := tx.Table("el_paper_qu pq").Select("pq.id AS paper_question_id,pq.sort,pq.answered,pq.final_score,q.exam_dimension_id,d.dimension_id,d.dimension_code,d.dimension_name,d.display_order").Joins("INNER JOIN el_exam_competency_question q ON q.id=pq.exam_question_id").Joins("INNER JOIN el_exam_competency_dimension d ON d.id=q.exam_dimension_id").Where("pq.paper_id = ?", paper.ID).Order("pq.sort ASC").Scan(&rows).Error; err != nil {
+		if err := tx.Table("el_paper_qu pq").Select("pq.id AS paper_question_id,pq.sort,pq.answered,pq.raw_answer,pq.final_score,q.exam_dimension_id,d.group_id AS exam_group_id,d.dimension_id,d.dimension_code,d.dimension_name,d.display_order,q.question_code,q.competency_question_type AS question_type,q.dimension_item_no,q.scoring_direction AS direction").Joins("INNER JOIN el_exam_competency_question q ON q.id=pq.exam_question_id").Joins("INNER JOIN el_exam_competency_dimension d ON d.id=q.exam_dimension_id").Where("pq.paper_id = ?", paper.ID).Order("pq.sort ASC").Scan(&rows).Error; err != nil {
 			return err
 		}
 		if len(rows) == 0 {
@@ -505,17 +595,38 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 				}
 			}
 		}
-		inputs := make([]CompetencyScoreInput, 0, len(rows))
+		dimensionInputs := make([]CompetencyScoreInput, 0, 80)
+		validityInputs := make([]Phase1ValidityInput, 0, 10)
 		dimensionSnapshot := make(map[string]scoreRow)
 		for _, row := range rows {
-			score := 0
-			if row.FinalScore != nil {
-				score = int(*row.FinalScore)
+			switch row.QuestionType {
+			case model.CompetencyQuestionTypeDimension:
+				score := 0
+				if row.FinalScore != nil {
+					score = int(*row.FinalScore)
+				}
+				dimensionInputs = append(dimensionInputs, CompetencyScoreInput{DimensionID: row.DimensionID, DimensionCode: row.DimensionCode, DimensionName: row.DimensionName, DisplayOrder: row.DisplayOrder, QuestionType: CompetencyQuestionTypeDimension, Answered: row.Answered == 1, FinalScore: score})
+				dimensionSnapshot[row.DimensionID] = row
+			case model.CompetencyQuestionTypeValidity:
+				rawValue := 0
+				if row.RawAnswer != nil {
+					rawValue = int(*row.RawAnswer)
+				}
+				validityInputs = append(validityInputs, Phase1ValidityInput{QuestionCode: row.QuestionCode, Order: row.DimensionItemNo, QuestionType: CompetencyQuestionTypeValidity, Direction: row.Direction, Answered: row.Answered == 1, RawValue: rawValue})
+			default:
+				return errors.New("试卷包含非法胜任力题型")
 			}
-			inputs = append(inputs, CompetencyScoreInput{DimensionID: row.ExamDimensionID, DimensionCode: row.DimensionCode, DimensionName: row.DimensionName, DisplayOrder: row.DisplayOrder, Answered: row.Answered == 1, FinalScore: score})
-			dimensionSnapshot[row.ExamDimensionID] = row
 		}
-		calculated, err := CalculateCompetencyResult(inputs)
+		sort.Slice(validityInputs, func(i, j int) bool { return validityInputs[i].Order < validityInputs[j].Order })
+		calculated, err := CalculatePhase1CompetencyResult(dimensionInputs)
+		if err != nil {
+			return err
+		}
+		calculatedGroups, err := CalculatePhase1GroupResults(calculated.Dimensions)
+		if err != nil {
+			return err
+		}
+		calculatedValidity, err := CalculatePhase1ValidityResult(validityInputs)
 		if err != nil {
 			return err
 		}
@@ -536,7 +647,7 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 			if dimension.IsComplete {
 				complete = 1
 			}
-			dimensionResults = append(dimensionResults, model.CompetencyDimensionResult{ID: uuid.NewString(), PaperID: paper.ID, ExamDimensionID: dimension.DimensionID, DimensionID: source.DimensionID, DimensionCode: dimension.DimensionCode, DimensionName: dimension.DimensionName, DisplayOrder: dimension.DisplayOrder, TotalQuestionCount: dimension.TotalQuestionCount, AnsweredQuestionCount: dimension.AnsweredQuestionCount, ScoreSum: dimension.ScoreSum, DimensionScore: score, LevelCode: level, IsComplete: complete, CreateTime: &now})
+			dimensionResults = append(dimensionResults, model.CompetencyDimensionResult{ID: uuid.NewString(), PaperID: paper.ID, ExamDimensionID: source.ExamDimensionID, DimensionID: source.DimensionID, DimensionCode: dimension.DimensionCode, DimensionName: dimension.DimensionName, DisplayOrder: dimension.DisplayOrder, TotalQuestionCount: dimension.TotalQuestionCount, AnsweredQuestionCount: dimension.AnsweredQuestionCount, ScoreSum: dimension.ScoreSum, DimensionScore: score, LevelCode: level, IsComplete: complete, CreateTime: &now})
 		}
 		if err := tx.CreateInBatches(dimensionResults, 100).Error; err != nil {
 			return err
@@ -548,7 +659,62 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 		if exam.CompetencyReportAudience == nil {
 			return errors.New("报告版本未配置")
 		}
-		overall := decimal.NewFromBigRat(calculated.OverallScore, 6)
+		versions := CompetencyVersionSetFromExam(exam)
+		if !IsPhase1CompetencyVersionSet(versions) {
+			return errors.New("测评不是00401一期固定版本")
+		}
+		groupResults := make([]model.CompetencyGroupResult, 0, len(calculatedGroups))
+		for _, group := range calculatedGroups {
+			var examGroupID string
+			for _, dimensionID := range group.ChildDimensionIDs {
+				source := dimensionSnapshot[dimensionID]
+				if source.ExamGroupID == nil || *source.ExamGroupID == "" {
+					return fmt.Errorf("%s 一级维度快照不完整", group.GroupCode)
+				}
+				if examGroupID == "" {
+					examGroupID = *source.ExamGroupID
+				} else if examGroupID != *source.ExamGroupID {
+					return fmt.Errorf("%s 子维度快照归组不一致", group.GroupCode)
+				}
+			}
+			var groupScore *decimal.Decimal
+			if group.Score != nil {
+				v := decimal.NewFromBigRat(group.Score, 6)
+				groupScore = &v
+			}
+			var groupLevel *string
+			if group.Level != "" {
+				v := group.Level
+				groupLevel = &v
+			}
+			groupComplete := int8(0)
+			if group.IsComplete {
+				groupComplete = 1
+			}
+			groupResults = append(groupResults, model.CompetencyGroupResult{ID: uuid.NewString(), PaperID: paper.ID, ExamGroupID: examGroupID, GroupCode: group.GroupCode, GroupName: group.GroupName, DisplayOrder: group.DisplayOrder, TotalDimensionCount: group.TotalDimensionCount, EffectiveDimensionCount: group.EffectiveDimensionCount, TotalQuestionCount: group.TotalQuestionCount, AnsweredQuestionCount: group.AnsweredQuestionCount, GroupScore: groupScore, LevelCode: groupLevel, IsComplete: groupComplete, ScoringVersion: versions.ScoringVersion, CreateTime: &now})
+		}
+		if err := tx.CreateInBatches(groupResults, 100).Error; err != nil {
+			return err
+		}
+		validityComplete := int8(0)
+		if calculatedValidity.IsComplete {
+			validityComplete = 1
+		}
+		validityStatus := calculatedValidity.Status
+		var validityScore *decimal.Decimal
+		if calculatedValidity.Score != nil {
+			v := decimal.NewFromInt(int64(*calculatedValidity.Score))
+			validityScore = &v
+		}
+		validityResult := model.CompetencyValidityResult{PaperID: paper.ID, TotalQuestionCount: calculatedValidity.TotalQuestionCount, AnsweredQuestionCount: calculatedValidity.AnsweredQuestionCount, ValidityScore: validityScore, ValidityStatus: &validityStatus, IsComplete: validityComplete, ScoringVersion: versions.ScoringVersion, CreateTime: &now, UpdateTime: &now}
+		if err := tx.Create(&validityResult).Error; err != nil {
+			return err
+		}
+		var overall *decimal.Decimal
+		if calculated.OverallScore != nil {
+			value := decimal.NewFromBigRat(calculated.OverallScore, 6)
+			overall = &value
+		}
 		var average *decimal.Decimal
 		if calculated.EvaluationAverage != nil {
 			v := decimal.NewFromBigRat(calculated.EvaluationAverage, 6)
@@ -560,7 +726,8 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 			evaluation = &v
 		}
 		complete := int8(0)
-		if calculated.IsComplete {
+		isComplete := calculated.IsComplete && calculatedValidity.IsComplete
+		if isComplete {
 			complete = 1
 		}
 		var participant struct {
@@ -581,7 +748,7 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 			Where("id = ? AND paper_id = ?", claims.ParticipantID, paper.ID).Take(&participant).Error; err != nil {
 			return err
 		}
-		result := model.CompetencyResult{PaperID: paper.ID, ExamID: paper.ExamID, TotalQuestionCount: calculated.TotalQuestionCount, AnsweredQuestionCount: calculated.AnsweredQuestionCount, EffectiveDimensionCount: calculated.EffectiveDimensionCount, OverallScore: overall, EvaluationAverage: average, EvaluationLevel: evaluation, ParticipantType: claims.ParticipantType, ParticipantID: claims.ParticipantID, ParticipantName: participant.Name, ParticipantTelephone: participant.Telephone, ParticipantAge: participant.Age, ParticipantGender: participant.Gender, ParticipantAffiliation: participant.Affiliation, ParticipantPost: participant.Post, ParticipantDegree: participant.Degree, ParticipantMajor: participant.Major, ReportAudience: *exam.CompetencyReportAudience, IsComplete: complete, SubmitType: submitType, ScoringVersion: CompetencyScoringV1, SubmittedAt: &now, CreateTime: &now, UpdateTime: &now}
+		result := model.CompetencyResult{PaperID: paper.ID, ExamID: paper.ExamID, TotalQuestionCount: len(rows), AnsweredQuestionCount: calculated.AnsweredQuestionCount + calculatedValidity.AnsweredQuestionCount, DimensionQuestionCount: calculated.TotalQuestionCount, AnsweredDimensionQuestionCount: calculated.AnsweredQuestionCount, EffectiveDimensionCount: calculated.EffectiveDimensionCount, OverallScore: overall, EvaluationAverage: average, EvaluationLevel: evaluation, ParticipantType: claims.ParticipantType, ParticipantID: claims.ParticipantID, ParticipantName: participant.Name, ParticipantTelephone: participant.Telephone, ParticipantAge: participant.Age, ParticipantGender: participant.Gender, ParticipantAffiliation: participant.Affiliation, ParticipantPost: participant.Post, ParticipantDegree: participant.Degree, ParticipantMajor: participant.Major, ReportAudience: *exam.CompetencyReportAudience, IsComplete: complete, SubmitType: submitType, ProductVersion: versions.ProductVersion, ScoringVersion: versions.ScoringVersion, ContentVersion: versions.ContentVersion, ReportTemplateVersion: versions.ReportTemplateVersion, SubmittedAt: &now, CreateTime: &now, UpdateTime: &now}
 		if err := tx.Create(&result).Error; err != nil {
 			return err
 		}
@@ -598,7 +765,7 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 		if err := tx.Table(table).Where("id = ? AND paper_id = ?", claims.ParticipantID, paper.ID).Updates(map[string]any{"end_time": &now, "update_time": &now}).Error; err != nil {
 			return err
 		}
-		summary = CompetencySubmitSummary{PaperID: paper.ID, SubmittedAt: &now, IsComplete: calculated.IsComplete}
+		summary = CompetencySubmitSummary{PaperID: paper.ID, SubmittedAt: &now, IsComplete: isComplete}
 		return nil
 	})
 	return summary, err
@@ -611,6 +778,17 @@ func (s *CompetencyRuntimeService) ResultDetail(paperID string) (map[string]any,
 	}
 	dimensions := make([]model.CompetencyDimensionResult, 0)
 	if err := s.db.Where("paper_id = ?", paperID).Order("display_order ASC").Find(&dimensions).Error; err != nil {
+		return nil, err
+	}
+	groups := make([]model.CompetencyGroupResult, 0)
+	if err := s.db.Where("paper_id = ?", paperID).Order("display_order ASC").Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	var validity *model.CompetencyValidityResult
+	var validityRow model.CompetencyValidityResult
+	if err := s.db.Where("paper_id = ?", paperID).Take(&validityRow).Error; err == nil {
+		validity = &validityRow
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) || IsPhase1CompetencyVersionSet(CompetencyVersionSetFromResult(result)) {
 		return nil, err
 	}
 	type auditRow struct {
@@ -630,7 +808,7 @@ func (s *CompetencyRuntimeService) ResultDetail(paperID string) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"result": result, "dimensions": dimensions, "questions": audit, "reportTextReady": false, "reportTextMessage": "正式解读文案待配置"}, nil
+	return map[string]any{"result": result, "groups": groups, "dimensions": dimensions, "validity": validity, "questions": audit, "reportTextReady": false, "reportTextMessage": "正式解读文案待配置"}, nil
 }
 
 func (s *CompetencyRuntimeService) FormalReportData(paperID string) (map[string]any, error) {
@@ -639,6 +817,23 @@ func (s *CompetencyRuntimeService) FormalReportData(paperID string) (map[string]
 		return nil, err
 	}
 	if err := validateCompetencyFormalReport(result); err != nil {
+		return nil, err
+	}
+	versions := CompetencyVersionSetFromResult(result)
+	if IsPhase1CompetencyVersionSet(versions) {
+		var contentPackage model.CompetencyReportContentPackage
+		if err := s.db.Where("product_version = ? AND scoring_version = ? AND content_version = ? AND template_version = ? AND audience = ?", versions.ProductVersion, versions.ScoringVersion, versions.ContentVersion, versions.ReportTemplateVersion, result.ReportAudience).Take(&contentPackage).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrPhase1ReportContentNotApproved
+			}
+			return nil, err
+		}
+		if err := ValidatePhase1ReportContentApproval(contentPackage); err != nil {
+			return nil, err
+		}
+		return s.phase1FormalReportData(paperID, result, contentPackage)
+	}
+	if err := ValidateFrozenCompetencyVersionSet(versions); err != nil {
 		return nil, err
 	}
 	data, err := s.ResultDetail(paperID)
@@ -657,11 +852,11 @@ func (s *CompetencyRuntimeService) FormalReportData(paperID string) (map[string]
 		return nil, errors.New("报告总体等级不完整")
 	}
 	texts := make([]model.CompetencyReportText, 0)
-	if err := s.db.Where("content_version = ? AND audience = ? AND status = 0", CompetencyTemporaryContentVersion, result.ReportAudience).
+	if err := s.db.Where("content_version = ? AND audience = ? AND status = 0", result.ContentVersion, result.ReportAudience).
 		Find(&texts).Error; err != nil {
 		return nil, err
 	}
-	snapshotJSON, err := BuildCompetencyReportTextSnapshot(result.ReportAudience, *result.EvaluationLevel, dimensionLevels, texts)
+	snapshotJSON, err := BuildCompetencyReportTextSnapshot(result.ContentVersion, result.ReportAudience, *result.EvaluationLevel, dimensionLevels, texts)
 	if err != nil {
 		return nil, err
 	}
@@ -670,9 +865,12 @@ func (s *CompetencyRuntimeService) FormalReportData(paperID string) (map[string]
 		return nil, err
 	}
 	data["reportTextReady"] = true
-	data["reportTextMessage"] = CompetencyTemporaryDisclaimer
+	data["reportTextMessage"] = snapshot.Disclaimer
 	data["reportText"] = snapshot
-	data["contentVersion"] = CompetencyTemporaryContentVersion
+	data["productVersion"] = result.ProductVersion
+	data["scoringVersion"] = result.ScoringVersion
+	data["contentVersion"] = result.ContentVersion
+	data["reportTemplateVersion"] = result.ReportTemplateVersion
 	var meta struct {
 		ExamTitle      string     `gorm:"column:exam_title"`
 		RequiredFields string     `gorm:"column:required_fields"`
@@ -707,6 +905,87 @@ func (s *CompetencyRuntimeService) FormalReportData(paperID string) (map[string]
 	return data, nil
 }
 
+func (s *CompetencyRuntimeService) phase1FormalReportData(paperID string, result model.CompetencyResult, contentPackage model.CompetencyReportContentPackage) (map[string]any, error) {
+	data, err := s.ResultDetail(paperID)
+	if err != nil {
+		return nil, err
+	}
+	groups, ok := data["groups"].([]model.CompetencyGroupResult)
+	if !ok {
+		return nil, errors.New("一期正式报告一级维度数据异常")
+	}
+	dimensions, ok := data["dimensions"].([]model.CompetencyDimensionResult)
+	if !ok {
+		return nil, errors.New("一期正式报告二级维度数据异常")
+	}
+	validity, ok := data["validity"].(*model.CompetencyValidityResult)
+	if !ok || validity == nil || validity.ValidityStatus == nil {
+		return nil, errors.New("一期正式报告效度数据异常")
+	}
+	if result.EvaluationLevel == nil || *result.EvaluationLevel == "" {
+		return nil, errors.New("一期正式报告总体等级不完整")
+	}
+	dimensionLevels := make(map[string]string, len(dimensions))
+	for _, dimension := range dimensions {
+		if dimension.LevelCode == nil || *dimension.LevelCode == "" {
+			return nil, errors.New("一期正式报告二级维度等级不完整")
+		}
+		dimensionLevels[dimension.DimensionID] = *dimension.LevelCode
+	}
+	texts := make([]model.CompetencyReportText, 0)
+	if err := s.db.Where("content_version = ? AND audience = ? AND status = 0", result.ContentVersion, result.ReportAudience).
+		Where("content_type IN ?", []string{CompetencyReportContentOverall, CompetencyReportContentGroup, CompetencyReportContentDimension, CompetencyReportContentValidity}).
+		Find(&texts).Error; err != nil {
+		return nil, err
+	}
+	snapshotJSON, err := BuildPhase1ReportTextSnapshot(result.ContentVersion, result.ReportAudience, *result.EvaluationLevel, *validity.ValidityStatus, dimensionLevels, texts)
+	if err != nil {
+		return nil, err
+	}
+	var snapshot Phase1ReportTextSnapshot
+	if err := json.Unmarshal([]byte(snapshotJSON), &snapshot); err != nil {
+		return nil, err
+	}
+	if snapshot.Disclaimer != contentPackage.Disclaimer {
+		return nil, errors.New("一期正式报告免责声明与批准内容包不一致")
+	}
+	formal, err := BuildPhase1FormalReportData(result, groups, dimensions, *validity, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(formal)
+	if err != nil {
+		return nil, err
+	}
+	output := make(map[string]any)
+	if err := json.Unmarshal(payload, &output); err != nil {
+		return nil, err
+	}
+	output["reportTextReady"] = true
+	output["reportTextMessage"] = snapshot.Disclaimer
+	output["productVersion"] = result.ProductVersion
+	output["scoringVersion"] = result.ScoringVersion
+	output["contentVersion"] = result.ContentVersion
+	output["reportTemplateVersion"] = result.ReportTemplateVersion
+	var meta struct {
+		ExamTitle      string     `gorm:"column:exam_title"`
+		RequiredFields string     `gorm:"column:required_fields"`
+		StartedAt      *time.Time `gorm:"column:started_at"`
+		UserTime       int        `gorm:"column:user_time"`
+	}
+	if err := s.db.Table("el_paper p").
+		Select("e.title AS exam_title, COALESCE(e.required_fields, '') AS required_fields, p.create_time AS started_at, p.user_time").
+		Joins("INNER JOIN el_exam e ON e.id = p.exam_id").
+		Where("p.id = ?", paperID).Take(&meta).Error; err != nil {
+		return nil, err
+	}
+	output["meta"] = map[string]any{
+		"examTitle": meta.ExamTitle, "requiredFields": meta.RequiredFields,
+		"startedAt": meta.StartedAt, "userTime": meta.UserTime, "generatedAt": time.Now(),
+	}
+	return output, nil
+}
+
 type CompetencyResultPageRequest struct {
 	ExamID        string
 	Current       int
@@ -714,6 +993,7 @@ type CompetencyResultPageRequest struct {
 	Name          string
 	Telephone     string
 	Completion    string
+	Validity      string
 	SortBy        string
 	SortDirection string
 	DimensionID   string
@@ -728,6 +1008,8 @@ type CompetencyResultPageRow struct {
 	StartedAt            *time.Time       `gorm:"column:started_at" json:"startedAt"`
 	UserTime             int              `gorm:"column:user_time" json:"userTime"`
 	DimensionScore       *decimal.Decimal `gorm:"column:sort_dimension_score" json:"sortDimensionScore"`
+	ValidityScore        *decimal.Decimal `gorm:"column:validity_score" json:"validityScore"`
+	ValidityStatus       *string          `gorm:"column:validity_status" json:"validityStatus"`
 }
 
 type competencyResultSort struct {
@@ -736,19 +1018,19 @@ type competencyResultSort struct {
 }
 
 type competencyResultFilters struct {
-	Name       string
-	Telephone  string
-	IsComplete *int
+	Name           string
+	Telephone      string
+	IsComplete     *int
+	ValidityStatus string
 }
 
-func normalizeCompetencyResultFilters(name, telephone, completion string) (competencyResultFilters, error) {
+func normalizeCompetencyResultFilters(name, telephone, completion, validity string) (competencyResultFilters, error) {
 	filters := competencyResultFilters{
 		Name:      strings.TrimSpace(name),
 		Telephone: strings.TrimSpace(telephone),
 	}
 	switch strings.TrimSpace(completion) {
 	case "", "all":
-		return filters, nil
 	case "complete":
 		value := 1
 		filters.IsComplete = &value
@@ -757,6 +1039,13 @@ func normalizeCompetencyResultFilters(name, telephone, completion string) (compe
 		filters.IsComplete = &value
 	default:
 		return competencyResultFilters{}, errors.New("完成状态只能是complete或incomplete")
+	}
+	switch strings.TrimSpace(validity) {
+	case "", "all":
+	case CompetencyPhase1ValidityGood, CompetencyPhase1ValidityQuestionable, CompetencyPhase1ValidityIncomplete:
+		filters.ValidityStatus = strings.TrimSpace(validity)
+	default:
+		return competencyResultFilters{}, errors.New("效度状态只能是good、questionable或incomplete")
 	}
 	return filters, nil
 }
@@ -770,6 +1059,9 @@ func applyCompetencyResultFilters(query *gorm.DB, filters competencyResultFilter
 	}
 	if filters.IsComplete != nil {
 		query = query.Where("r.is_complete = ?", *filters.IsComplete)
+	}
+	if filters.ValidityStatus != "" {
+		query = query.Where("EXISTS (SELECT 1 FROM el_competency_validity_result vr WHERE vr.paper_id = r.paper_id AND vr.validity_status = ?)", filters.ValidityStatus)
 	}
 	return query
 }
@@ -804,6 +1096,18 @@ func validateCompetencyResultSort(sortBy, direction, dimensionID string) (compet
 	}
 }
 
+func competencyRankingDefaults(sortBy, completion, validity string) (string, string) {
+	if sortBy == "overallScore" || sortBy == "dimensionScore" {
+		if strings.TrimSpace(completion) == "" {
+			completion = "complete"
+		}
+		if strings.TrimSpace(validity) == "" {
+			validity = CompetencyPhase1ValidityGood
+		}
+	}
+	return completion, validity
+}
+
 func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest) ([]CompetencyResultPageRow, int64, error) {
 	req.ExamID = strings.TrimSpace(req.ExamID)
 	if req.ExamID == "" {
@@ -822,7 +1126,8 @@ func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest)
 	if err != nil {
 		return nil, 0, err
 	}
-	filters, err := normalizeCompetencyResultFilters(req.Name, req.Telephone, req.Completion)
+	req.Completion, req.Validity = competencyRankingDefaults(req.SortBy, req.Completion, req.Validity)
+	filters, err := normalizeCompetencyResultFilters(req.Name, req.Telephone, req.Completion, req.Validity)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -848,7 +1153,9 @@ func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest)
 			COALESCE(NULLIF(r.participant_name, ''), c.name, t.name, '') AS participant_name,
 			COALESCE(NULLIF(r.participant_telephone, ''), c.telephone, t.telephone, '') AS participant_telephone,
 			COALESCE(NULLIF(r.participant_type, ''), CASE WHEN c.id IS NOT NULL THEN 'candidate' WHEN t.id IS NOT NULL THEN 'tester' ELSE '' END) AS participant_type,
-			NULL AS sort_dimension_score`
+			NULL AS sort_dimension_score,
+			(SELECT vr.validity_score FROM el_competency_validity_result vr WHERE vr.paper_id = r.paper_id) AS validity_score,
+			(SELECT vr.validity_status FROM el_competency_validity_result vr WHERE vr.paper_id = r.paper_id) AS validity_status`
 	if sortSpec.DimensionID != "" {
 		selectClause = strings.Replace(selectClause, "NULL AS sort_dimension_score", "dr.dimension_score AS sort_dimension_score", 1)
 	}

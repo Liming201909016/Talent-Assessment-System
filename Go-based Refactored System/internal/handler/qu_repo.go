@@ -42,7 +42,7 @@ func competencyVirtualRepo(questionCount int) quRepo {
 
 func countCompetencyQuestions(db *gorm.DB) (int, error) {
 	var count int64
-	if err := db.Table("el_qu").Where("dimension_id IS NOT NULL").Count(&count).Error; err != nil {
+	if err := db.Table("el_qu").Where("dimension_id IS NOT NULL OR competency_question_type IS NOT NULL").Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return int(count), nil
@@ -276,6 +276,7 @@ func (h *RepoHandler) BatchAction(c *gin.Context) {
 		}
 		if err := tx.Table("el_qu").Select("id, qu_type").
 			Where("id IN ? AND dimension_id IS NULL", b.QuIDs).
+			Where("competency_question_type IS NULL").
 			Find(&questions).Error; err != nil {
 			return err
 		}

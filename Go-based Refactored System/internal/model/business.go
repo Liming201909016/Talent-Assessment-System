@@ -4,22 +4,23 @@ import "time"
 
 // Qu 题目 el_qu
 type Qu struct {
-	ID               string     `gorm:"column:id;primaryKey"      json:"id"`
-	QuType           int        `gorm:"column:qu_type"            json:"quType"`
-	Level            int        `gorm:"column:level"              json:"level"`
-	Image            string     `gorm:"column:image"              json:"image"`
-	Content          string     `gorm:"column:content"            json:"content"`
-	CreateTime       *time.Time `gorm:"column:create_time"        json:"createTime"`
-	UpdateTime       *time.Time `gorm:"column:update_time"        json:"updateTime"`
-	Remark           string     `gorm:"column:remark"             json:"remark"`
-	Analysis         string     `gorm:"column:analysis"           json:"analysis"`
-	Title            string     `gorm:"column:title"              json:"title"`
-	QuestionCode     *string    `gorm:"column:question_code"      json:"questionCode"`
-	DimensionID      *string    `gorm:"column:dimension_id"       json:"dimensionId"`
-	DimensionItemNo  *int       `gorm:"column:dimension_item_no"  json:"dimensionItemNo"`
-	ObservationPoint *string    `gorm:"column:observation_point"  json:"observationPoint"`
-	ScoringDirection *string    `gorm:"column:scoring_direction"  json:"scoringDirection"`
-	QuestionStatus   int8       `gorm:"column:question_status"    json:"questionStatus"`
+	ID                     string     `gorm:"column:id;primaryKey"              json:"id"`
+	QuType                 int        `gorm:"column:qu_type"                    json:"quType"`
+	Level                  int        `gorm:"column:level"                      json:"level"`
+	Image                  string     `gorm:"column:image"                      json:"image"`
+	Content                string     `gorm:"column:content"                    json:"content"`
+	CreateTime             *time.Time `gorm:"column:create_time"                json:"createTime"`
+	UpdateTime             *time.Time `gorm:"column:update_time"                json:"updateTime"`
+	Remark                 string     `gorm:"column:remark"                     json:"remark"`
+	Analysis               string     `gorm:"column:analysis"                   json:"analysis"`
+	Title                  string     `gorm:"column:title"                      json:"title"`
+	QuestionCode           *string    `gorm:"column:question_code"              json:"questionCode"`
+	DimensionID            *string    `gorm:"column:dimension_id"               json:"dimensionId"`
+	DimensionItemNo        *int       `gorm:"column:dimension_item_no"          json:"dimensionItemNo"`
+	ObservationPoint       *string    `gorm:"column:observation_point"          json:"observationPoint"`
+	ScoringDirection       *string    `gorm:"column:scoring_direction"          json:"scoringDirection"`
+	CompetencyQuestionType *string    `gorm:"column:competency_question_type" json:"competencyQuestionType"`
+	QuestionStatus         int8       `gorm:"column:question_status"            json:"questionStatus"`
 }
 
 func (Qu) TableName() string { return "el_qu" }
@@ -65,33 +66,37 @@ func (Repo) TableName() string { return "el_repo" }
 
 // Exam 考试 el_exam
 type Exam struct {
-	ID                       string     `gorm:"column:id;primaryKey" json:"id"`
-	Title                    string     `gorm:"column:title"         json:"title"`
-	Content                  string     `gorm:"column:content"       json:"content"`
-	OpenType                 int        `gorm:"column:open_type"     json:"openType"`
-	JoinType                 int        `gorm:"column:join_type"     json:"joinType"`
-	IsOpen                   int        `gorm:"column:is_open"       json:"isOpen"`
-	AnswerType               int        `gorm:"column:answer_type"   json:"answerType"`
-	Level                    int        `gorm:"column:level"         json:"level"`
-	State                    int        `gorm:"column:state"         json:"state"`
-	TimeLimit                int8       `gorm:"column:time_limit"    json:"timeLimit"`
-	ShowPdf                  int8       `gorm:"column:show_pdf"      json:"showPdf"`
-	StartTime                *time.Time `gorm:"column:start_time"    json:"startTime"`
-	EndTime                  *time.Time `gorm:"column:end_time"      json:"endTime"`
-	CreateTime               *time.Time `gorm:"column:create_time"   json:"createTime"`
-	UpdateTime               *time.Time `gorm:"column:update_time"   json:"updateTime"`
-	TotalScore               int        `gorm:"column:total_score"   json:"totalScore"`
-	TotalTime                int        `gorm:"column:total_time"    json:"totalTime"`
-	QualifyScore             int        `gorm:"column:qualify_score" json:"qualifyScore"`
-	AssessmentType           string     `gorm:"column:assessment_type"              json:"assessmentType"`
-	ScoringMode              string     `gorm:"column:scoring_mode"                 json:"scoringMode"`
-	CompetencyReportAudience *string    `gorm:"column:competency_report_audience"   json:"competencyReportAudience"`
-	PublishStatus            int8       `gorm:"column:publish_status"               json:"publishStatus"`
-	PublishedAt              *time.Time `gorm:"column:published_at"                 json:"publishedAt"`
-	PublishedBy              *int64     `gorm:"column:published_by"                 json:"publishedBy"`
-	PdfPath                  string     `gorm:"column:pdf_path"         json:"pdfPath"`
-	RequiredFields           string     `gorm:"column:required_fields"  json:"requiredFields"`
-	StuFlag                  int8       `gorm:"column:stu_flag"         json:"stuFlag"`
+	ID                              string     `gorm:"column:id;primaryKey" json:"id"`
+	Title                           string     `gorm:"column:title"         json:"title"`
+	Content                         string     `gorm:"column:content"       json:"content"`
+	OpenType                        int        `gorm:"column:open_type"     json:"openType"`
+	JoinType                        int        `gorm:"column:join_type"     json:"joinType"`
+	IsOpen                          int        `gorm:"column:is_open"       json:"isOpen"`
+	AnswerType                      int        `gorm:"column:answer_type"   json:"answerType"`
+	Level                           int        `gorm:"column:level"         json:"level"`
+	State                           int        `gorm:"column:state"         json:"state"`
+	TimeLimit                       int8       `gorm:"column:time_limit"    json:"timeLimit"`
+	ShowPdf                         int8       `gorm:"column:show_pdf"      json:"showPdf"`
+	StartTime                       *time.Time `gorm:"column:start_time"    json:"startTime"`
+	EndTime                         *time.Time `gorm:"column:end_time"      json:"endTime"`
+	CreateTime                      *time.Time `gorm:"column:create_time"   json:"createTime"`
+	UpdateTime                      *time.Time `gorm:"column:update_time"   json:"updateTime"`
+	TotalScore                      int        `gorm:"column:total_score"   json:"totalScore"`
+	TotalTime                       int        `gorm:"column:total_time"    json:"totalTime"`
+	QualifyScore                    int        `gorm:"column:qualify_score" json:"qualifyScore"`
+	AssessmentType                  string     `gorm:"column:assessment_type"              json:"assessmentType"`
+	ScoringMode                     string     `gorm:"column:scoring_mode"                 json:"scoringMode"`
+	CompetencyReportAudience        *string    `gorm:"column:competency_report_audience"   json:"competencyReportAudience"`
+	CompetencyProductVersion        string     `gorm:"column:competency_product_version"   json:"competencyProductVersion"`
+	CompetencyScoringVersion        string     `gorm:"column:competency_scoring_version"   json:"competencyScoringVersion"`
+	CompetencyContentVersion        string     `gorm:"column:competency_content_version"   json:"competencyContentVersion"`
+	CompetencyReportTemplateVersion string     `gorm:"column:competency_report_template_version" json:"competencyReportTemplateVersion"`
+	PublishStatus                   int8       `gorm:"column:publish_status"               json:"publishStatus"`
+	PublishedAt                     *time.Time `gorm:"column:published_at"                 json:"publishedAt"`
+	PublishedBy                     *int64     `gorm:"column:published_by"                 json:"publishedBy"`
+	PdfPath                         string     `gorm:"column:pdf_path"         json:"pdfPath"`
+	RequiredFields                  string     `gorm:"column:required_fields"  json:"requiredFields"`
+	StuFlag                         int8       `gorm:"column:stu_flag"         json:"stuFlag"`
 }
 
 func (Exam) TableName() string { return "el_exam" }

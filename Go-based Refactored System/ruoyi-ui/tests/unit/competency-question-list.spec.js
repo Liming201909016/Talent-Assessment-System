@@ -50,6 +50,19 @@ describe('00401 competency question bank', () => {
     expect(vm.editIdentity).toEqual(expect.objectContaining({ questionCode: 'D01-Q01', dimensionName: '沟通表达' }))
   })
 
+  it('distinguishes dimension and validity question types in the dedicated page', () => {
+    const source = CompetencyQuestionList.render.toString()
+    expect(source).toContain('competencyQuestionType')
+    expect(source).toContain('validity')
+  })
+
+  it('shows the ten-column import contract after adding the question-type column', () => {
+    // Regression FB-104: docs/regression-tests.md
+    const source = CompetencyQuestionList.render.toString()
+    expect(source).toContain('专用十列模板')
+    expect(source).not.toContain('专用九列模板')
+  })
+
   it('saves editable fields and refreshes the current page', async () => {
     updateCompetencyQuestion.mockClear()
     const loadQuestions = vi.fn()

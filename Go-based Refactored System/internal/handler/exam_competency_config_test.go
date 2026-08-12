@@ -5,10 +5,70 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/talent-assessment/refactored/internal/model"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
+
+// TestBugFB103_EnabledDimensionQuestionCountsExcludeValidity
+// 对应：docs/regression-tests.md #FB-103
+// 复现：同一维度关联8道维度题和1道效度题。
+// 期望：维度列表及测评配置只统计8道启用维度题。
+// 实际：当前聚合查询把关联维度的效度题也计入题数。
+func TestBugFB103_EnabledDimensionQuestionCountsExcludeValidity(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectQuery("SELECT dimension_id, COUNT\\(\\*\\) AS question_count FROM `el_qu` WHERE .*competency_question_type = \\?.*GROUP BY `dimension_id`").
+		WithArgs(0, "dimension", "d1").
+		WillReturnRows(sqlmock.NewRows([]string{"dimension_id", "question_count"}).AddRow("d1", 8))
+
+	counts, err := loadEnabledQuestionCounts(db, []string{"d1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts["d1"] != 8 {
+		t.Fatalf("dimension question count = %d, want 8", counts["d1"])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadPhase1QuestionInventory_GroupsQuestionTypes(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectQuery("SELECT dimension_id, COALESCE\\(competency_question_type, ''\\) AS question_type, COUNT\\(\\*\\) AS question_count FROM `el_qu` WHERE .*GROUP BY dimension_id, competency_question_type").
+		WithArgs("d1", 0).
+		WillReturnRows(sqlmock.NewRows([]string{"dimension_id", "question_type", "question_count"}).
+			AddRow("d1", "dimension", 8).
+			AddRow("d1", "validity", 1))
+
+	counts, err := loadPhase1QuestionInventory(db, []string{"d1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts["d1"].Dimension != 8 || counts["d1"].Validity != 1 || counts["d1"].Other != 0 {
+		t.Fatalf("inventory=%+v", counts["d1"])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestLoadEnabledQuestionCounts_PropagatesDatabaseFailure(t *testing.T) {
 	sqlDB, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:1)/element?timeout=1ms")
@@ -87,23 +147,65 @@ func TestExamSave_CompetencyConfigurationGuards(t *testing.T) {
 		"`json:\"assessmentType\"`",
 		"CompetencyReportAudience",
 		"`json:\"competencyReportAudience\"`",
+		"CompetencyProductVersion",
+		"`json:\"competencyProductVersion\"`",
+		"CompetencyScoringVersion",
+		"`json:\"competencyScoringVersion\"`",
+		"CompetencyContentVersion",
+		"`json:\"competencyContentVersion\"`",
+		"CompetencyReportTemplateVersion",
+		"`json:\"competencyReportTemplateVersion\"`",
 		"DimensionIDs",
 		"`json:\"dimensionIds\"`",
 		"ValidateAssessmentMode",
-		"ValidateCompetencyReportAudience",
-		"ValidateCompetencyDimensionIDs",
+		"NormalizePhase1CompetencyConfiguration",
+		"ValidatePhase1CompetencyConfiguration",
+		"ClearCompetencyVersions",
 		"胜任力测评必须配置大于0的答题时长",
 		`Where("id IN ? AND status = ?", body.DimensionIDs, 0)`,
 		"所选测评维度不存在或已停用",
-		"loadEnabledQuestionCounts",
-		"validateEnabledQuestionCounts",
+		"loadPhase1QuestionInventory",
+		"ValidatePhase1QuestionInventory",
 		"QuestionCount:      enabledQuestionCounts[dimension.ID]",
 		"已发布胜任力测评不能修改报告版本",
+		"已发布胜任力测评不能修改产品、评分、内容或模板版本",
 		"已发布胜任力测评不能修改测评维度",
 		"CreateInBatches(associations, 100)",
 	} {
 		if !strings.Contains(body, required) {
 			t.Errorf("Exam.Save competency guard missing %q", required)
+		}
+	}
+}
+
+func TestExamSave_UsesFixedPhase1ConfigurationAndInventory(t *testing.T) {
+	src := readSourceFile(t, "exam.go")
+	body := extractFunctionBody(t, src, "func (h *ExamHandler) Save(")
+	for _, required := range []string{
+		"NormalizePhase1CompetencyConfiguration",
+		"ValidatePhase1CompetencyConfiguration",
+		"loadPhase1QuestionInventory",
+		"ValidatePhase1QuestionInventory",
+		"00401一期固定配置只能使用基层员工、十个A/B维度和已确认版本",
+		"00401一期题本必须包含每维8道维度题和1道效度题",
+	} {
+		if !strings.Contains(body, required) {
+			t.Errorf("Exam.Save phase-1 fixed configuration missing %q", required)
+		}
+	}
+}
+
+func TestCompetencyPublish_ValidatesAndFreezesPhase1Runtime(t *testing.T) {
+	src := readSourceFile(t, "../service/competency_runtime.go")
+	body := extractFunctionBody(t, src, "func (s *CompetencyRuntimeService) Publish(")
+	for _, required := range []string{
+		"IsPhase1CompetencyVersionSet",
+		"00401一期固定配置只能使用基层员工、十个A/B维度和已确认版本",
+		"CreateInBatches(groupSnapshots",
+		"ValidatePhase1QuestionInventory",
+	} {
+		if !strings.Contains(body, required) {
+			t.Errorf("phase-1 publish runtime missing %q", required)
 		}
 	}
 }
@@ -130,6 +232,10 @@ func TestExamDetail_ReturnsCompetencyConfiguration(t *testing.T) {
 	for _, required := range []string{
 		`"assessmentType"`,
 		`"competencyReportAudience"`,
+		`"competencyProductVersion"`,
+		`"competencyScoringVersion"`,
+		`"competencyContentVersion"`,
+		`"competencyReportTemplateVersion"`,
 		`"publishStatus"`,
 		`"dimensionIds"`,
 		`"competencyDimensions"`,
@@ -248,20 +354,20 @@ func TestValidateCompetencyDimensionUpdate(t *testing.T) {
 		request CompetencyDimensionUpdateRequest
 		wantErr bool
 	}{
-		{"valid enabled", CompetencyDimensionUpdateRequest{ID: "d1", Name: "沟通表达", VIRDLevel: "Versatility 胜任力", ApplicableCategory: "基层通用", CoreMeaning: "清晰传递信息", DisplayOrder: 1, Status: 0}, false},
-		{"valid disabled string values", CompetencyDimensionUpdateRequest{ID: "d1", Name: "沟通表达", VIRDLevel: "Versatility 胜任力", ApplicableCategory: "基层通用", CoreMeaning: "清晰传递信息", DisplayOrder: "1", Status: "1"}, false},
-		{"missing id", CompetencyDimensionUpdateRequest{Name: "沟通表达", VIRDLevel: "V", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
-		{"blank name", CompetencyDimensionUpdateRequest{ID: "d1", VIRDLevel: "V", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
-		{"blank vird", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
-		{"blank category", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "V", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
-		{"blank meaning", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "V", ApplicableCategory: "基层通用", DisplayOrder: 1, Status: 0}, true},
-		{"invalid vird", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "Other", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
-		{"invalid category", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "Versatility 胜任力", ApplicableCategory: "其他", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
-		{"zero order", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "V", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 0, Status: 0}, true},
-		{"order above 48", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "V", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 49, Status: 0}, true},
-		{"fractional order", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "V", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 1.5, Status: 0}, true},
-		{"empty status", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "V", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 1, Status: ""}, true},
-		{"invalid status", CompetencyDimensionUpdateRequest{ID: "d1", Name: "名称", VIRDLevel: "V", ApplicableCategory: "基层通用", CoreMeaning: "含义", DisplayOrder: 1, Status: 2}, true},
+		{"valid general ability", CompetencyDimensionUpdateRequest{ID: "competency-a1-01", Name: "逻辑思维", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", CoreMeaning: "逻辑分析严谨，推理判断有据", DisplayOrder: 1, Status: 0}, false},
+		{"valid psychological quality string values", CompetencyDimensionUpdateRequest{ID: "competency-b1-05", Name: "合作意识", VIRDLevel: "心理素养", ApplicableCategory: "基层员工", CoreMeaning: "主动协作，乐于分享，促成共赢", DisplayOrder: "10", Status: "1"}, false},
+		{"missing id", CompetencyDimensionUpdateRequest{Name: "逻辑思维", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
+		{"blank name", CompetencyDimensionUpdateRequest{ID: "a1", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
+		{"blank layer", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
+		{"blank category", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "通用能力", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
+		{"blank meaning", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", DisplayOrder: 1, Status: 0}, true},
+		{"retired vird layer", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "Versatility 胜任力", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
+		{"invalid category", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "通用能力", ApplicableCategory: "其他", CoreMeaning: "含义", DisplayOrder: 1, Status: 0}, true},
+		{"zero order", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 0, Status: 0}, true},
+		{"order above phase one", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 11, Status: 0}, true},
+		{"fractional order", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 1.5, Status: 0}, true},
+		{"empty status", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 1, Status: ""}, true},
+		{"invalid status", CompetencyDimensionUpdateRequest{ID: "a1", Name: "名称", VIRDLevel: "通用能力", ApplicableCategory: "基层员工", CoreMeaning: "含义", DisplayOrder: 1, Status: 2}, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

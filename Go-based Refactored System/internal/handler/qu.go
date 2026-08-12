@@ -137,9 +137,11 @@ func (h *QuHandler) Paging(c *gin.Context) {
 	if repoID != "" {
 		q = h.db.Table("el_qu AS q").
 			Joins("INNER JOIN el_qu_repo AS r ON r.qu_id = q.id").
-			Where("r.repo_id = ? AND q.dimension_id IS NULL", repoID)
+			Where("r.repo_id = ? AND q.dimension_id IS NULL", repoID).
+			Where("q.competency_question_type IS NULL")
 	} else {
-		q = h.db.Table("el_qu AS q").Where("q.dimension_id IS NULL")
+		q = h.db.Table("el_qu AS q").Where("q.dimension_id IS NULL").
+			Where("q.competency_question_type IS NULL")
 	}
 	if content != "" {
 		q = q.Where("q.content like ?", "%"+content+"%")
@@ -198,7 +200,7 @@ func (h *QuHandler) Paging(c *gin.Context) {
 // POST /exam/api/qu/qu/list  对齐 Java QuController.list：返回全部题目（参数被忽略）
 func (h *QuHandler) List(c *gin.Context) {
 	rows := make([]model.Qu, 0)
-	if err := h.db.Where("dimension_id IS NULL").Order("update_time desc").Find(&rows).Error; err != nil {
+	if err := h.db.Where("dimension_id IS NULL AND competency_question_type IS NULL").Order("update_time desc").Find(&rows).Error; err != nil {
 		response.RestErr(c, "查询题目列表失败")
 		return
 	}
@@ -213,7 +215,7 @@ func (h *QuHandler) Detail(c *gin.Context) {
 		return
 	}
 	var qu model.Qu
-	if err := h.db.Where("id = ? AND dimension_id IS NULL", id).First(&qu).Error; err != nil {
+	if err := h.db.Where("id = ? AND dimension_id IS NULL AND competency_question_type IS NULL", id).First(&qu).Error; err != nil {
 		response.RestErr(c, "不存在")
 		return
 	}

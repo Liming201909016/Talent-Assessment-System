@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { shallowMount } from '@vue/test-utils'
 import CompetencyExam from '@/views/paper/exam/competencyExam.vue'
 import CompetencyReport from '@/views/paper/exam/competencyReport.vue'
+import phase1Catalog from '@/data/competencyPhase1ReportCatalog'
 import { fetchCompetencyInternalReportData, submitCompetencyPaper } from '@/api/competency'
 import fs from 'fs'
 import path from 'path'
@@ -103,5 +104,58 @@ describe('Competency runtime pages', () => {
     expect(source).toContain('.dimension-page{font-size:14px;line-height:1.6;padding:38px 60px}')
     expect(source).toContain('.overview-page{font-size:14px;line-height:1.6;padding:38px 60px}')
     expect(source).toContain('.overview-page .overall-score{width:120px;height:120px')
+    expect(source).toContain('.phase1-guide{font-size:12px;line-height:1.55;padding:34px 54px}')
+    expect(source).toContain('.phase1-report .report-page{height:850px;max-height:850px;break-inside:avoid;overflow:hidden}')
+  })
+
+  it('contains an isolated fixed ten-page phase-1 report framework', () => {
+  const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/paper/exam/competencyReport.vue'), 'utf8')
+  for (const required of [
+    "reportKind === 'frontline_phase1'", 'phase1-report', 'phase1Pages', 'overallMaxScore',
+    'phase1-groups', 'phase1-radar', 'phase1-dimension-pair', 'showRawScoreToParticipant',
+    "import phase1Catalog from '@/data/competencyPhase1ReportCatalog'", 'catalogDimension',
+    'secondaryLevelLabel', 'groupLevelLabel', 'overallLevelLabel', 'radar-chart', 'radarPoints',
+    'dimension.definition', 'data.meta.examTitle', 'phase1Catalog.fixedTexts.coverTitle',
+    'phase1Catalog.fixedTexts.readingBackground', 'phase1Catalog.fixedTexts.readingDimensions',
+    'phase1Catalog.fixedTexts.readingUsage', 'phase1Catalog.fixedTexts.specialNotice'
+  ]) expect(source).toContain(required)
+  expect(source).toContain('phase1Pages.length === 10')
+  expect(source).not.toContain('data.validity.validityScore')
+  expect(source).not.toContain('35分')
+  expect(source).not.toContain("L1: '起步级'")
+  expect(source).not.toContain("weak: '较弱'")
+  })
+
+  it('uses a generated CSV report catalog for names, definitions and labels', () => {
+    const catalog = fs.readFileSync(path.resolve(process.cwd(), 'src/data/competencyPhase1ReportCatalog.js'), 'utf8')
+    for (const required of [
+      "contractVersion: 'competency-phase1-csv-v1'", "code: 'general_ability'", "name: '通用能力'",
+      "id: 'competency-a1-01'", "code: 'A1-01'", "name: '逻辑思维'", 'definition:',
+      "secondaryLabel: '差'", "groupLabel: '低分'", "code: 'excellent'", "name: '优秀胜任'",
+      "coverTitle: '胜任力测评报告'", 'readingBackground:', 'specialNotice:'
+    ]) expect(catalog).toContain(required)
+  })
+
+  it('renders the CSV-backed phase-1 customer template as ten report pages', async () => {
+    const dimensions = phase1Catalog.dimensions.map(item => ({ dimensionId: item.id, dimensionScore: 3.5, levelCode: 'L3' }))
+    const groups = phase1Catalog.groups.map(item => ({ groupCode: item.code, groupScore: 3.5, levelCode: 'L3' }))
+    const dimensionTexts = Object.fromEntries(phase1Catalog.dimensions.map(item => [item.id, `${item.name}诊断建议`]))
+    const wrapper = shallowMount(CompetencyReport, { methods: { }, mocks: { $route: { params: { paperId: 'p1' }, query: {} } } })
+    await wrapper.setData({ data: {
+      reportKind: 'frontline_phase1', overallMaxScore: 50, groupMaxScore: 5, dimensionMaxScore: 5,
+      pages: Array.from({ length: 10 }, (_, index) => ({ number: index + 1 })),
+      meta: { examTitle: '基层员工一期测评', userTime: 18, generatedAt: '2026-08-12T10:00:00Z' },
+      result: { participantName: '测试人员', overallScore: 35, overallLevel: 'qualified', submittedAt: '2026-08-12T09:58:00Z' },
+      groups, dimensions, validity: { status: 'good', notice: '效度良好' },
+      reportText: { disclaimer: '正式免责声明', overallText: '总体诊断', groupTexts: {}, dimensionTexts, validityText: '效度良好' }
+    } })
+    expect(wrapper.findAll('.report-page')).toHaveLength(10)
+    expect(wrapper.find('.radar-chart').exists()).toBe(true)
+    expect(wrapper.text()).toContain('基层员工一期测评')
+    expect(wrapper.text()).toContain('逻辑思维')
+    expect(wrapper.text()).toContain('运用归纳、演绎等逻辑方法分析问题')
+    expect(wrapper.text()).toContain('合格胜任')
+    expect(wrapper.text()).toContain('中分')
+    expect(wrapper.text()).toContain('合格')
   })
 })

@@ -145,6 +145,67 @@
 | Participant QR navigation | open competency exam has no physical repo association and `repoCode` is empty | P0 | ✅ | FB-102 resolves virtual code 00401 before building the required candidate route; exact URL unit assertion and local 8089 browser route render passed |
 | Participant QR navigation | closed competency exam uses tester QR with empty optional repo code | P0 | ✅ | FB-102 uses the same resolver and URL builder; exact tester URL assertion includes `/00401` |
 
+### F2. Competency Product / Scoring / Content / Template Versions
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Legacy save | assessment is legacy | P0 | ✅ | Four competency version fields remain empty and legacy behavior is unchanged |
+| Competency draft | all four version fields are omitted | P0 | ✅ | Save resolves current product/scoring/content/template defaults before writing |
+| Competency draft | a version contains an invalid identifier | P0 | ✅ | Reject before the exam transaction writes any row |
+| Competency draft | a valid future content version is supplied | P0 | ✅ | Preserve the explicit content version without falling back to `temp-v1` |
+| Publish | current executable product/scoring/template versions are configured | P0 | ✅ | Publish freezes all four versions with dimension/question snapshots |
+| Publish | product, scoring, or template version is unsupported by the running code | P0 | ✅ | Reject before creating snapshots or changing publish status |
+| Published edit | any frozen version differs from the stored version | P0 | ✅ | Reject the save while still allowing unrelated editable metadata |
+| Submit | a published version set exists | P0 | ✅ | Result freezes product/scoring/content/template versions from the exam, never process constants |
+| Report | result references a content and template version | P0 | ✅ | Text lookup and report instance use the exact frozen versions with no cross-version fallback |
+| Compatibility migration | existing competency exams/results/reports predate version columns | P0 | ✅ | Staging executed 007 twice; 8 columns exist, all competency gaps are 0, and all 60 legacy exams retain empty versions |
+| Exam API / form | competency detail or paging is loaded and switched to legacy | P1 | ✅ | Return/display all versions; switching to legacy clears all four fields |
+
+> 2026-08-09：上述 ✅ 均为本地自动化测试/构建证据；本切片未部署 staging/production。007 迁移只有静态检查证据，必须在可用 MySQL 环境再次执行并核对回填结果。
+
+> [纠正 - 2026-08-10] 上述 007 未部署状态已失效。`20.200.136.133` staging 已完成备份、两次幂等迁移、后端/前端部署、真实 API 拒绝测试及真实管理表单版本摘要验证；production 仍未部署。
+
+### F3. Phase-1 Question Type / Validity / First-Level Result Structures
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Source question | existing legacy or competency row predates question type | P0 | ✅ | Nullable `competency_question_type` preserves legacy rows; existing dimension-linked competency rows backfill to `dimension` |
+| Published question | snapshot predates question type | P0 | ✅ | Nullable snapshot field and compatibility backfill preserve old papers; current required dimension/direction fields remain unchanged |
+| Overall result compatibility | existing result predates dimension-question counters | P0 | ✅ | Static migration contract backfills dimension counts from existing total/answered counts without recalculating scores |
+| First-level group snapshot | product has grouped dimensions | P0 | ✅ | Model/migration contract stores one exam-scoped group plus nullable many-dimension links without hard-coded phase-1 names |
+| First-level group result | paper has group aggregation | P0 | ✅ | Model/migration contract keeps score/level nullable and records counts/scoring version; runtime guard confirms no calculation/write was added |
+| Validity result | paper has validity questions | P0 | ✅ | Model/migration contract keeps score/status nullable and records counts/scoring version; runtime guard confirms no direction/threshold/write was added |
+| Historical result | old product has no group or validity data | P0 | ✅ | Migration creates no synthetic group/validity rows and scoring contract tests keep current `competency-v1` behavior |
+| Full-chain delete | new group/validity rows exist | P0 | ✅ | Source-order regression test verifies result children before paper, then dimensions before referenced group snapshots, in one transaction |
+| Migration rerun | 008 already applied | P0 | ✅ | Staging MySQL 8.0.46 executed 008 twice; rows, columns, indexes and foreign keys remained identical |
+
+> 2026-08-10：上述 ✅ 已通过聚焦测试 89/89、Go 全量测试、Windows/Linux amd64 构建及 `go vet ./...`；本机无 MySQL/Docker/WSL，因此 008 尚未真实执行一次/两次，迁移重跑分支继续保持 ❌，也未部署 staging/production。
+
+> [纠正 - 2026-08-10] 上述 008 数据库未验证状态已失效。`20.200.136.133` staging 已完成完整备份、首次迁移和第二次幂等迁移；5 个目标列、3 张表、5 个新外键、索引签名、collation、回填和孤儿检查全部通过。仅执行数据库迁移，未部署应用，production 未修改。
+
+### F4. Phase-1 A/B Dimension Identity Reset
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Identity source | phase-1 dimension definitions are loaded | P0 | ✅ | Exactly 10 enabled identities exist in order: `A1-01` through `A1-05`, then `B1-01` through `B1-05`; names and customer core meanings match the 2026-08-07 material |
+| Identity source | unresolved phase-2/3 matrix is inspected | P0 | ✅ | Migration seeds no dimension outside the confirmed phase-1 ten and makes no 34/40-dimension claim |
+| Fresh installation | migration 002 initializes dimension master data | P0 | ❌ | New databases receive only the confirmed A/B phase-1 identities and no `D01-D48` row |
+| Existing environment reset | old competency exams, papers, results, snapshots, reports or source questions exist | P0 | ✅ | Staging invoked the existing transactional full-chain delete for all 9 competency exams, reduced all runtime/report dependencies to zero, then migration 009 replaced 384 source questions, 392 report-text rows and 48 retired dimensions with the ten A/B identities |
+| Legacy isolation | traditional 001/002/003 data exists during reset | P0 | ✅ | Ten pre-reset legacy signatures covering exams, papers, paper questions, candidates, testers, user exams, questions, answers, repository links and repositories remained byte-identical after delete, 009 and deployment |
+| Report cleanup | competency report instances reference generated PDF files | P0 | ✅ | Seven referenced PDFs were backed up, removed by the application full-chain delete and individually verified absent; the competency report directory contained zero PDFs afterward |
+| Temporary content | old `temp-v1` report text references the retired D identity set | P0 | ✅ | Migration 009 cleared all 392 old report-text rows and created no replacement scoring/report content |
+| Reset preflight | environment authorization/write quiescence is absent, a competency exam/runtime/report dependency remains, or the database shape is unexpected | P0 | ❌ | Migration 009 requires explicit staging-only and stopped-write authorization in the same session, takes a migration lock, then aborts before deleting source/master data on any failed precondition; it never bypasses full-chain/PDF cleanup |
+| Reset rerun | identity reset has already completed | P0 | ✅ | Staging first execution recorded `apply_reset=1`; the second recorded `apply_reset=0`, while the marker and full ten-row dimension signature remained unchanged |
+| Candidate artifact | customer workbook is converted after identity confirmation | P0 | ✅ | Candidate JSON uses A/B dimension IDs/codes and A/B-prefixed dimension question codes, with no D identity mapping or `MAP-001` blocker |
+| Dimension maintenance | administrator edits a confirmed A/B dimension | P0 | ✅ | API/UI use the two confirmed layers (`通用能力`/`心理素养`), category `基层员工`, and order range 1-10; stable ID/code remain immutable |
+| Question import contract | administrator downloads or validates the current dimension-question template | P1 | ✅ | Guidance and examples use current A/B identities; validation matches a positive order to an existing dimension rather than assuming D01-D48 |
+
+> 2026-08-10：用户确认可清除旧胜任力历史数据，并选择“本地改造 + `20.200.136.133` staging 全量重置”；传统 001/002/003 必须保留，production 不修改。本切片不导入 90 题，不实现效度方向/阈值、一级聚合或五档评分。
+
+> 2026-08-10 本地验证：先取得Go 71通过/8失败、前端132通过/1失败和候选身份失败的RED证据；实现后聚焦Go 79/79、Go全量、前端23文件133项、Windows/Linux构建、`go vet ./...`、前端production build、候选身份与确定性检查均通过。002/009仅通过静态契约；真实MySQL首次执行、阻断分支、第二次no-op、传统摘要和PDF残留仍未验证，故对应分支保持❌。当前公网health为ok，但当前公网IP `20.239.176.250` 到staging TCP/22超时，未登录、未备份、未删除、未执行009、未部署；production未修改。
+
+> [纠正 - 2026-08-10] 上述 staging 阻塞及009未验证状态已失效。已完成受限完整备份、Nginx停写、9个胜任力测评整链删除、7个PDF逐路径核验、009首次执行和第二次no-op、后端/前端部署、真实Nginx API及Chromium页面验收；最终为marker=1、A/B维度10、D/源题/旧文案/胜任力测评/运行依赖/PDF均0，传统十组签名不变。002全新Schema实跑和009缺授权/残留依赖的真实负向阻断尚未执行，故对应两项继续保持❌；production未修改。
+
 ### G. Competency Exam Creation Configuration
 
 | Area | Branch | Priority | Coverage | Planned assertion |
@@ -222,6 +283,115 @@
 | Question export | one or more competency questions exist | P0 | ✅ | Exports all source questions in stable dimension/item order using the same nine-column contract as import |
 | Question export | no competency questions exist | P1 | ✅ | Returns a valid header-only workbook |
 | Question export | database query or workbook generation fails | P1 | ✅ | Returns a controlled error before writing a partial xlsx response |
+
+#### I1. Phase-1 90-Question Mixed Import
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Import contract | workbook uses the new ten-column contract with 题目类型 | P0 | ✅ | Template/service/export tests share ten headers; staging export returned ten headers and 90 data rows; FB-104 keeps the dialog wording on the ten-column contract |
+| Row validation | 题目类型 is 维度题 | P0 | ✅ | Local service tests normalize to `dimension`; staging persisted 80 rows with dimension+type+item isolation |
+| Row validation | 题目类型 is 效度题 | P0 | ✅ | Local service tests require forward validity rows; staging persisted 10 rows, one associated with each A/B dimension and excluded them from enabled dimension-question counts via FB-103 |
+| Row validation | 题目类型 is empty or unknown | P0 | ✅ | Local service tests reject empty/unknown values before database writes |
+| Formal import | one file contains 80 dimension and 10 validity rows | P0 | ✅ | Staging preview returned 90/0, formal import wrote 90 in one transaction, repeated preview returned 90 errors and repeated import was rejected with row count unchanged |
+| Candidate conversion | all confirmed P0/P1 decisions resolve the candidate blockers | P0 | ✅ | Candidate v3 is deterministic and import-ready with zero blockers/warnings, ten forward validity rows, B1-04 all-forward and four confirmed version names |
+| Candidate import workbook | generated workbook matches the resolved candidate byte-for-byte | P0 | ✅ | `--check` and identity test verify byte reproduction, 90 unique rows, 62/18 dimension directions and 10 forward validity rows; staging imported SHA-256 matched |
+| Question export/UI | mixed source questions are read back after import | P1 | ✅ | Staging export content matched the imported workbook by question code; API returned 80/10; real Chromium showed both type tags, total 90 and the ten-column dialog with zero console/request errors |
+
+#### I2. Phase-1 Fixed Product Configuration
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Draft defaults | new competency draft omits fixed audience, dimensions and four versions | P0 | ✅ | Pure profile test returns frontline employee, canonical ten A/B IDs, 20-minute default and four confirmed phase-1 versions; Save applies omitted fixed fields |
+| Draft validation | client submits leader audience, another dimension set/order or another version | P0 | ✅ | Table-driven service tests reject each mutation; handler guard runs before database transaction |
+| Draft inventory | all ten dimensions are enabled with exactly 8 enabled dimension rows and 1 enabled validity row each | P0 | ✅ | Grouped-query sqlmock test returns 8/1; validator accepts all ten exact inventories and draft associations retain dimension-only count 8 |
+| Draft inventory | a dimension is absent/disabled or has a count/type mismatch | P0 | ✅ | Existing enabled-master length guard rejects missing/disabled dimensions; inventory matrix rejects 7/1, 8/0 and unknown-type rows before exam writes |
+| Frontend profile | administrator selects competency on a new or draft form | P0 | ✅ | Vue test verifies selectors are absent, fixed profile/version text is present, fixed values are applied and duration defaults to 20 minutes |
+| Frontend legacy switch | administrator switches the unsaved form back to legacy | P1 | ✅ | Existing version-form test verifies all four versions are cleared; implementation also clears audience/dimensions and restores repository data |
+| Publish gate | phase-1 scoring/group/validity runtime is complete | P0 | ✅ | Focused RED proved the old service/UI gate; unified runtime tests now require backend readiness and an enabled Vue publish action |
+
+#### I3. Phase-1 Five-Level Scoring Engine
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Question score | dimension question is forward or reverse with raw value 1–5 | P0 | ✅ | Existing exhaustive 1–5 forward/reverse table remains GREEN; invalid values and directions are rejected |
+| Dimension score | each canonical A/B dimension has exactly 8 answered dimension questions | P0 | ✅ | Phase-1 pure engine requires 80 rows and computes each exact `scoreSum/8` rational without early rounding |
+| Dimension score | any canonical dimension is missing, has not exactly 8 rows, contains a non-dimension type or has unanswered rows | P0 | ✅ | Missing/mixed/unknown identity inputs are rejected; trusted incomplete rows return counts but nil formal dimension/overall scores and no levels |
+| Dimension level | exact score is at 1.7/2.7/3.5/4.3 boundaries or immediately above | P0 | ✅ | Boundary table covers exact and +0.01 values with upper-inclusive L1–L5 rational comparisons |
+| Overall score | all ten canonical dimensions are complete | P0 | ✅ | Ten exact dimension averages sum to an exact rational in 10–50; test fixture produces 30 without evaluation-average reuse |
+| Overall level | exact total crosses 25/32.5/40/45 boundaries | P0 | ✅ | Boundary table covers below/exact values for not-qualified/weak/qualified/good/excellent without percentage conversion |
+| Input identity | dimensions are reordered but identities/order metadata are valid | P1 | ✅ | Reverse input order still emits canonical A/B order and deterministic total/level |
+| Runtime integration | submit/publish flow uses phase-1 scoring result | P0 | ✅ | Staging真实90题链持久化十维均为3/L3，总体30/weak，重复提交不重复写入 |
+
+#### I4. Phase-1 First-Level Group Aggregation
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Group identity | canonical ten A/B dimension results are provided in any order | P0 | ✅ | Reverse-order test emits exactly `general_ability/通用能力` then `psychological_quality/心理素养`, each with its fixed five child IDs |
+| Group score | all five child dimensions are complete | P0 | ✅ | Both groups average five exact dimension rationals to 3 without early rounding and classify as L3 |
+| Group score | one or more child dimensions are incomplete | P0 | ✅ | General group retains 5/4 dimensions and 40/39 question counts with nil score/level; unaffected psychological group remains complete with exact score 4 |
+| Group level | exact group average is at 1.7/2.7/3.5/4.3 boundaries | P0 | ✅ | Boundary matrix reuses the exact phase-1 dimension classifier for both groups |
+| Input integrity | child dimension is missing, duplicated, unknown, has invalid order or a complete row has nil score | P0 | ✅ | Malformed-input matrix rejects all five cases; score/level completeness consistency is also checked |
+| Runtime integration | publish freezes two group snapshots and submit persists two group results | P0 | ✅ | Staging真实发布冻结2组并绑定10维，提交写2条3/L3一级结果，清理后零残留 |
+
+#### I5. Phase-1 Validity Calculation
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Validity input | exactly 10 validity questions are all answered with raw values 1–5 | P0 | ✅ | Pure function sums original raw values only, requires forward metadata and returns complete integer score/status |
+| Validity boundary | complete score is exactly 35 or 36 | P0 | ✅ | Explicit fixtures verify 35=`good`, 36=`questionable` with exact integer scores |
+| Validity incomplete | one or more validity questions are unanswered | P0 | ✅ | 9/10 fixture preserves counts, keeps score nil and returns `incomplete` with `IsComplete=false` |
+| Validity extremes | complete answers sum to 10 or 50 | P1 | ✅ | All-1 and all-5 fixtures classify good/questionable respectively |
+| Input isolation | count is not 10, type is not validity, raw is outside 1–5, direction is not forward or identity/order is invalid | P0 | ✅ | Malformed matrix rejects count/type/raw low/raw high/reverse/blank/duplicate/order cases |
+| Score independence | validity result is calculated alongside dimension/group results | P0 | ✅ | API accepts only `[]Phase1ValidityInput` and returns a separate value; no dimension/group object is consumed or mutated |
+| Runtime integration | submit persists one validity result and management can filter good/questionable/incomplete | P0 | ✅ | Staging真实提交写10/good，good筛选1、questionable筛选0；管理详情与扩展导出已验证 |
+
+#### I6. Phase-1 Unified 90-Question Runtime
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Publish | fixed draft has exactly 80 dimension and 10 forward validity questions | P0 | ✅ | Staging冻结2组/10维/90题，题型80/10，五个确认选项逐题匹配，重复发布幂等 |
+| Publish | inventory/type/direction/group metadata is malformed or snapshot insert fails | P0 | ✅ | Staging通过临时BEFORE INSERT触发器强制题目快照写入失败；事务回滚后publish=0、group=0、question=0、group links=0，移除触发器后同一草稿可正常发布90题 |
+| Answer | dimension question is forward/reverse; validity question is forward | P0 | ✅ | 本地正反向穷举保持GREEN；staging真实混合90题全部保存，效度raw=1并得到总分10 |
+| Submit | all 90 questions are answered | P0 | ✅ | Staging数据库与API均验证10+2+1+1结果，total=90、dimension=80，完整性为1 |
+| Submit | timeout leaves a dimension and a validity row unanswered | P0 | ✅ | Staging真实88/90：维度79/80、overall NULL、1条二级NULL、1条一级NULL、效度9/10+incomplete+NULL；默认排名0、正式报告拒绝 |
+| Submit | request is repeated after successful commit | P0 | ✅ | Existing idempotent result lookup returns the frozen result without duplicate rows |
+| Management | validity status is good, questionable or incomplete | P0 | ✅ | 管理筛选API真实验证good/questionable；前端139项测试覆盖状态、一级和阈值详情 |
+| Statistics | score ranking sees an incomplete or validity-questionable result | P0 | ✅ | Staging分别验证timeout和40/questionable答卷均不进入默认overallScore排名；显式all和questionable筛选仍返回存疑答卷。独立常模/汇总统计端点尚未建设，继续作为产品增强 |
+| Report | complete validity is good or questionable | P0 | ❌ | Formal report remains allowed for both but must display the confirmed good/questionable notice; content text is not yet configured |
+
+#### I7. Phase-1 Formal Report Framework
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Version dispatch | frozen versions are generic or phase-1 | P0 | ✅ | Generic keeps the existing dynamic four-level renderer; phase-1 selects an isolated fixed report-data contract without reusing evaluationAverage |
+| Approval gate | phase-1 content package is missing, draft, retired or lacks either approval/hash/disclaimer | P0 | ✅ | Reject before report instance creation, Chromium rendering, PDF write or success audit with a stable not-approved error |
+| Content completeness | approved package lacks overall/group/dimension/validity text, contains whitespace-only text, or has inconsistent disclaimers | P0 | ✅ | Current overall, 2 group descriptions, 10 current L1-L5 dimension texts, current validity notice and one consistent final disclaimer are required; FB-107 RED reproduced three gaps and GREEN rejects them without cross-version/audience fallback |
+| Report data | complete good/questionable phase-1 result has 2 groups, 10 dimensions and validity | P0 | ✅ | Build a strong `competency-phase1-report-data-v1` DTO with `/50` overall, independent `/5` groups, ten dimensions, versions and participant-visible fields |
+| Ten-page layout | phase-1 report framework is selected | P0 | ✅ | Fixed pages: cover, guide, person/overall/validity, groups, 10-axis radar, then five two-dimension detail pages |
+| Validity privacy | participant report renders validity | P0 | ✅ | Show good/questionable notice but never expose raw validity score or the 35/36 threshold; management detail/export remain unchanged |
+| Current candidate state | formal approvals/content source are absent | P0 | ✅ | Framework exists but `reportAvailable=false`; view/generate/download/batch actions remain disabled and direct backend requests are rejected |
+| Dimension level labels | report renders L1-L5 for group or dimension results | P0 | ✅ | CSV catalog exposes separate secondary labels 差/较差/合格/较优秀/优秀 and group labels 低分/较低分/中分/较高分/高分; Vue uses separate mappings |
+| Overall level labels | report renders excellent/good/qualified/weak/not_qualified | P0 | ✅ | Vue resolves formal CSV labels 优秀胜任/良好胜任/合格胜任/薄弱胜任/尚未胜任 from the generated catalog |
+| CSV report catalog | phase-1 template renders names, definitions and labels | P0 | ✅ | Deterministic generator validates CSV first and emits the runtime catalog; freshness check prevents stale catalog use |
+| Customer sample layout | phase-1 formal template renders ten A4 pages | P0 | ✅ | Chromium and pdfinfo verify cover, guide, personal/overall/validity, groups, ten-axis radar and five two-dimension pages as exactly 10 A4 physical pages |
+| Missing formal text | validity-good notice or final disclaimer is absent | P0 | ✅ | Existing dual-approval/content-completeness gate continues to reject report data before Vue/PDF rendering; template does not invent fallback text |
+| Customer DOCX fixed text | cover and reading-guide fixed copy is rendered | P0 | ✅ | Seven reviewed CSV rows drive report title, English title, slogan, three reading paragraphs and special notice; staging Chromium verifies every fixed excerpt |
+
+#### I8. Phase-1 Customer Workbook Conversion
+
+| Area | Branch | Priority | Coverage | Planned assertion |
+|------|--------|----------|----------|-------------------|
+| Dimension identity cell | V1 workbook supplies `code + newline + name` in question and level sheets | P0 | ✅ | FB-108 parses both values, requires an exact A/B code-name pair, and preserves 90 questions plus 10×5 report texts |
+| Dimension identity mismatch | supplied code and name belong to different confirmed dimensions | P0 | ✅ | FB-108 rejects with a deterministic code/name mismatch error before generating candidate or import artifacts |
+| Validity classification | validity rows have an empty question-type cell under the validity layer | P0 | ✅ | Continue classifying all 10 rows from the explicit validity layer and force forward scoring metadata |
+| Normalized CSV export | confirmed V1 workbook is exported for manual review | P0 | ✅ | Produces six UTF-8 BOM CSV files: package, 90 questions, 10 dimensions, 50 dimension-level texts, 5 overall texts and 4 static report texts |
+| CSV-only mode | reviewer requests CSV artifacts without replacing candidate JSON/XLSX | P0 | ✅ | Writes only the requested CSV package; existing candidate JSON/XLSX hashes remain separately verifiable |
+| Long-term import template | CSV package is retained as the future question/report source | P0 | ✅ | Includes package metadata, stable order, review workflow fields, machine level codes, exact 1/0 score boundaries and formula-injection rejection |
+| Static report content | phase-1 report requires template/group/validity text | P0 | ✅ | Exports seven customer-DOCX template rows, two group rows and two validity rows; validity-good remains an explicitly labeled AI suggestion with `pending_review` |
+| Approval metadata | CSV package is reviewed but dual approval is incomplete | P0 | ✅ | Approval stays draft with explicit blank approver/time/environment/disclaimer fields; approved-import validation rejects it until all fields and content SHA match |
+| Candidate database import | validated draft CSV is loaded into staging for simulation | P0 | ✅ | Imported exactly 66 inactive temporary report-text rows and one draft package using deterministic IDs in one transaction; formal report gate remains closed |
+| Candidate import rerun | the same CSV package is imported again | P0 | ✅ | Transaction SQL ran twice and retained 66 unique lookup rows plus one draft package |
+| Candidate source parity | staging already contains the 90 questions and 10 dimensions | P0 | ✅ | Pre-import comparison matched all question code/type/dimension/item/content/observation/direction/status and dimension id/code/name/order/status fields |
 
 ### J. Competency Publish Snapshot
 

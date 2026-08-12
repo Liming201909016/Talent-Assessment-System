@@ -43,6 +43,8 @@ type CompetencyDimensionUpdateRequest struct {
 
 var errCompetencyDimensionConflict = errors.New("competency dimension name or order conflict")
 
+const competencyPhase1DimensionCount = 10
+
 func normalizeCompetencyDimensionInteger(value interface{}, field string) (int, error) {
 	switch number := value.(type) {
 	case int:
@@ -79,8 +81,8 @@ func validateCompetencyDimensionUpdate(request *CompetencyDimensionUpdateRequest
 		limit        int
 	}{
 		{request.Name, "维度名称", 100},
-		{request.VIRDLevel, "VIRD层级", 100},
-		{request.ApplicableCategory, "适用类别", 50},
+		{request.VIRDLevel, "能力层级", 100},
+		{request.ApplicableCategory, "适用对象", 50},
 		{request.CoreMeaning, "核心含义", 500},
 	} {
 		if field.value == "" {
@@ -90,19 +92,19 @@ func validateCompetencyDimensionUpdate(request *CompetencyDimensionUpdateRequest
 			return fmt.Errorf("%s长度不能超过%d个字符", field.label, field.limit)
 		}
 	}
-	validVIRD := map[string]bool{
-		"Versatility 胜任力": true, "Integrity 信念力": true,
-		"Resilience 人格力": true, "Drive 内驱力": true,
+	validLayer := map[string]bool{
+		"通用能力": true,
+		"心理素养": true,
 	}
-	if !validVIRD[request.VIRDLevel] {
-		return fmt.Errorf("VIRD层级不合法")
+	if !validLayer[request.VIRDLevel] {
+		return fmt.Errorf("能力层级不合法")
 	}
-	if request.ApplicableCategory != "基层通用" && request.ApplicableCategory != "管理通用" {
-		return fmt.Errorf("适用类别不合法")
+	if request.ApplicableCategory != "基层员工" {
+		return fmt.Errorf("适用对象不合法")
 	}
 	order, err := normalizeCompetencyDimensionInteger(request.DisplayOrder, "显示顺序")
-	if err != nil || order < 1 || order > 48 {
-		return fmt.Errorf("显示顺序必须是1到48的整数")
+	if err != nil || order < 1 || order > competencyPhase1DimensionCount {
+		return fmt.Errorf("显示顺序必须是1到10的整数")
 	}
 	status, err := normalizeCompetencyDimensionInteger(request.Status, "维度状态")
 	if err != nil || (status != 0 && status != 1) {
@@ -166,7 +168,7 @@ func NewCompetencyDimensionHandler(db *gorm.DB) *CompetencyDimensionHandler {
 	return &CompetencyDimensionHandler{db: db}
 }
 
-// List 返回全部维度及启停状态，按参考工作簿 1-48 顺序排列。
+// List 返回全部维度及启停状态，按当前主数据顺序排列。
 // 管理员创建测评时只允许选择 status=0 的维度。
 func (h *CompetencyDimensionHandler) List(c *gin.Context) {
 	rows := make([]model.CompetencyDimension, 0)

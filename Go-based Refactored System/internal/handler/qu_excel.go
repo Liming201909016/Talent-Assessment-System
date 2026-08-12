@@ -327,7 +327,8 @@ func (h *QuHandler) Export(c *gin.Context) {
 
 	q := h.db.Table("el_qu AS q").
 		Select("q.id, q.qu_type, q.content, q.analysis, q.image").
-		Where("q.dimension_id IS NULL")
+		Where("q.dimension_id IS NULL").
+		Where("q.competency_question_type IS NULL")
 	if req.Title != "" {
 		q = q.Where("q.content like ?", "%"+req.Title+"%")
 	}

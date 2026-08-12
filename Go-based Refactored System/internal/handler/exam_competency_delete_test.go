@@ -17,6 +17,8 @@ func TestBugFB048_CompetencyDeleteUsesFullChainTransaction(t *testing.T) {
 	requiredInOrder := []string{
 		"DELETE FROM el_competency_report_audit",
 		"DELETE FROM el_competency_report WHERE",
+		"DELETE FROM el_competency_group_result",
+		"DELETE FROM el_competency_validity_result",
 		"DELETE FROM el_competency_dimension_result",
 		"DELETE FROM el_competency_result",
 		"DELETE FROM el_paper_qu_answer",
@@ -28,6 +30,7 @@ func TestBugFB048_CompetencyDeleteUsesFullChainTransaction(t *testing.T) {
 		`Delete(&model.Paper{})`,
 		"DELETE FROM el_exam_competency_question",
 		`Delete(&model.ExamCompetencyDimension{})`,
+		`Delete(&model.ExamCompetencyGroup{})`,
 		`Delete(&model.ExamRepo{})`,
 		`Delete(&model.ExamDepart{})`,
 		`Delete(&model.Exam{})`,

@@ -28,9 +28,12 @@ scripts/test/*.js
 scripts/test/*.ps1
 scripts/tools/*.js
 scripts/tools/*.ps1
+!scripts/tools/convert-competency-phase1-workbook.js
 !scripts/test/competency-mobile-ui-test.js
 !scripts/test/competency-answer-flow-e2e.js
 !scripts/test/competency-submit-guard-e2e.js
+!scripts/test/competency-phase1-identity-test.js
+!scripts/test/staging-phase1-90-ui-e2e.js
 !scripts/test/staging-admin-browser-e2e.js
 !scripts/test/staging-competency-config-negative-e2e.js
 !scripts/test/staging-competency-import-rollback-e2e.js

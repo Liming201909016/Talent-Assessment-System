@@ -26,6 +26,26 @@ func TestBugFB045_ParticipantCannotClaimTimeout(t *testing.T) {
 	}
 }
 
+func TestExamSave_RejectsUnsupportedCompetencyVersionBeforeDatabase(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &ExamHandler{cfg: &config.Config{}}
+	router := gin.New()
+	router.POST("/save", h.Save)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/save", bytes.NewBufferString(`{
+		"assessmentType":"competency",
+		"scoringMode":"competency_average",
+		"competencyReportAudience":"frontline_employee",
+		"competencyProductVersion":"unsupported-v9",
+		"totalTime":60
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if !strings.Contains(w.Body.String(), "00401一期固定配置只能使用基层员工、十个A/B维度和已确认版本") {
+		t.Fatalf("response=%s", w.Body.String())
+	}
+}
+
 func TestCompetencyInternalReportData_RequiresConfiguredMatchingToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, tt := range []struct {
@@ -118,6 +138,26 @@ func TestCompetencyResultAccess_UsesExistingExamPermissionContract(t *testing.T)
 		t.Run(tt.name, func(t *testing.T) {
 			if got := canAccessExamResults(tt.login); got != tt.want {
 				t.Fatalf("canAccessExamResults()=%v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompetencyPublishAccess_RequiresAdministrator(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		login *model.LoginUser
+		want  bool
+	}{
+		{"missing login", nil, false},
+		{"administrator", &model.LoginUser{UserID: 1}, true},
+		{"global permission", &model.LoginUser{UserID: 99, Permissions: []string{"*:*:*"}}, true},
+		{"exam list only", &model.LoginUser{UserID: 99, Permissions: []string{"exam:list"}}, false},
+		{"unrelated permission", &model.LoginUser{UserID: 99, Permissions: []string{"system:user:list"}}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canPublishCompetencyExam(tt.login); got != tt.want {
+				t.Fatalf("canPublishCompetencyExam()=%v, want %v", got, tt.want)
 			}
 		})
 	}

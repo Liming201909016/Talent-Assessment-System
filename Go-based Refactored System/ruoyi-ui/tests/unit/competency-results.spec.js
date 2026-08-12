@@ -79,6 +79,12 @@ describe('Competency result management', () => {
     })
   })
 
+  it('keeps phase-1 report actions disabled until its renderer is implemented', () => {
+    const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
+    expect(wrapper.vm.isReportSelectable({ isComplete: 1, productVersion: 'competency-frontline-phase1-v1' })).toBe(false)
+    expect(wrapper.vm.isReportSelectable({ isComplete: 1, productVersion: 'competency-generic-v1' })).toBe(true)
+  })
+
   it('generates and downloads a complete temporary competency PDF report', async () => {
     generateCompetencyReport.mockClear()
     downloadCompetencyReport.mockClear()
@@ -98,6 +104,13 @@ describe('Competency result management', () => {
     expect(source).toContain('scope.row.userTime')
     expect(source).toContain('label="得分合计"')
     expect(source).toContain('prop="scoreSum"')
+  })
+
+  it('shows and filters phase-1 group and validity results for administrators', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/exam/exam/competencyResults.vue'), 'utf8')
+    for (const required of ['label="效度状态"', 'v-model="query.validity"', 'value="questionable"', 'scope.row.validityStatus', 'detail.groups', 'detail.validity.validityScore', '35分及以下为效度良好']) {
+      expect(source).toContain(required)
+    }
   })
 
   it('matches legacy filtering and row action labels without legacy report APIs', () => {
@@ -125,12 +138,12 @@ describe('Competency result management', () => {
     const loadResults = vi.fn()
     const wrapper = mountPage({ loadExam: vi.fn(), loadResults })
     wrapper.setData({ query: {
-      ...wrapper.vm.query, current: 3, name: '张三', telephone: '139', completion: 'complete',
+      ...wrapper.vm.query, current: 3, name: '张三', telephone: '139', completion: 'complete', validity: 'questionable',
       sortBy: 'dimensionScore', sortDirection: 'asc', dimensionId: 'dimension-1'
     } })
     wrapper.vm.resetQuery()
     expect(wrapper.vm.query).toEqual(expect.objectContaining({
-      current: 1, name: '', telephone: '', completion: '', sortBy: 'submittedAt', sortDirection: 'desc', dimensionId: ''
+      current: 1, name: '', telephone: '', completion: '', validity: '', sortBy: 'submittedAt', sortDirection: 'desc', dimensionId: ''
     }))
     expect(loadResults).toHaveBeenCalled()
   })

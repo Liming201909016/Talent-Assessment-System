@@ -7,6 +7,7 @@
       </div>
       <el-button icon="el-icon-back" @click="$router.back()">返回</el-button>
     </div>
+    <el-alert v-if="examProductVersion === 'competency-frontline-phase1-v1'" title="一期结果可查看、筛选和导出；L1-L5、一级维度与效度提示的正式报告模板接入前，报告生成和下载保持关闭。" type="warning" :closable="false" show-icon class="mb12" />
 
     <el-form :inline="true" size="small" class="search-form">
       <el-form-item label="姓名">
@@ -17,10 +18,19 @@
       </el-form-item>
       <el-form-item label="完成状态">
         <el-select v-model="query.completion" clearable placeholder="全部" style="width:120px">
+          <el-option label="全部" value="all" />
           <el-option label="完整" value="complete" />
           <el-option label="不完整" value="incomplete" />
         </el-select>
       </el-form-item>
+    <el-form-item label="效度状态">
+    <el-select v-model="query.validity" clearable placeholder="全部" style="width:130px">
+      <el-option label="全部" value="all" />
+      <el-option label="效度良好" value="good" />
+      <el-option label="效度存疑" value="questionable" />
+      <el-option label="效度未完成" value="incomplete" />
+    </el-select>
+    </el-form-item>
       <el-form-item label="排序指标">
         <el-select v-model="query.sortBy" @change="handleSortByChange">
           <el-option label="提交时间" value="submittedAt" />
@@ -82,6 +92,14 @@
         </template>
       </el-table-column>
       <el-table-column label="整体分" prop="overallScore" width="100" align="center" sortable="custom" />
+    <el-table-column label="效度状态" width="110" align="center">
+    <template slot-scope="scope">
+      <el-tag :type="scope.row.validityStatus === 'good' ? 'success' : scope.row.validityStatus === 'questionable' ? 'danger' : 'warning'" size="mini">
+      {{ scope.row.validityStatus === 'good' ? '效度良好' : scope.row.validityStatus === 'questionable' ? '效度存疑' : '效度未完成' }}
+      </el-tag>
+    </template>
+    </el-table-column>
+    <el-table-column label="效度分" prop="validityScore" width="85" align="center" />
       <el-table-column v-if="query.sortBy === 'dimensionScore'" label="所选维度分" prop="sortDimensionScore" width="120" align="center" />
       <el-table-column label="评价均值" prop="evaluationAverage" width="100" align="center" />
       <el-table-column label="提交方式" width="90" align="center">
@@ -98,9 +116,9 @@
       </el-table-column>
       <el-table-column label="操作" width="220" align="center" fixed="right">
         <template slot-scope="scope">
-          <el-button size="mini" type="text" icon="el-icon-view" :disabled="scope.row.isComplete !== 1" @click="showReport(scope.row)">查看</el-button>
+          <el-button size="mini" type="text" icon="el-icon-view" :disabled="!isReportSelectable(scope.row)" @click="showReport(scope.row)">查看</el-button>
           <el-button size="mini" type="text" icon="el-icon-tickets" @click="showDetail(scope.row)">答题详情</el-button>
-          <el-button size="mini" type="text" icon="el-icon-download" :disabled="scope.row.isComplete !== 1" @click="downloadReport(scope.row)">下载</el-button>
+          <el-button size="mini" type="text" icon="el-icon-download" :disabled="!isReportSelectable(scope.row)" @click="downloadReport(scope.row)">下载</el-button>
         </template>
       </el-table-column>
       <template slot="empty"><el-empty description="暂无已提交结果" /></template>
@@ -117,6 +135,16 @@
           <el-descriptions-item label="完整性">{{ selectedRow.isComplete === 1 ? '完整' : '不完整' }}</el-descriptions-item>
         </el-descriptions>
         <el-tabs v-if="detail" v-model="detailTab" style="margin-top:16px">
+          <el-tab-pane label="一级维度" name="groups">
+          <el-table :data="detail.groups" border size="mini">
+            <el-table-column label="一级维度" prop="groupName" min-width="150" />
+            <el-table-column label="完成维度" width="110" align="center">
+            <template slot-scope="scope">{{ scope.row.effectiveDimensionCount }}/{{ scope.row.totalDimensionCount }}</template>
+            </el-table-column>
+            <el-table-column label="一级得分" prop="groupScore" width="100" align="center" />
+            <el-table-column label="等级" prop="levelCode" width="100" align="center" />
+          </el-table>
+          </el-tab-pane>
           <el-tab-pane label="维度得分" name="dimensions">
             <el-table :data="detail.dimensions" border size="mini" max-height="480">
               <el-table-column label="维度编码" prop="dimensionCode" width="100" />
@@ -128,6 +156,14 @@
               <el-table-column label="维度分" prop="dimensionScore" width="100" align="center" />
               <el-table-column label="等级" prop="levelCode" width="100" align="center" />
             </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="效度" name="validity">
+          <el-descriptions v-if="detail.validity" :column="2" border size="small">
+            <el-descriptions-item label="效度原始分">{{ detail.validity.validityScore == null ? '—' : detail.validity.validityScore }}</el-descriptions-item>
+            <el-descriptions-item label="效度状态">{{ detail.validity.validityStatus === 'good' ? '效度良好' : detail.validity.validityStatus === 'questionable' ? '效度存疑' : '效度未完成' }}</el-descriptions-item>
+            <el-descriptions-item label="完成题数">{{ detail.validity.answeredQuestionCount }}/{{ detail.validity.totalQuestionCount }}</el-descriptions-item>
+            <el-descriptions-item label="判断阈值">35分及以下为效度良好，36分及以上为效度存疑</el-descriptions-item>
+          </el-descriptions>
           </el-tab-pane>
           <el-tab-pane label="逐题审计" name="questions">
             <el-table :data="detail.questions" border size="mini" max-height="480">
@@ -162,6 +198,7 @@ export default {
       detailVisible: false,
       detailTab: 'dimensions',
       examTitle: '',
+      examProductVersion: '',
       dimensions: [],
       rows: [],
       total: 0,
@@ -180,6 +217,7 @@ export default {
         name: '',
         telephone: '',
         completion: '',
+        validity: '',
         sortBy: 'submittedAt',
         sortDirection: 'desc',
         dimensionId: ''
@@ -195,6 +233,7 @@ export default {
       fetchDetail(this.query.examId).then(response => {
         const exam = response.data || {}
         this.examTitle = exam.title || ''
+        this.examProductVersion = exam.competencyProductVersion || ''
         this.dimensions = exam.competencyDimensions || []
       })
     },
@@ -227,6 +266,7 @@ export default {
         name: '',
         telephone: '',
         completion: '',
+        validity: '',
         sortBy: 'submittedAt',
         sortDirection: 'desc',
         dimensionId: ''
@@ -235,6 +275,10 @@ export default {
     },
     handleSortByChange(value) {
       if (value !== 'dimensionScore') this.query.dimensionId = ''
+    if (value === 'overallScore' || value === 'dimensionScore') {
+    if (!this.query.completion) this.query.completion = 'complete'
+    if (!this.query.validity) this.query.validity = 'good'
+      }
       if (value === 'dimensionScore' && !this.query.dimensionId && this.dimensions.length) {
         this.query.dimensionId = this.dimensions[0].dimensionId
       }
@@ -255,10 +299,11 @@ export default {
       })
     },
     showReport(row) {
+      if (!this.isReportSelectable(row)) return
       this.$router.push({ name: 'CompetencyReport', params: { paperId: row.paperId } })
     },
     isReportSelectable(row) {
-      return row.isComplete === 1
+      return row.isComplete === 1 && row.productVersion !== 'competency-frontline-phase1-v1'
     },
     handleSelectionChange(rows) {
       this.selectedRows = rows.filter(this.isReportSelectable)
@@ -321,10 +366,12 @@ export default {
       }
     },
     async generateReport(row) {
+      if (!this.isReportSelectable(row)) return
       await generateCompetencyReport({ paperId: row.paperId, force: false })
       this.$message.success('临时测试PDF生成成功')
     },
     async downloadReport(row) {
+      if (!this.isReportSelectable(row)) return
       try {
         const blob = await downloadCompetencyReport(row.paperId)
         saveAs(blob, this.reportDownloadFileName(row))

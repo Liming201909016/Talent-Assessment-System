@@ -15,6 +15,7 @@ import (
 type competencyQuestionExportRow struct {
 	DimensionOrder   int    `gorm:"column:dimension_order"`
 	DimensionName    string `gorm:"column:dimension_name"`
+	QuestionType     string `gorm:"column:competency_question_type"`
 	QuestionCode     string `gorm:"column:question_code"`
 	DimensionItemNo  int    `gorm:"column:dimension_item_no"`
 	Content          string `gorm:"column:content"`
@@ -24,16 +25,16 @@ type competencyQuestionExportRow struct {
 	Remark           string `gorm:"column:remark"`
 }
 
-// Export downloads all 00401 source questions in the same nine-column format accepted by import.
+// Export downloads all 00401 source questions in the same ten-column format accepted by import.
 func (h *CompetencyImportHandler) Export(c *gin.Context) {
 	rows := make([]competencyQuestionExportRow, 0)
 	err := h.db.Table("el_qu q").
 		Select(`d.display_order AS dimension_order, d.name AS dimension_name,
-			q.question_code, q.dimension_item_no, q.content, q.observation_point,
+			q.competency_question_type, q.question_code, q.dimension_item_no, q.content, q.observation_point,
 			q.scoring_direction, q.question_status, q.remark`).
 		Joins("INNER JOIN el_competency_dimension d ON d.id = q.dimension_id").
 		Where("q.dimension_id IS NOT NULL").
-		Order("d.display_order ASC, q.dimension_item_no ASC, q.id ASC").
+		Order("d.display_order ASC, q.competency_question_type ASC, q.dimension_item_no ASC, q.id ASC").
 		Scan(&rows).Error
 	if err != nil {
 		slog.Error("competency question export query failed", "error", err)
@@ -90,7 +91,7 @@ func buildCompetencyQuestionExportWorkbook(rows []competencyQuestionExportRow) (
 	}
 	for index, row := range rows {
 		values := []interface{}{
-			row.DimensionOrder, row.DimensionName, row.QuestionCode, row.DimensionItemNo,
+			row.DimensionOrder, row.DimensionName, competencyQuestionTypeText(row.QuestionType), row.QuestionCode, row.DimensionItemNo,
 			row.Content, row.ObservationPoint, competencyDirectionText(row.ScoringDirection),
 			competencyQuestionStatusText(row.QuestionStatus), row.Remark,
 		}
@@ -110,19 +111,26 @@ func buildCompetencyQuestionExportWorkbook(rows []competencyQuestionExportRow) (
 		file.Close()
 		return nil, err
 	}
-	if err := file.SetColWidth("胜任力题目", "A", "D", 18); err != nil {
+	if err := file.SetColWidth("胜任力题目", "A", "E", 18); err != nil {
 		file.Close()
 		return nil, err
 	}
-	if err := file.SetColWidth("胜任力题目", "E", "F", 42); err != nil {
+	if err := file.SetColWidth("胜任力题目", "F", "G", 42); err != nil {
 		file.Close()
 		return nil, err
 	}
-	if err := file.SetColWidth("胜任力题目", "G", "I", 24); err != nil {
+	if err := file.SetColWidth("胜任力题目", "H", "J", 24); err != nil {
 		file.Close()
 		return nil, err
 	}
 	return file, nil
+}
+
+func competencyQuestionTypeText(questionType string) string {
+	if questionType == "validity" {
+		return "效度题"
+	}
+	return "维度题"
 }
 
 func competencyQuestionStatusText(status int8) string {

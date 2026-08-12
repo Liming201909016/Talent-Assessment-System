@@ -133,21 +133,27 @@
         </el-form-item>
 
         <template v-else>
-          <el-form-item label="报告版本" prop="competencyReportAudience">
-            <el-radio-group v-model="postForm.competencyReportAudience" :disabled="isPublishedCompetency">
-              <el-radio size="large" border label="frontline_employee">基层员工版</el-radio>
-              <el-radio size="large" border label="leader">领导人员版</el-radio>
-            </el-radio-group>
-            <div class="field-hint">两个版本的模板、模块和得分一致，仅总体评价与发展建议文案不同。</div>
+          <el-form-item label="固定产品">
+            <el-alert title="00401 一期固定配置" type="info" :closable="false" show-icon>
+              <div slot="description">基层员工 · 10个A/B维度 · 90题；报告对象、维度集合和版本由系统固定，不能由客户端替换。</div>
+            </el-alert>
           </el-form-item>
 
-          <el-form-item label="测评维度" prop="dimensionIds">
-            <competency-dimension-selector
-              v-model="postForm.dimensionIds"
-              :dimensions="competencyDimensions"
-              :loading="dimensionLoading"
-              :disabled="isPublishedCompetency"
-            />
+          <el-form-item label="版本配置">
+            <div class="version-summary">
+              <el-tag size="small" type="info">产品 {{ postForm.competencyProductVersion || '—' }}</el-tag>
+              <el-tag size="small" type="info">评分 {{ postForm.competencyScoringVersion || '—' }}</el-tag>
+              <el-tag size="small" type="info">内容 {{ postForm.competencyContentVersion || '—' }}</el-tag>
+              <el-tag size="small" type="info">模板 {{ postForm.competencyReportTemplateVersion || '—' }}</el-tag>
+            </div>
+            <div class="field-hint">版本由产品配置确定，发布后与题目快照一并冻结。</div>
+          </el-form-item>
+
+          <el-form-item label="固定维度">
+            <div v-loading="dimensionLoading" class="version-summary">
+              <el-tag v-for="item in phase1Dimensions" :key="item.id" size="small" type="info">{{ item.code }} {{ item.name }}</el-tag>
+            </div>
+            <div class="field-hint">固定顺序为A1-01～A1-05、B1-01～B1-05；每维8道维度题并关联1道效度题。</div>
           </el-form-item>
         </template>
 
@@ -230,7 +236,7 @@
     <div style="margin-top: 20px">
       <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       <el-button v-if="isCompetency && postForm.id && postForm.publishStatus === 0" type="success" :loading="publishing" @click="handlePublish">
-        发布并冻结题目
+          发布并冻结题目
       </el-button>
     </div>
 
@@ -242,11 +248,10 @@ import { fetchDetail, saveData } from '@/api/exam/exam'
 import { fetchCompetencyDimensions, publishCompetencyExam } from '@/api/competency'
 import { fetchTree } from '@/api/sys/depart/depart'
 import RepoSelect from '@/components/RepoSelect'
-import CompetencyDimensionSelector from './components/CompetencyDimensionSelector'
 
 export default {
   name: 'ExamDetail',
-  components: { CompetencyDimensionSelector, RepoSelect },
+  components: { RepoSelect },
   data() {
     return {
       repoCode:'',
@@ -255,6 +260,10 @@ export default {
       publishing: false,
       dimensionLoading: false,
       competencyDimensions: [],
+      phase1DimensionIds: [
+        'competency-a1-01', 'competency-a1-02', 'competency-a1-03', 'competency-a1-04', 'competency-a1-05',
+        'competency-b1-01', 'competency-b1-02', 'competency-b1-03', 'competency-b1-04', 'competency-b1-05'
+      ],
 
       step: 1,
       treeData: [],
@@ -290,6 +299,10 @@ export default {
         assessmentType: 'legacy',
         scoringMode: 'legacy',
         competencyReportAudience: '',
+        competencyProductVersion: '',
+        competencyScoringVersion: '',
+        competencyContentVersion: '',
+        competencyReportTemplateVersion: '',
         dimensionIds: [],
         publishStatus: 1,
         // 总分数
@@ -365,6 +378,10 @@ export default {
     },
     isPublishedCompetency() {
       return this.isCompetency && Number(this.postForm.publishStatus) === 1
+    },
+    phase1Dimensions() {
+      const byId = new Map(this.competencyDimensions.map(item => [item.id, item]))
+      return this.phase1DimensionIds.map(id => byId.get(id)).filter(Boolean)
     }
   },
 
@@ -439,7 +456,7 @@ export default {
   methods: {
 
     handlePublish() {
-      this.$confirm('发布后测评维度、题目范围和报告版本不可修改，确认发布吗？', '发布胜任力测评', { type: 'warning' }).then(async () => {
+      this.$confirm('发布后测评维度、题目范围、报告对象和版本配置不可修改，确认发布吗？', '发布胜任力测评', { type: 'warning' }).then(async () => {
         this.publishing = true
         try {
           const response = await publishCompetencyExam(this.postForm.id)
@@ -456,6 +473,7 @@ export default {
       if (value === 'competency') {
         this.postForm.scoringMode = 'competency_average'
         this.postForm.publishStatus = 0
+        this.applyPhase1Profile()
         this.postForm.repoList = []
         this.postForm.showPdf = false
         this.loadCompetencyDimensions()
@@ -463,10 +481,29 @@ export default {
         this.postForm.scoringMode = 'legacy'
         this.postForm.publishStatus = 1
         this.postForm.competencyReportAudience = ''
+        this.postForm.competencyProductVersion = ''
+        this.postForm.competencyScoringVersion = ''
+        this.postForm.competencyContentVersion = ''
+        this.postForm.competencyReportTemplateVersion = ''
         this.postForm.dimensionIds = []
         this.postForm.repoList = this.repoList
       }
       this.$nextTick(() => this.$refs.postForm && this.$refs.postForm.clearValidate())
+    },
+
+    applyPhase1Profile() {
+      this.postForm.competencyReportAudience = 'frontline_employee'
+      this.postForm.competencyProductVersion = 'competency-frontline-phase1-v1'
+      this.postForm.competencyScoringVersion = 'competency-phase1-scoring-v1'
+      this.postForm.competencyContentVersion = 'competency-phase1-content-v1'
+      this.postForm.competencyReportTemplateVersion = 'competency-phase1-report-v1'
+      this.postForm.dimensionIds = [...this.phase1DimensionIds]
+      if (!Number(this.postForm.totalTime) || Number(this.postForm.totalTime) <= 0) {
+        this.postForm.totalTime = 20
+      }
+      if (!this.postForm.id) {
+        this.requiredFieldsList = ['name', 'gender', 'age', 'telephone', 'affiliation', 'post']
+      }
     },
 
     loadCompetencyDimensions() {
@@ -481,18 +518,12 @@ export default {
 
     handleSave() {
 
+      if (this.isCompetency) {
+        this.applyPhase1Profile()
+      }
+
       this.$refs.postForm.validate((valid) => {
         if (!valid) {
-          return
-        }
-
-        if (this.isCompetency && !['frontline_employee', 'leader'].includes(this.postForm.competencyReportAudience)) {
-          this.$message.warning('请选择基层员工版或领导人员版')
-          return
-        }
-
-        if (this.isCompetency && (!this.postForm.dimensionIds || this.postForm.dimensionIds.length === 0)) {
-          this.$message.warning('请至少选择一个测评维度')
           return
         }
 
@@ -594,10 +625,15 @@ export default {
         data.assessmentType = data.assessmentType || 'legacy'
         data.scoringMode = data.scoringMode || (data.assessmentType === 'competency' ? 'competency_average' : 'legacy')
         data.competencyReportAudience = data.competencyReportAudience || ''
+        data.competencyProductVersion = data.competencyProductVersion || ''
+        data.competencyScoringVersion = data.competencyScoringVersion || ''
+        data.competencyContentVersion = data.competencyContentVersion || ''
+        data.competencyReportTemplateVersion = data.competencyReportTemplateVersion || ''
         data.dimensionIds = data.dimensionIds || []
         this.postForm = data
 
         if (this.isCompetency) {
+          this.applyPhase1Profile()
           this.loadCompetencyDimensions()
         }
 
@@ -684,6 +720,12 @@ export default {
   color: #909399;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.version-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>
 

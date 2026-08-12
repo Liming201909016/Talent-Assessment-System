@@ -72,11 +72,12 @@ func TestBugFB049_PublishRefreshesDimensionSnapshot(t *testing.T) {
 		ID: "d1", Code: "D01", Name: "新名称", VIRDLevel: "新层级",
 		ApplicableCategory: "新类别", CoreMeaning: "新含义", DisplayOrder: 9,
 	}
-	updates := competencyDimensionSnapshotUpdates(master, 8, time.Now())
+	updates := competencyDimensionSnapshotUpdates(master, "group-1", 8, time.Now())
 	for key, want := range map[string]any{
 		"dimension_code": "D01", "dimension_name": "新名称", "vird_level": "新层级",
 		"applicable_category": "新类别", "core_meaning": "新含义", "display_order": 9,
 		"question_count": 8,
+		"group_id":       "group-1",
 	} {
 		if updates[key] != want {
 			t.Errorf("updates[%s] = %v, want %v", key, updates[key], want)
@@ -114,6 +115,45 @@ func TestValidateCompetencyResultSort(t *testing.T) {
 	}
 }
 
+func TestCompetencyRankingDefaults_ExcludeIncompleteAndQuestionable(t *testing.T) {
+	for _, tt := range []struct {
+		name, sortBy, completion, validity string
+		wantCompletion, wantValidity       string
+	}{
+		{"management chronology stays all", "submittedAt", "", "", "", ""},
+		{"overall ranking defaults eligible", "overallScore", "", "", "complete", "good"},
+		{"dimension ranking defaults eligible", "dimensionScore", "", "", "complete", "good"},
+		{"explicit all remains all", "overallScore", "all", "all", "all", "all"},
+		{"questionable defaults complete", "overallScore", "", "questionable", "complete", "questionable"},
+		{"incomplete defaults good", "overallScore", "incomplete", "", "incomplete", "good"},
+		{"explicit questionable remains visible", "overallScore", "complete", "questionable", "complete", "questionable"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			gotCompletion, gotValidity := competencyRankingDefaults(tt.sortBy, tt.completion, tt.validity)
+			if gotCompletion != tt.wantCompletion || gotValidity != tt.wantValidity {
+				t.Fatalf("defaults=(%q,%q), want=(%q,%q)", gotCompletion, gotValidity, tt.wantCompletion, tt.wantValidity)
+			}
+		})
+	}
+}
+
+func TestValidatePhase1ValidityQuestionOrder(t *testing.T) {
+	questionType := model.CompetencyQuestionTypeValidity
+	questions := make([]model.Qu, 10)
+	for index := range questions {
+		itemNo := index + 1
+		questions[index] = model.Qu{CompetencyQuestionType: &questionType, DimensionItemNo: &itemNo}
+	}
+	if err := validatePhase1ValidityQuestionOrder(questions); err != nil {
+		t.Fatalf("valid order rejected: %v", err)
+	}
+	duplicate := 1
+	questions[9].DimensionItemNo = &duplicate
+	if err := validatePhase1ValidityQuestionOrder(questions); err == nil {
+		t.Fatal("duplicate/missing validity order accepted")
+	}
+}
+
 func TestCompetencyResultPaging_RequiresExamContextBeforeQuery(t *testing.T) {
 	service := &CompetencyRuntimeService{}
 	rows, total, err := service.ResultPaging(CompetencyResultPageRequest{SortBy: "submittedAt"})
@@ -127,20 +167,23 @@ func TestCompetencyResultPaging_RequiresExamContextBeforeQuery(t *testing.T) {
 
 func TestCompetencyResultFilters_NormalizeAndValidate(t *testing.T) {
 	tests := []struct {
-		name, inputName, telephone, completion string
-		wantName, wantTelephone                string
-		wantComplete                           *int
-		wantErr                                bool
+		name, inputName, telephone, completion, validity string
+		wantName, wantTelephone                          string
+		wantComplete                                     *int
+		wantValidity                                     string
+		wantErr                                          bool
 	}{
-		{"empty", "", "", "", "", "", nil, false},
-		{"trimmed complete", "  张三 ", " 139 ", "complete", "张三", "139", intPointer(1), false},
-		{"incomplete", "", "", "incomplete", "", "", intPointer(0), false},
-		{"all", "", "", "all", "", "", nil, false},
-		{"invalid", "", "", "finished", "", "", nil, true},
+		{"empty", "", "", "", "", "", "", nil, "", false},
+		{"trimmed complete and good", "  张三 ", " 139 ", "complete", " good ", "张三", "139", intPointer(1), "good", false},
+		{"incomplete result and questionable validity", "", "", "incomplete", "questionable", "", "", intPointer(0), "questionable", false},
+		{"explicit incomplete validity", "", "", "all", "incomplete", "", "", nil, "incomplete", false},
+		{"all", "", "", "all", "all", "", "", nil, "", false},
+		{"invalid completion", "", "", "finished", "", "", "", nil, "", true},
+		{"invalid validity", "", "", "", "trusted", "", "", nil, "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := normalizeCompetencyResultFilters(tt.inputName, tt.telephone, tt.completion)
+			got, err := normalizeCompetencyResultFilters(tt.inputName, tt.telephone, tt.completion, tt.validity)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("error=%v wantErr=%v", err, tt.wantErr)
 			}
@@ -149,6 +192,9 @@ func TestCompetencyResultFilters_NormalizeAndValidate(t *testing.T) {
 			}
 			if (got.IsComplete == nil) != (tt.wantComplete == nil) || got.IsComplete != nil && *got.IsComplete != *tt.wantComplete {
 				t.Fatalf("isComplete=%v want=%v", got.IsComplete, tt.wantComplete)
+			}
+			if got.ValidityStatus != tt.wantValidity {
+				t.Fatalf("validityStatus=%q want=%q", got.ValidityStatus, tt.wantValidity)
 			}
 		})
 	}
@@ -233,6 +279,94 @@ func TestCompetencyFormalReportData_ProjectsTemplateMetadata(t *testing.T) {
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("formal report metadata missing %q", required)
+		}
+	}
+}
+
+// TestBugFB105_ApprovedPhase1ReportBuildsFormalData
+// 对应：docs/regression-tests.md #FB-105
+// 复现：一期内容包完成双批准后，FormalReportData仍固定返回“内容尚未导入”。
+// 期望：读取精确版本文案并调用一期快照与强类型DTO构建器，不保留固定占位错误。
+func TestBugFB105_ApprovedPhase1ReportBuildsFormalData(t *testing.T) {
+	source, err := os.ReadFile("competency_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if strings.Contains(text, `return nil, errors.New("一期正式报告内容尚未导入")`) {
+		t.Fatal("approved phase-1 report path still ends in a permanent placeholder error")
+	}
+	for _, required := range []string{
+		`BuildPhase1ReportTextSnapshot(`,
+		`BuildPhase1FormalReportData(`,
+		`CompetencyReportContentGroup`,
+		`CompetencyReportContentValidity`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("approved phase-1 report path missing %q", required)
+		}
+	}
+}
+
+func TestPhase1FormalReportData_IncludesCustomerTemplateMetadata(t *testing.T) {
+	source, err := os.ReadFile("competency_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	start := strings.Index(text, "func (s *CompetencyRuntimeService) phase1FormalReportData")
+	end := strings.Index(text[start:], "type CompetencyResultPageRequest")
+	if start < 0 || end < 0 {
+		t.Fatal("phase-1 formal report function not found")
+	}
+	phase1 := text[start : start+end]
+	for _, required := range []string{`"meta"`, `"examTitle"`, `"requiredFields"`, `"startedAt"`, `"userTime"`, `"generatedAt"`} {
+		if !strings.Contains(phase1, required) {
+			t.Errorf("phase-1 formal report metadata missing %q", required)
+		}
+	}
+}
+
+func TestCompetencyPhase1Runtime_PublishesAndPersistsCompleteResultSet(t *testing.T) {
+	source, err := os.ReadFile("competency_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, required := range []string{
+		`CompetencyQuestionType: question.CompetencyQuestionType`,
+		`CreateInBatches(groupSnapshots`,
+		`competencyDimensionSnapshotUpdates(master, groupID`,
+		`"group_id":`,
+		`model.CompetencyQuestionTypeValidity`,
+		`CalculatePhase1CompetencyResult(dimensionInputs)`,
+		`CalculatePhase1GroupResults(calculated.Dimensions)`,
+		`CalculatePhase1ValidityResult(validityInputs)`,
+		`CreateInBatches(groupResults`,
+		`Create(&validityResult)`,
+		`DimensionQuestionCount: calculated.TotalQuestionCount`,
+		`AnsweredDimensionQuestionCount: calculated.AnsweredQuestionCount`,
+		`TotalQuestionCount: len(rows)`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("phase-1 runtime integration missing %q", required)
+		}
+	}
+}
+
+func TestCompetencyPhase1Options_UseConfirmedLabels(t *testing.T) {
+	data, err := competencyOptionsJSON(CompetencyDirectionForward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range []string{"完全不符合", "比较不符合", "不确定", "比较符合", "完全符合"} {
+		if !strings.Contains(data, label) {
+			t.Errorf("phase-1 option snapshot missing %q: %s", label, data)
+		}
+	}
+	for _, retired := range []string{"非常不符合", "不太符合", "一般", "非常符合"} {
+		if strings.Contains(data, retired) {
+			t.Errorf("phase-1 option snapshot retains old label %q", retired)
 		}
 	}
 }

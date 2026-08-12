@@ -28,13 +28,15 @@ type competencyExportPerson struct {
 	UserTime              int              `gorm:"column:user_time"`
 	TotalQuestionCount    int              `gorm:"column:total_question_count"`
 	AnsweredQuestionCount int              `gorm:"column:answered_question_count"`
-	OverallScore          decimal.Decimal  `gorm:"column:overall_score"`
+	OverallScore          *decimal.Decimal `gorm:"column:overall_score"`
 	EvaluationAverage     *decimal.Decimal `gorm:"column:evaluation_average"`
 	EvaluationLevel       string           `gorm:"column:evaluation_level"`
 	IsComplete            int8             `gorm:"column:is_complete"`
 	SubmitType            string           `gorm:"column:submit_type"`
 	ReportAudience        string           `gorm:"column:report_audience"`
 	ScoringVersion        string           `gorm:"column:scoring_version"`
+	ValidityScore         *decimal.Decimal `gorm:"column:validity_score"`
+	ValidityStatus        string           `gorm:"column:validity_status"`
 }
 
 type competencyExportAnswer struct {
@@ -44,6 +46,7 @@ type competencyExportAnswer struct {
 	Telephone        string `gorm:"column:participant_telephone"`
 	Sort             int    `gorm:"column:sort"`
 	QuestionCode     string `gorm:"column:question_code"`
+	QuestionType     string `gorm:"column:question_type"`
 	QuestionContent  string `gorm:"column:question_content"`
 	DimensionCode    string `gorm:"column:dimension_code"`
 	DimensionName    string `gorm:"column:dimension_name"`
@@ -56,8 +59,10 @@ type competencyExportAnswer struct {
 }
 
 type competencyExportData struct {
+	Groups           []model.ExamCompetencyGroup
 	Dimensions       []model.ExamCompetencyDimension
 	Persons          []competencyExportPerson
+	GroupResults     []model.CompetencyGroupResult
 	DimensionResults []model.CompetencyDimensionResult
 	Answers          []competencyExportAnswer
 	Questions        []model.ExamCompetencyQuestion
@@ -93,9 +98,14 @@ func competencyExportIdentity(c *gin.Context) (*model.LoginUser, bool, bool) {
 
 func loadCompetencyExportData(db *gorm.DB, examID string) (competencyExportData, error) {
 	data := competencyExportData{
+		Groups:     make([]model.ExamCompetencyGroup, 0),
 		Dimensions: make([]model.ExamCompetencyDimension, 0), Persons: make([]competencyExportPerson, 0),
+		GroupResults:     make([]model.CompetencyGroupResult, 0),
 		DimensionResults: make([]model.CompetencyDimensionResult, 0), Answers: make([]competencyExportAnswer, 0),
 		Questions: make([]model.ExamCompetencyQuestion, 0),
+	}
+	if err := db.Where("exam_id = ?", examID).Order("display_order ASC").Find(&data.Groups).Error; err != nil {
+		return data, err
 	}
 	if err := db.Where("exam_id = ?", examID).Order("display_order ASC").Find(&data.Dimensions).Error; err != nil {
 		return data, err
@@ -111,11 +121,13 @@ func loadCompetencyExportData(db *gorm.DB, examID string) (competencyExportData,
 		p.create_time AS started_at, r.submitted_at, p.user_time,
 		r.total_question_count, r.answered_question_count, r.overall_score,
 		r.evaluation_average, COALESCE(r.evaluation_level, '') AS evaluation_level,
-		r.is_complete, r.submit_type, r.report_audience, r.scoring_version`
+		r.is_complete, r.submit_type, r.report_audience, r.scoring_version,
+		vr.validity_score, COALESCE(vr.validity_status, '') AS validity_status`
 	if err := db.Table("el_competency_result r").Select(personSelect).
 		Joins("INNER JOIN el_paper p ON p.id = r.paper_id").
 		Joins("LEFT JOIN el_candidate c ON c.paper_id = r.paper_id AND c.exam_id = r.exam_id").
 		Joins("LEFT JOIN el_tester t ON t.paper_id = r.paper_id AND t.exam_id = r.exam_id").
+		Joins("LEFT JOIN el_competency_validity_result vr ON vr.paper_id = r.paper_id").
 		Where("r.exam_id = ?", examID).
 		Order("r.submitted_at ASC, r.paper_id ASC").Scan(&data.Persons).Error; err != nil {
 		return data, err
@@ -131,11 +143,15 @@ func loadCompetencyExportData(db *gorm.DB, examID string) (competencyExportData,
 		Order("paper_id ASC, display_order ASC").Find(&data.DimensionResults).Error; err != nil {
 		return data, err
 	}
+	if err := db.Where("paper_id IN ?", paperIDs).
+		Order("paper_id ASC, display_order ASC").Find(&data.GroupResults).Error; err != nil {
+		return data, err
+	}
 	answerSelect := `pq.paper_id,
 		COALESCE(c.id, t.id, '') AS participant_id,
 		COALESCE(c.name, t.name, '') AS participant_name,
 		COALESCE(c.telephone, t.telephone, '') AS participant_telephone,
-		pq.sort, q.question_code, q.question_content,
+		pq.sort, q.question_code, q.competency_question_type AS question_type, q.question_content,
 		d.dimension_code, d.dimension_name, q.observation_point, q.scoring_direction, q.options_snapshot,
 		pq.raw_answer, pq.final_score, pq.answered`
 	if err := db.Table("el_paper_qu pq").Select(answerSelect).
@@ -176,6 +192,19 @@ func buildCompetencyExportWorkbook(exam model.Exam, data competencyExportData, i
 	for _, dimension := range data.Dimensions {
 		summaryHeaders = append(summaryHeaders, dimension.DimensionCode+" "+dimension.DimensionName)
 	}
+	groupScores := make(map[string]map[string]*decimal.Decimal)
+	for _, result := range data.GroupResults {
+		if groupScores[result.PaperID] == nil {
+			groupScores[result.PaperID] = make(map[string]*decimal.Decimal)
+		}
+		groupScores[result.PaperID][result.ExamGroupID] = result.GroupScore
+	}
+	baseHeaders := append([]string(nil), summaryHeaders[:17]...)
+	for _, group := range data.Groups {
+		baseHeaders = append(baseHeaders, group.GroupName)
+	}
+	baseHeaders = append(baseHeaders, "效度原始分", "效度状态")
+	summaryHeaders = append(baseHeaders, summaryHeaders[17:]...)
 	writeCompetencyHeaders(file, "结果汇总", summaryHeaders, headerStyle)
 	dimensionScores := make(map[string]map[string]*decimal.Decimal)
 	for _, result := range data.DimensionResults {
@@ -198,16 +227,20 @@ func buildCompetencyExportWorkbook(exam model.Exam, data competencyExportData, i
 			person.ParticipantID, person.ParticipantType, person.Name, telephone, person.PaperID,
 			formatCompetencyExportTime(person.StartedAt), formatCompetencyExportTime(person.SubmittedAt), person.UserTime,
 			fmt.Sprintf("%d/%d", person.AnsweredQuestionCount, person.TotalQuestionCount), completion,
-			competencyCompleteText(person.IsComplete), person.SubmitType, person.OverallScore.StringFixed(6),
+			competencyCompleteText(person.IsComplete), person.SubmitType, optionalDecimal(person.OverallScore),
 			optionalDecimal(person.EvaluationAverage), person.EvaluationLevel, person.ReportAudience, person.ScoringVersion,
 		}
+		for _, group := range data.Groups {
+			values = append(values, optionalDecimal(groupScores[person.PaperID][group.ID]))
+		}
+		values = append(values, optionalDecimal(person.ValidityScore), person.ValidityStatus)
 		for _, dimension := range data.Dimensions {
 			values = append(values, optionalDecimal(dimensionScores[person.PaperID][dimension.DimensionID]))
 		}
 		writeCompetencyRow(file, "结果汇总", row, values)
 	}
 
-	detailHeaders := []string{"受测者ID", "姓名", "手机号", "试卷ID", "个人题序", "题目编号", "题干快照", "维度编号", "维度名称", "考察点", "计分方向", "原始选择值", "原始选择文本", "最终题目得分", "是否作答"}
+	detailHeaders := []string{"受测者ID", "姓名", "手机号", "试卷ID", "个人题序", "题目编号", "题型", "题干快照", "维度编号", "维度名称", "考察点", "计分方向", "原始选择值", "原始选择文本", "最终题目得分", "是否作答"}
 	writeCompetencyHeaders(file, "逐题明细", detailHeaders, headerStyle)
 	for index, answer := range data.Answers {
 		telephone := answer.Telephone
@@ -216,7 +249,7 @@ func buildCompetencyExportWorkbook(exam model.Exam, data competencyExportData, i
 		}
 		writeCompetencyRow(file, "逐题明细", index+2, []interface{}{
 			answer.ParticipantID, answer.Name, telephone, answer.PaperID, answer.Sort,
-			answer.QuestionCode, answer.QuestionContent, answer.DimensionCode, answer.DimensionName,
+			answer.QuestionCode, answer.QuestionType, answer.QuestionContent, answer.DimensionCode, answer.DimensionName,
 			answer.ObservationPoint, competencyDirectionText(answer.ScoringDirection), optionalInt8(answer.RawAnswer),
 			competencyRawAnswerText(answer.RawAnswer, answer.OptionsSnapshot), optionalInt8(answer.FinalScore), competencyAnsweredText(answer.Answered),
 		})
@@ -226,12 +259,12 @@ func buildCompetencyExportWorkbook(exam model.Exam, data competencyExportData, i
 	for _, dimension := range data.Dimensions {
 		dimensionByID[dimension.ID] = dimension
 	}
-	dictionaryHeaders := []string{"快照顺序", "题目编号", "维度编号", "维度名称", "维度内题号", "题干快照", "考察点", "计分方向", "选项快照", "源题ID", "源题更新时间"}
+	dictionaryHeaders := []string{"快照顺序", "题目编号", "题型", "维度编号", "维度名称", "维度内题号", "题干快照", "考察点", "计分方向", "选项快照", "源题ID", "源题更新时间"}
 	writeCompetencyHeaders(file, "题目字典", dictionaryHeaders, headerStyle)
 	for index, question := range data.Questions {
 		dimension := dimensionByID[question.ExamDimensionID]
 		writeCompetencyRow(file, "题目字典", index+2, []interface{}{
-			question.SnapshotOrder, question.QuestionCode, dimension.DimensionCode, dimension.DimensionName,
+			question.SnapshotOrder, question.QuestionCode, pointerString(question.CompetencyQuestionType), dimension.DimensionCode, dimension.DimensionName,
 			question.DimensionItemNo, question.QuestionContent, question.ObservationPoint,
 			competencyDirectionText(question.ScoringDirection), question.OptionsSnapshot, question.SourceQuID,
 			formatCompetencyExportTime(question.SourceUpdateTime),
@@ -314,6 +347,13 @@ func optionalDecimal(value *decimal.Decimal) interface{} {
 		return ""
 	}
 	return value.StringFixed(6)
+}
+
+func pointerString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func optionalInt8(value *int8) interface{} {

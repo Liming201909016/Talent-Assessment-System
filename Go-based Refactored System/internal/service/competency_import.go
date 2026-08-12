@@ -7,13 +7,13 @@ import (
 )
 
 var CompetencyImportHeaders = []string{
-	"维度序号", "维度名称", "题目编号", "维度内题号", "题目内容",
-	"考察点", "计分方向", "启用状态", "备注",
+	"维度序号", "维度名称", "题目类型", "题目编号", "维度内题号",
+	"题目内容", "考察点", "计分方向", "启用状态", "备注",
 }
 
 var CompetencyImportInstructions = []string{
-	"1-48", "必须与维度主数据名称完全一致", "全局唯一，例如D01-Q01", "维度内正整数且唯一",
-	"题干，不能为空", "考察点，不能为空", "只能填写正向或反向", "只能填写启用或停用", "可空",
+	"填写当前有效维度的正整数顺序", "必须与维度主数据名称完全一致", "只能填写维度题或效度题", "全局唯一，例如A1-01-Q01",
+	"同一维度和题目类型内正整数且唯一", "题干，不能为空", "考察点，不能为空", "只能填写正向或反向", "只能填写启用或停用", "可空",
 }
 
 const CompetencyImportDefaultRemark = "AI测试题-未信效度验证"
@@ -30,6 +30,7 @@ type CompetencyImportRow struct {
 	DimensionID      string `json:"dimensionId"`
 	DimensionOrder   int    `json:"dimensionOrder"`
 	DimensionName    string `json:"dimensionName"`
+	QuestionType     string `json:"questionType"`
 	QuestionCode     string `json:"questionCode"`
 	DimensionItemNo  int    `json:"dimensionItemNo"`
 	Content          string `json:"content"`
@@ -95,8 +96,8 @@ func ValidateCompetencyImportRows(
 
 		messages := make([]string, 0)
 		dimensionOrder, orderErr := strconv.Atoi(values[0])
-		if orderErr != nil || dimensionOrder < 1 || dimensionOrder > 48 {
-			messages = append(messages, "维度序号必须是1到48的整数")
+		if orderErr != nil || dimensionOrder < 1 {
+			messages = append(messages, "维度序号必须是正整数")
 		}
 		dimension, dimensionExists := dimensionsByOrder[dimensionOrder]
 		if !dimensionExists {
@@ -110,7 +111,17 @@ func ValidateCompetencyImportRows(
 			}
 		}
 
-		questionCode := values[2]
+		questionType := ""
+		switch values[2] {
+		case "维度题":
+			questionType = "dimension"
+		case "效度题":
+			questionType = "validity"
+		default:
+			messages = append(messages, "题目类型只能是维度题或效度题")
+		}
+
+		questionCode := values[3]
 		if questionCode == "" {
 			messages = append(messages, "题目编号不能为空")
 		} else {
@@ -123,11 +134,11 @@ func ValidateCompetencyImportRows(
 			seenCodes[questionCode] = struct{}{}
 		}
 
-		itemNo, itemErr := strconv.Atoi(values[3])
+		itemNo, itemErr := strconv.Atoi(values[4])
 		if itemErr != nil || itemNo <= 0 {
 			messages = append(messages, "维度内题号必须是正整数")
 		} else if dimensionExists {
-			itemKey := fmt.Sprintf("%s:%d", dimension.ID, itemNo)
+			itemKey := fmt.Sprintf("%s:%s:%d", dimension.ID, questionType, itemNo)
 			if _, exists := existingItems[itemKey]; exists {
 				messages = append(messages, "维度内题号已存在")
 			}
@@ -137,14 +148,14 @@ func ValidateCompetencyImportRows(
 			seenItems[itemKey] = struct{}{}
 		}
 
-		if values[4] == "" {
+		if values[5] == "" {
 			messages = append(messages, "题目内容不能为空")
 		}
-		if values[5] == "" {
+		if values[6] == "" {
 			messages = append(messages, "考察点不能为空")
 		}
 		direction := ""
-		switch values[6] {
+		switch values[7] {
 		case "正向":
 			direction = CompetencyDirectionForward
 		case "反向":
@@ -152,8 +163,11 @@ func ValidateCompetencyImportRows(
 		default:
 			messages = append(messages, "计分方向只能是正向或反向")
 		}
+		if questionType == "validity" && direction == CompetencyDirectionReverse {
+			messages = append(messages, "效度题计分方向必须是正向")
+		}
 		var status int8
-		switch values[7] {
+		switch values[8] {
 		case "启用":
 			status = 0
 		case "停用":
@@ -161,7 +175,7 @@ func ValidateCompetencyImportRows(
 		default:
 			messages = append(messages, "启用状态只能是启用或停用")
 		}
-		remark := values[8]
+		remark := values[9]
 		if remark == "" {
 			remark = CompetencyImportDefaultRemark
 		}
@@ -175,10 +189,11 @@ func ValidateCompetencyImportRows(
 			DimensionID:      dimension.ID,
 			DimensionOrder:   dimensionOrder,
 			DimensionName:    dimension.Name,
+			QuestionType:     questionType,
 			QuestionCode:     questionCode,
 			DimensionItemNo:  itemNo,
-			Content:          values[4],
-			ObservationPoint: values[5],
+			Content:          values[5],
+			ObservationPoint: values[6],
 			Direction:        direction,
 			Status:           status,
 			Remark:           remark,

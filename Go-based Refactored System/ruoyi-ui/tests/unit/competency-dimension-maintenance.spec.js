@@ -4,7 +4,7 @@ import { fetchCompetencyDimensions, updateCompetencyDimension } from '@/api/comp
 
 vi.mock('@/api/competency', () => ({
   fetchCompetencyDimensions: vi.fn(() => Promise.resolve({ data: [
-    { id: 'd1', code: 'D01', name: '沟通表达', virdLevel: 'Versatility 胜任力', applicableCategory: '基层通用', coreMeaning: '清晰表达', displayOrder: 1, status: 0, questionCount: 8 }
+    { id: 'competency-a1-01', code: 'A1-01', name: '逻辑思维', virdLevel: '通用能力', applicableCategory: '基层员工', coreMeaning: '逻辑分析严谨，推理判断有据', displayOrder: 1, status: 0, questionCount: 0 }
   ] })),
   updateCompetencyDimension: vi.fn(() => Promise.resolve({ data: {} }))
 }))
@@ -15,7 +15,7 @@ describe('competency dimension maintenance', () => {
     await CompetencyDimensionMaintenance.methods.loadDimensions.call(vm)
     expect(fetchCompetencyDimensions).toHaveBeenCalled()
     expect(vm.rows).toHaveLength(1)
-    vm.query.keyword = 'D01'
+    vm.query.keyword = 'A1-01'
     expect(CompetencyDimensionMaintenance.computed.filteredRows.call(vm)).toHaveLength(1)
     vm.query.keyword = '不存在'
     expect(CompetencyDimensionMaintenance.computed.filteredRows.call(vm)).toHaveLength(0)
@@ -23,12 +23,19 @@ describe('competency dimension maintenance', () => {
 
   it('opens an editable copy while keeping code immutable', () => {
     const vm = { ...CompetencyDimensionMaintenance.data(), $nextTick: vi.fn() }
-    const row = { id: 'd1', code: 'D01', name: '沟通表达', virdLevel: 'Versatility 胜任力', applicableCategory: '基层通用', coreMeaning: '清晰表达', displayOrder: 1, status: 0 }
+    const row = { id: 'competency-a1-01', code: 'A1-01', name: '逻辑思维', virdLevel: '通用能力', applicableCategory: '基层员工', coreMeaning: '逻辑分析严谨，推理判断有据', displayOrder: 1, status: 0 }
     CompetencyDimensionMaintenance.methods.openEdit.call(vm, row)
     expect(vm.editVisible).toBe(true)
-    expect(vm.editIdentity).toEqual({ code: 'D01' })
-    expect(vm.editForm).toEqual(expect.objectContaining({ id: 'd1', name: '沟通表达', displayOrder: 1, status: 0 }))
+    expect(vm.editIdentity).toEqual({ code: 'A1-01' })
+    expect(vm.editForm).toEqual(expect.objectContaining({ id: 'competency-a1-01', name: '逻辑思维', displayOrder: 1, status: 0 }))
     expect(vm.editForm.code).toBeUndefined()
+  })
+
+  it('uses the confirmed phase-1 layers, audience and ten-position range', () => {
+    const state = CompetencyDimensionMaintenance.data()
+    expect(state.allVirdLevels).toEqual(['通用能力', '心理素养'])
+    expect(state.allApplicableCategories).toEqual(['基层员工'])
+    expect(state.maxDisplayOrder).toBe(10)
   })
 
   it('confirms status impact, saves and refreshes the list', async () => {

@@ -15,6 +15,10 @@ func TestCompetencyExportWorkbook_ContainsPersistedDynamicResults(t *testing.T) 
 	submitted := started.Add(15 * time.Minute)
 	d01Score := decimal.NewFromFloat(4.5)
 	data := competencyExportData{
+		Groups: []model.ExamCompetencyGroup{
+			{ID: "eg1", GroupCode: "general_ability", GroupName: "通用能力", DisplayOrder: 1},
+			{ID: "eg2", GroupCode: "psychological_quality", GroupName: "心理素养", DisplayOrder: 2},
+		},
 		Dimensions: []model.ExamCompetencyDimension{
 			{ID: "ed1", DimensionID: "d1", DimensionCode: "D01", DimensionName: "沟通表达", DisplayOrder: 1, QuestionCount: 1},
 			{ID: "ed2", DimensionID: "d2", DimensionCode: "D02", DimensionName: "人际交往", DisplayOrder: 2, QuestionCount: 1},
@@ -22,17 +26,22 @@ func TestCompetencyExportWorkbook_ContainsPersistedDynamicResults(t *testing.T) 
 		Persons: []competencyExportPerson{{
 			PaperID: "p1", ParticipantID: "c1", ParticipantType: "candidate", Name: "测试人员", Telephone: "13812345678",
 			StartedAt: &started, SubmittedAt: &submitted, UserTime: 15, TotalQuestionCount: 2, AnsweredQuestionCount: 1,
-			OverallScore: d01Score, EvaluationAverage: &d01Score, EvaluationLevel: "high", IsComplete: 0, SubmitType: "timeout", ReportAudience: "leader",
+			OverallScore: &d01Score, EvaluationAverage: &d01Score, EvaluationLevel: "high", IsComplete: 0, SubmitType: "timeout", ReportAudience: "leader",
+			ValidityScore: &d01Score, ValidityStatus: "questionable",
 		}},
+		GroupResults: []model.CompetencyGroupResult{
+			{PaperID: "p1", ExamGroupID: "eg1", GroupScore: &d01Score},
+			{PaperID: "p1", ExamGroupID: "eg2"},
+		},
 		DimensionResults: []model.CompetencyDimensionResult{{PaperID: "p1", DimensionID: "d1", DimensionScore: &d01Score}},
 		Answers: []competencyExportAnswer{{
 			PaperID: "p1", ParticipantID: "c1", Name: "测试人员", Sort: 2, QuestionCode: "D01-Q01",
 			QuestionContent: "我能清晰表达。", DimensionCode: "D01", DimensionName: "沟通表达", ObservationPoint: "表达",
-			ScoringDirection: "reverse", OptionsSnapshot: `[{"rawValue":2,"label":"不太符合","finalScore":4}]`, RawAnswer: int8Pointer(2), FinalScore: int8Pointer(4), Answered: 1,
+			QuestionType: "dimension", ScoringDirection: "reverse", OptionsSnapshot: `[{"rawValue":2,"label":"不太符合","finalScore":4}]`, RawAnswer: int8Pointer(2), FinalScore: int8Pointer(4), Answered: 1,
 		}},
 		Questions: []model.ExamCompetencyQuestion{{
 			QuestionCode: "D01-Q01", QuestionContent: "我能清晰表达。", ExamDimensionID: "ed1", DimensionItemNo: 1,
-			ObservationPoint: "表达", ScoringDirection: "reverse", OptionsSnapshot: `[{"rawValue":2,"label":"不太符合","finalScore":4}]`, SnapshotOrder: 1,
+			CompetencyQuestionType: stringPointer("dimension"), ObservationPoint: "表达", ScoringDirection: "reverse", OptionsSnapshot: `[{"rawValue":2,"label":"不太符合","finalScore":4}]`, SnapshotOrder: 1,
 		}},
 	}
 
@@ -47,14 +56,21 @@ func TestCompetencyExportWorkbook_ContainsPersistedDynamicResults(t *testing.T) 
 	assertWorkbookCell(t, file, "结果汇总", "A2", "c1")
 	assertWorkbookCell(t, file, "结果汇总", "D2", "138****5678")
 	assertWorkbookCell(t, file, "结果汇总", "J2", "50.00%")
-	assertWorkbookCell(t, file, "结果汇总", "R1", "D01 沟通表达")
+	assertWorkbookCell(t, file, "结果汇总", "R1", "通用能力")
 	assertWorkbookCell(t, file, "结果汇总", "R2", "4.500000")
-	assertWorkbookCell(t, file, "结果汇总", "S2", "")
-	assertWorkbookCell(t, file, "逐题明细", "L2", "2")
-	assertWorkbookCell(t, file, "逐题明细", "M2", "不太符合")
-	assertWorkbookCell(t, file, "逐题明细", "N2", "4")
+	assertWorkbookCell(t, file, "结果汇总", "S1", "心理素养")
+	assertWorkbookCell(t, file, "结果汇总", "T1", "效度原始分")
+	assertWorkbookCell(t, file, "结果汇总", "T2", "4.500000")
+	assertWorkbookCell(t, file, "结果汇总", "U2", "questionable")
+	assertWorkbookCell(t, file, "结果汇总", "V2", "4.500000")
+	assertWorkbookCell(t, file, "结果汇总", "W2", "")
+	assertWorkbookCell(t, file, "逐题明细", "G2", "dimension")
+	assertWorkbookCell(t, file, "逐题明细", "M2", "2")
+	assertWorkbookCell(t, file, "逐题明细", "N2", "不太符合")
+	assertWorkbookCell(t, file, "逐题明细", "O2", "4")
 	assertWorkbookCell(t, file, "题目字典", "A2", "1")
 	assertWorkbookCell(t, file, "题目字典", "B2", "D01-Q01")
+	assertWorkbookCell(t, file, "题目字典", "C2", "dimension")
 }
 
 func TestCompetencyExportWorkbook_EmptyResultsStillHasThreeHeaders(t *testing.T) {
@@ -92,7 +108,8 @@ func TestCompetencyExportEndpoints_DispatchWithoutChangingLegacyFlow(t *testing.
 	}
 }
 
-func int8Pointer(value int8) *int8 { return &value }
+func int8Pointer(value int8) *int8       { return &value }
+func stringPointer(value string) *string { return &value }
 
 func assertWorkbookCell(t *testing.T, file *excelize.File, sheet, cell, want string) {
 	t.Helper()

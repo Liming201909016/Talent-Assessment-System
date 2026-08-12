@@ -35,7 +35,7 @@ func NewCompetencyImportHandler(db *gorm.DB) *CompetencyImportHandler {
 	return &CompetencyImportHandler{db: db}
 }
 
-// ImportTemplate downloads the fixed nine-column, one-question-per-row template.
+// ImportTemplate downloads the fixed ten-column, one-question-per-row template.
 func (h *CompetencyImportHandler) ImportTemplate(c *gin.Context) {
 	file := excelize.NewFile()
 	defer file.Close()
@@ -54,12 +54,16 @@ func (h *CompetencyImportHandler) ImportTemplate(c *gin.Context) {
 	}
 	examples := [][]string{
 		{
-			"1", "沟通表达", "D01-EXAMPLE-F", "9001", "说明工作内容时，我会围绕重点安排表达顺序。",
-			"结构化表达", "正向", "启用", "示例数据-正式导入前请修改或删除",
+			"1", "逻辑思维", "维度题", "A1-01-EXAMPLE-F", "9001", "面对复杂事项时，我会先拆解再逐项处理。",
+			"分解能力", "正向", "启用", "示例数据-正式导入前请修改或删除",
 		},
 		{
-			"1", "沟通表达", "D01-EXAMPLE-R", "9002", "讨论出现分歧时，我有时会先坚持自己的表述方式。",
-			"沟通调整", "反向", "启用", "示例数据-正式导入前请修改或删除",
+			"1", "逻辑思维", "维度题", "A1-01-EXAMPLE-R", "9002", "我通常凭感觉就判断问题所在。",
+			"结构化验证", "反向", "启用", "示例数据-正式导入前请修改或删除",
+		},
+		{
+			"1", "逻辑思维", "效度题", "P1-VAL-EXAMPLE", "9001", "我在工作中从未出现过任何失误。",
+			"极端美化", "正向", "启用", "示例数据-正式导入前请修改或删除",
 		},
 	}
 	for column := range service.CompetencyImportHeaders {
@@ -70,9 +74,9 @@ func (h *CompetencyImportHandler) ImportTemplate(c *gin.Context) {
 			file.SetCellValue(sheet, exampleCell, example[column])
 		}
 	}
-	file.SetColWidth(sheet, "A", "D", 18)
-	file.SetColWidth(sheet, "E", "F", 42)
-	file.SetColWidth(sheet, "G", "I", 24)
+	file.SetColWidth(sheet, "A", "E", 18)
+	file.SetColWidth(sheet, "F", "G", 42)
+	file.SetColWidth(sheet, "H", "J", 24)
 
 	fileName := "competency-question-import-template.xlsx"
 	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -136,24 +140,26 @@ func (h *CompetencyImportHandler) Import(c *gin.Context) {
 	now := time.Now()
 	questions := make([]model.Qu, 0, len(validation.ValidRows))
 	for _, row := range validation.ValidRows {
+		questionType := row.QuestionType
 		questionCode := row.QuestionCode
 		dimensionID := row.DimensionID
 		itemNo := row.DimensionItemNo
 		observationPoint := row.ObservationPoint
 		direction := row.Direction
 		questions = append(questions, model.Qu{
-			ID:               fmt.Sprintf("%d", nextID()),
-			QuType:           quTypeRadio,
-			Content:          row.Content,
-			CreateTime:       &now,
-			UpdateTime:       &now,
-			Remark:           row.Remark,
-			QuestionCode:     &questionCode,
-			DimensionID:      &dimensionID,
-			DimensionItemNo:  &itemNo,
-			ObservationPoint: &observationPoint,
-			ScoringDirection: &direction,
-			QuestionStatus:   row.Status,
+			ID:                     fmt.Sprintf("%d", nextID()),
+			QuType:                 quTypeRadio,
+			Content:                row.Content,
+			CreateTime:             &now,
+			UpdateTime:             &now,
+			Remark:                 row.Remark,
+			QuestionCode:           &questionCode,
+			DimensionID:            &dimensionID,
+			DimensionItemNo:        &itemNo,
+			ObservationPoint:       &observationPoint,
+			ScoringDirection:       &direction,
+			CompetencyQuestionType: &questionType,
+			QuestionStatus:         row.Status,
 		})
 	}
 	err = h.db.Transaction(func(tx *gorm.DB) error {
@@ -232,19 +238,20 @@ func (h *CompetencyImportHandler) validateImportRows(rows [][]string) (service.C
 		existingCodes[code] = struct{}{}
 	}
 	type itemRow struct {
-		DimensionID string `gorm:"column:dimension_id"`
-		ItemNo      int    `gorm:"column:dimension_item_no"`
+		DimensionID  string `gorm:"column:dimension_id"`
+		QuestionType string `gorm:"column:competency_question_type"`
+		ItemNo       int    `gorm:"column:dimension_item_no"`
 	}
 	var items []itemRow
 	if err := h.db.Model(&model.Qu{}).
-		Select("dimension_id, dimension_item_no").
-		Where("dimension_id IS NOT NULL AND dimension_item_no IS NOT NULL").
+		Select("dimension_id, competency_question_type, dimension_item_no").
+		Where("dimension_id IS NOT NULL AND competency_question_type IS NOT NULL AND dimension_item_no IS NOT NULL").
 		Find(&items).Error; err != nil {
 		return service.CompetencyImportValidation{}, err
 	}
 	existingItems := make(map[string]struct{}, len(items))
 	for _, item := range items {
-		existingItems[fmt.Sprintf("%s:%d", item.DimensionID, item.ItemNo)] = struct{}{}
+		existingItems[fmt.Sprintf("%s:%s:%d", item.DimensionID, item.QuestionType, item.ItemNo)] = struct{}{}
 	}
 	return service.ValidateCompetencyImportRows(rows, refs, existingCodes, existingItems), nil
 }
