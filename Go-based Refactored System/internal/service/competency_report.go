@@ -69,6 +69,7 @@ type Phase1ReportResult struct {
 	ParticipantName        string           `json:"participantName"`
 	ParticipantAge         *int             `json:"participantAge"`
 	ParticipantGender      string           `json:"participantGender"`
+	ParticipantTelephone   string           `json:"participantTelephone"`
 	ParticipantAffiliation string           `json:"participantAffiliation"`
 	ParticipantPost        string           `json:"participantPost"`
 	ParticipantDegree      string           `json:"participantDegree"`
@@ -159,7 +160,7 @@ func BuildPhase1FormalReportData(result model.CompetencyResult, groups []model.C
 	framework.BlockedReason = ""
 	return Phase1FormalReportData{
 		Phase1ReportFramework: framework,
-		Result:                Phase1ReportResult{PaperID: result.PaperID, ParticipantName: result.ParticipantName, ParticipantAge: result.ParticipantAge, ParticipantGender: result.ParticipantGender, ParticipantAffiliation: result.ParticipantAffiliation, ParticipantPost: result.ParticipantPost, ParticipantDegree: result.ParticipantDegree, ParticipantMajor: result.ParticipantMajor, OverallScore: result.OverallScore, OverallLevel: *result.EvaluationLevel, SubmittedAt: result.SubmittedAt},
+		Result:                Phase1ReportResult{PaperID: result.PaperID, ParticipantName: result.ParticipantName, ParticipantAge: result.ParticipantAge, ParticipantGender: result.ParticipantGender, ParticipantTelephone: result.ParticipantTelephone, ParticipantAffiliation: result.ParticipantAffiliation, ParticipantPost: result.ParticipantPost, ParticipantDegree: result.ParticipantDegree, ParticipantMajor: result.ParticipantMajor, OverallScore: result.OverallScore, OverallLevel: *result.EvaluationLevel, SubmittedAt: result.SubmittedAt},
 		Groups:                groupViews, Dimensions: dimensionViews,
 		Validity: Phase1ReportValidity{Status: *validity.ValidityStatus, Notice: text.ValidityText}, ReportText: text,
 	}, nil

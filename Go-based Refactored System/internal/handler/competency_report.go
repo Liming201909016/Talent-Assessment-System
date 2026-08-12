@@ -32,13 +32,18 @@ const (
 )
 
 type CompetencyReportHandler struct {
-	db          *gorm.DB
-	examH       *ExamHandler
-	reportLocks [competencyReportLockStripes]sync.Mutex
+	db           *gorm.DB
+	examH        *ExamHandler
+	wordRenderer *phase1WordReportRenderer
+	reportLocks  [competencyReportLockStripes]sync.Mutex
 }
 
 func NewCompetencyReportHandler(db *gorm.DB, examH *ExamHandler) *CompetencyReportHandler {
-	return &CompetencyReportHandler{db: db, examH: examH}
+	handler := &CompetencyReportHandler{db: db, examH: examH}
+	if examH != nil {
+		handler.wordRenderer = newPhase1WordReportRenderer(examH.cfg)
+	}
+	return handler
 }
 
 func reportGenerationLockIndex(paperID string) int {
@@ -92,7 +97,7 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h.examH.pdfPool == nil {
+	if h.wordRenderer == nil && h.examH.pdfPool == nil {
 		response.RestErr(c, "后端报告生成未启用（pdfgen.enabled=false）")
 		return
 	}
@@ -173,7 +178,7 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 		return
 	}
 
-	pdfBytes, err := h.renderCompetencyReport(body.PaperID)
+	pdfBytes, err := h.renderCompetencyReport(c.Request.Context(), body.PaperID, data)
 	if err != nil {
 		h.markReportFailed(report.ID, err)
 		_ = h.writeReportAudit(c, report.ID, body.PaperID, "generate", &login.UserID, 0, err.Error())
@@ -224,7 +229,24 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 	response.Rest(c, report)
 }
 
-func (h *CompetencyReportHandler) renderCompetencyReport(paperID string) ([]byte, error) {
+func (h *CompetencyReportHandler) renderCompetencyReport(ctx context.Context, paperID string, data map[string]any) ([]byte, error) {
+	var wordErr error
+	if reportKind, _ := data["reportKind"].(string); reportKind == "frontline_phase1" && h.wordRenderer != nil {
+		if pdf, err := h.wordRenderer.Render(ctx, paperID, data); err == nil {
+			return pdf, nil
+		} else {
+			wordErr = err
+			if !h.wordRenderer.fallbackChromium {
+				return nil, wordErr
+			}
+		}
+	}
+	if h.examH == nil || h.examH.pdfPool == nil {
+		if wordErr != nil {
+			return nil, wordErr
+		}
+		return nil, errors.New("Chromium报告渲染器未启用")
+	}
 	base := strings.TrimRight(h.examH.cfg.PdfGen.ReportBaseURL, "/")
 	if base == "" {
 		base = "http://127.0.0.1"
@@ -232,8 +254,8 @@ func (h *CompetencyReportHandler) renderCompetencyReport(paperID string) ([]byte
 	reportURL := fmt.Sprintf("%s/#/exam/competency/report/%s?_internal=%s", base, url.PathEscape(paperID), url.QueryEscape(h.examH.cfg.PdfGen.InternalToken))
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(h.examH.cfg.PdfGen.PageTimeoutMs)*time.Millisecond)
-		data, incomplete, err := h.examH.pdfPool.GeneratePDF(ctx, reportURL, "window.__reportReady === true", "competency", "胜任力测评报告")
+		renderCtx, cancel := context.WithTimeout(ctx, time.Duration(h.examH.cfg.PdfGen.PageTimeoutMs)*time.Millisecond)
+		data, incomplete, err := h.examH.pdfPool.GeneratePDF(renderCtx, reportURL, "window.__reportReady === true", "competency", "胜任力测评报告")
 		cancel()
 		if err == nil && !incomplete && len(data) >= 1024 {
 			return data, nil
@@ -242,6 +264,9 @@ func (h *CompetencyReportHandler) renderCompetencyReport(paperID string) ([]byte
 			err = errors.New("报告页面数据未完整加载")
 		}
 		lastErr = err
+	}
+	if wordErr != nil && lastErr != nil {
+		return nil, fmt.Errorf("Word模板渲染失败：%v；Chromium回退失败：%v", wordErr, lastErr)
 	}
 	return nil, lastErr
 }

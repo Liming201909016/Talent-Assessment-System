@@ -66,15 +66,28 @@ type CompetencyCfg struct {
 	ExpiryBatchSize   int `mapstructure:"expiryBatchSize"`
 }
 
+type Phase1WordReportCfg struct {
+	Enabled             bool   `mapstructure:"enabled"`
+	TemplatePath        string `mapstructure:"templatePath"`
+	FallbackChromium    bool   `mapstructure:"fallbackChromium"`
+	GraphTenantID       string `mapstructure:"graphTenantId"`
+	GraphClientID       string `mapstructure:"graphClientId"`
+	GraphClientSecret   string `mapstructure:"graphClientSecret"`
+	GraphDriveID        string `mapstructure:"graphDriveId"`
+	GraphFolder         string `mapstructure:"graphFolder"`
+	GraphTimeoutSeconds int    `mapstructure:"graphTimeoutSeconds"`
+}
+
 type Config struct {
-	Server     ServerCfg     `mapstructure:"server"`
-	Mysql      MysqlCfg      `mapstructure:"mysql"`
-	Redis      RedisCfg      `mapstructure:"redis"`
-	Jwt        JwtCfg        `mapstructure:"jwt"`
-	Captcha    CaptchaCfg    `mapstructure:"captcha"`
-	Upload     UploadCfg     `mapstructure:"upload"`
-	PdfGen     PdfGenCfg     `mapstructure:"pdfgen"`
-	Competency CompetencyCfg `mapstructure:"competency"`
+	Server           ServerCfg           `mapstructure:"server"`
+	Mysql            MysqlCfg            `mapstructure:"mysql"`
+	Redis            RedisCfg            `mapstructure:"redis"`
+	Jwt              JwtCfg              `mapstructure:"jwt"`
+	Captcha          CaptchaCfg          `mapstructure:"captcha"`
+	Upload           UploadCfg           `mapstructure:"upload"`
+	PdfGen           PdfGenCfg           `mapstructure:"pdfgen"`
+	Competency       CompetencyCfg       `mapstructure:"competency"`
+	Phase1WordReport Phase1WordReportCfg `mapstructure:"phase1WordReport"`
 }
 
 var Global *Config
@@ -122,6 +135,15 @@ func Load() *Config {
 	bindEnv(v, "pdfgen.reportBaseURL", "PDFGEN_REPORT_BASE_URL")
 	bindEnv(v, "competency.expiryScanSeconds", "COMPETENCY_EXPIRY_SCAN_SECONDS")
 	bindEnv(v, "competency.expiryBatchSize", "COMPETENCY_EXPIRY_BATCH_SIZE")
+	bindEnv(v, "phase1WordReport.enabled", "PHASE1_WORD_REPORT_ENABLED")
+	bindEnv(v, "phase1WordReport.templatePath", "PHASE1_WORD_REPORT_TEMPLATE_PATH")
+	bindEnv(v, "phase1WordReport.fallbackChromium", "PHASE1_WORD_REPORT_FALLBACK_CHROMIUM")
+	bindEnv(v, "phase1WordReport.graphTenantId", "MSGRAPH_TENANT_ID")
+	bindEnv(v, "phase1WordReport.graphClientId", "MSGRAPH_CLIENT_ID")
+	bindEnv(v, "phase1WordReport.graphClientSecret", "MSGRAPH_CLIENT_SECRET")
+	bindEnv(v, "phase1WordReport.graphDriveId", "MSGRAPH_DRIVE_ID")
+	bindEnv(v, "phase1WordReport.graphFolder", "MSGRAPH_REPORT_FOLDER")
+	bindEnv(v, "phase1WordReport.graphTimeoutSeconds", "MSGRAPH_TIMEOUT_SECONDS")
 
 	var c Config
 	if err := v.Unmarshal(&c); err != nil {
@@ -167,6 +189,15 @@ func Load() *Config {
 	}
 	if c.Competency.ExpiryBatchSize <= 0 {
 		c.Competency.ExpiryBatchSize = 100
+	}
+	if c.Phase1WordReport.TemplatePath == "" {
+		c.Phase1WordReport.TemplatePath = "./configs/export-templates/competency-phase1-report.docx"
+	}
+	if c.Phase1WordReport.GraphFolder == "" {
+		c.Phase1WordReport.GraphFolder = "talent-assessment-reports"
+	}
+	if c.Phase1WordReport.GraphTimeoutSeconds <= 0 {
+		c.Phase1WordReport.GraphTimeoutSeconds = 90
 	}
 	if c.PdfGen.InternalToken == "" {
 		// 启动时随机生成一个 32 字节 hex
