@@ -182,6 +182,45 @@ func TestBugFB117_CustomerTemplateUsesHiddenContentControls(t *testing.T) {
 	}
 }
 
+func TestPhase1WordTemplateUploadValidation(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := validatePhase1WordTemplateUpload(template)
+	if err != nil {
+		t.Fatalf("valid template rejected: %v", err)
+	}
+	if contract.ContentControls != 49 || contract.Charts != 12 || contract.VisibleTokens != 0 {
+		t.Fatalf("contract=%+v", contract)
+	}
+
+	document := string(readWordPart(t, template, "word/document.xml"))
+	document = strings.Replace(document, `w:val="dimension.competency-a1-04.diagnosis"`, `w:val="dimension.competency-a1-03.diagnosis"`, 1)
+	broken := replaceWordFixturePart(t, template, "word/document.xml", []byte(document))
+	if _, err := validatePhase1WordTemplateUpload(broken); err == nil || !strings.Contains(err.Error(), "重复") {
+		t.Fatalf("duplicate content-control tag error=%v", err)
+	}
+}
+
+func TestInstallPhase1WordTemplateBacksUpAndAtomicallyReplaces(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "competency-phase1-report.docx")
+	if err := os.WriteFile(target, []byte("old-template"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := installPhase1WordTemplate(target, []byte("new-template"), time.Date(2026, 8, 12, 18, 30, 0, 0, time.Local))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "new-template" {
+		t.Fatalf("target=%q", got)
+	}
+	if got, _ := os.ReadFile(backup); string(got) != "old-template" {
+		t.Fatalf("backup=%q", got)
+	}
+}
+
 func TestPhase1WordRendererUsesConfiguredTemplateAndConverter(t *testing.T) {
 	converter := &capturingPhase1Converter{pdf: append([]byte("%PDF-1.7\n"), bytes.Repeat([]byte("x"), 2048)...)}
 	renderer := &phase1WordReportRenderer{templatePath: "../../configs/export-templates/competency-phase1-report.docx", converter: converter, timeout: time.Second}
@@ -393,6 +432,41 @@ func readWordPart(t *testing.T, docx []byte, partName string) []byte {
 	}
 	t.Fatalf("Word part missing: %s", partName)
 	return nil
+}
+
+func replaceWordFixturePart(t *testing.T, docx []byte, partName string, replacement []byte) []byte {
+	t.Helper()
+	reader, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := new(bytes.Buffer)
+	writer := zip.NewWriter(output)
+	for _, file := range reader.File {
+		rc, openErr := file.Open()
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		body, readErr := io.ReadAll(rc)
+		rc.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if file.Name == partName {
+			body = replacement
+		}
+		entry, createErr := writer.CreateHeader(&zip.FileHeader{Name: file.Name, Method: zip.Deflate})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		if _, writeErr := entry.Write(body); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
 }
 
 var _ = xml.EscapeText

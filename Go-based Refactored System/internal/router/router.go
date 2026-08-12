@@ -249,6 +249,9 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 	{
 		competencyReportGrp.POST("/generate", competencyReportH.Generate)
 		competencyReportGrp.GET("/download", competencyReportH.Download)
+		competencyReportGrp.GET("/template", competencyReportH.Phase1TemplateInfo)
+		competencyReportGrp.GET("/template/download", competencyReportH.DownloadPhase1Template)
+		competencyReportGrp.POST("/template/upload", competencyReportH.UploadPhase1Template)
 	}
 	api.GET("/competency/admin/report-data", competencyRuntimeH.AdminReportData)
 	api.GET("/competency/internal/report-data", competencyRuntimeH.InternalReportData)

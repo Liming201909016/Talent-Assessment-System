@@ -35,6 +35,7 @@ type CompetencyReportHandler struct {
 	db           *gorm.DB
 	examH        *ExamHandler
 	wordRenderer *phase1WordReportRenderer
+	templateMu   sync.RWMutex
 	reportLocks  [competencyReportLockStripes]sync.Mutex
 }
 
@@ -232,7 +233,10 @@ func (h *CompetencyReportHandler) Generate(c *gin.Context) {
 func (h *CompetencyReportHandler) renderCompetencyReport(ctx context.Context, paperID string, data map[string]any) ([]byte, error) {
 	var wordErr error
 	if reportKind, _ := data["reportKind"].(string); reportKind == "frontline_phase1" && h.wordRenderer != nil {
-		if pdf, err := h.wordRenderer.Render(ctx, paperID, data); err == nil {
+		h.templateMu.RLock()
+		pdf, err := h.wordRenderer.Render(ctx, paperID, data)
+		h.templateMu.RUnlock()
+		if err == nil {
 			return pdf, nil
 		} else {
 			wordErr = err

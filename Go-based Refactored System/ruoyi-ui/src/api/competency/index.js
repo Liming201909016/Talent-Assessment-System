@@ -57,6 +57,37 @@ export function generateCompetencyReport(data) {
   })
 }
 
+export function fetchPhase1WordTemplate() {
+  return request({ url: '/exam/api/competency/reports/template', method: 'get' })
+}
+
+export async function downloadPhase1WordTemplate() {
+  const blob = await request({ url: '/exam/api/competency/reports/template/download', method: 'get', responseType: 'blob' })
+  const contentType = (blob.type || '').toLowerCase()
+  if (contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) return blob
+  let message = '下载胜任力模板失败'
+  try {
+    const payload = JSON.parse(await readBlobText(blob))
+    message = payload.msg || message
+  } catch (error) {
+    // Keep the controlled fallback for a non-DOCX response that is not JSON.
+  }
+  throw new Error(message)
+}
+
+export function uploadPhase1WordTemplate(file) {
+  const data = new FormData()
+  data.append('file', file)
+  return request({
+    url: '/exam/api/competency/reports/template/upload',
+    method: 'post',
+    data,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    rejectWithBusinessMessage: true,
+    timeout: 120000
+  })
+}
+
 function readBlobText(blob) {
   if (typeof blob.text === 'function') return blob.text()
   return new Promise((resolve, reject) => {
