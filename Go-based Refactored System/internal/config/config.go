@@ -70,6 +70,9 @@ type Phase1WordReportCfg struct {
 	Enabled             bool   `mapstructure:"enabled"`
 	TemplatePath        string `mapstructure:"templatePath"`
 	FallbackChromium    bool   `mapstructure:"fallbackChromium"`
+	Converter           string `mapstructure:"converter"`
+	LibreOfficePath     string `mapstructure:"libreOfficePath"`
+	TimeoutSeconds      int    `mapstructure:"timeoutSeconds"`
 	GraphTenantID       string `mapstructure:"graphTenantId"`
 	GraphClientID       string `mapstructure:"graphClientId"`
 	GraphClientSecret   string `mapstructure:"graphClientSecret"`
@@ -138,6 +141,9 @@ func Load() *Config {
 	bindEnv(v, "phase1WordReport.enabled", "PHASE1_WORD_REPORT_ENABLED")
 	bindEnv(v, "phase1WordReport.templatePath", "PHASE1_WORD_REPORT_TEMPLATE_PATH")
 	bindEnv(v, "phase1WordReport.fallbackChromium", "PHASE1_WORD_REPORT_FALLBACK_CHROMIUM")
+	bindEnv(v, "phase1WordReport.converter", "PHASE1_WORD_REPORT_CONVERTER")
+	bindEnv(v, "phase1WordReport.libreOfficePath", "LIBREOFFICE_PATH")
+	bindEnv(v, "phase1WordReport.timeoutSeconds", "PHASE1_WORD_REPORT_TIMEOUT_SECONDS")
 	bindEnv(v, "phase1WordReport.graphTenantId", "MSGRAPH_TENANT_ID")
 	bindEnv(v, "phase1WordReport.graphClientId", "MSGRAPH_CLIENT_ID")
 	bindEnv(v, "phase1WordReport.graphClientSecret", "MSGRAPH_CLIENT_SECRET")
@@ -192,6 +198,12 @@ func Load() *Config {
 	}
 	if c.Phase1WordReport.TemplatePath == "" {
 		c.Phase1WordReport.TemplatePath = "./configs/export-templates/competency-phase1-report.docx"
+	}
+	if c.Phase1WordReport.Converter == "" {
+		c.Phase1WordReport.Converter = "libreoffice"
+	}
+	if c.Phase1WordReport.TimeoutSeconds <= 0 {
+		c.Phase1WordReport.TimeoutSeconds = 90
 	}
 	if c.Phase1WordReport.GraphFolder == "" {
 		c.Phase1WordReport.GraphFolder = "talent-assessment-reports"

@@ -19,14 +19,18 @@ import (
 	"github.com/talent-assessment/refactored/internal/config"
 	"github.com/talent-assessment/refactored/internal/service"
 	"github.com/talent-assessment/refactored/pkg/graphpdf"
+	"github.com/talent-assessment/refactored/pkg/libreofficepdf"
 )
 
 const maxPhase1WordTemplateBytes = 20 << 20
 
 var (
-	wordTemplateTokenPattern = regexp.MustCompile(`\{\{[a-zA-Z0-9_.-]+\}\}`)
-	numericChartBlockPattern = regexp.MustCompile(`(?s)<c:(?:numCache|numLit)>.*?</c:(?:numCache|numLit)>`)
-	chartValuePattern        = regexp.MustCompile(`<c:v>[^<]*</c:v>`)
+	wordTemplateTokenPattern     = regexp.MustCompile(`\{\{[a-zA-Z0-9_.-]+\}\}`)
+	wordContentControlPattern    = regexp.MustCompile(`(?s)<w:sdt>.*?</w:sdt>`)
+	wordContentControlTagPattern = regexp.MustCompile(`<w:tag\s+w:val="([a-zA-Z0-9_.-]+)"\s*/>`)
+	wordTextPattern              = regexp.MustCompile(`(?s)(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)`)
+	numericChartBlockPattern     = regexp.MustCompile(`(?s)<c:(?:numCache|numLit)>.*?</c:(?:numCache|numLit)>`)
+	chartValuePattern            = regexp.MustCompile(`<c:v>[^<]*</c:v>`)
 )
 
 type phase1DocumentConverter interface {
@@ -57,16 +61,23 @@ func newPhase1WordReportRenderer(cfg *config.Config) *phase1WordReportRenderer {
 	if cfg == nil || !cfg.Phase1WordReport.Enabled {
 		return nil
 	}
-	graphCfg := graphpdf.Config{
-		TenantID: cfg.Phase1WordReport.GraphTenantID, ClientID: cfg.Phase1WordReport.GraphClientID,
-		ClientSecret: cfg.Phase1WordReport.GraphClientSecret, DriveID: cfg.Phase1WordReport.GraphDriveID,
-		Folder: cfg.Phase1WordReport.GraphFolder, TimeoutSeconds: cfg.Phase1WordReport.GraphTimeoutSeconds,
+	var converter phase1DocumentConverter
+	switch strings.ToLower(strings.TrimSpace(cfg.Phase1WordReport.Converter)) {
+	case "", "libreoffice":
+		converter = libreofficepdf.NewClient(cfg.Phase1WordReport.LibreOfficePath)
+	case "graph":
+		graphCfg := graphpdf.Config{
+			TenantID: cfg.Phase1WordReport.GraphTenantID, ClientID: cfg.Phase1WordReport.GraphClientID,
+			ClientSecret: cfg.Phase1WordReport.GraphClientSecret, DriveID: cfg.Phase1WordReport.GraphDriveID,
+			Folder: cfg.Phase1WordReport.GraphFolder, TimeoutSeconds: cfg.Phase1WordReport.GraphTimeoutSeconds,
+		}
+		converter = graphpdf.NewClient(graphCfg, nil)
 	}
-	timeout := time.Duration(cfg.Phase1WordReport.GraphTimeoutSeconds) * time.Second
+	timeout := time.Duration(cfg.Phase1WordReport.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 90 * time.Second
 	}
-	return &phase1WordReportRenderer{templatePath: cfg.Phase1WordReport.TemplatePath, converter: graphpdf.NewClient(graphCfg, nil), timeout: timeout, fallbackChromium: cfg.Phase1WordReport.FallbackChromium}
+	return &phase1WordReportRenderer{templatePath: cfg.Phase1WordReport.TemplatePath, converter: converter, timeout: timeout, fallbackChromium: cfg.Phase1WordReport.FallbackChromium}
 }
 
 func (r *phase1WordReportRenderer) Render(ctx context.Context, paperID string, data map[string]any) ([]byte, error) {
@@ -218,12 +229,34 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 func replaceWordTemplateTokens(document []byte, tokens map[string]string) ([]byte, error) {
 	content := string(document)
 	for token, value := range tokens {
-		if !strings.Contains(content, token) {
-			return nil, fmt.Errorf("一期Word报告模板缺少必需占位符：%s", token)
-		}
 		var escaped bytes.Buffer
 		if err := xml.EscapeText(&escaped, []byte(value)); err != nil {
 			return nil, errors.New("转义一期Word报告数据失败")
+		}
+		tag := strings.TrimSuffix(strings.TrimPrefix(token, "{{"), "}}")
+		matches := wordContentControlPattern.FindAllStringIndex(content, -1)
+		controlMatches := make([][]int, 0, 1)
+		for _, bounds := range matches {
+			control := content[bounds[0]:bounds[1]]
+			tagMatch := wordContentControlTagPattern.FindStringSubmatch(control)
+			if len(tagMatch) == 2 && tagMatch[1] == tag {
+				controlMatches = append(controlMatches, bounds)
+			}
+		}
+		if len(controlMatches) > 1 {
+			return nil, fmt.Errorf("一期Word报告模板存在重复内容控件：%s", tag)
+		}
+		if len(controlMatches) == 1 {
+			bounds := controlMatches[0]
+			control, err := replaceWordContentControlText(content[bounds[0]:bounds[1]], escaped.String())
+			if err != nil {
+				return nil, fmt.Errorf("一期Word报告内容控件无效：%s", tag)
+			}
+			content = content[:bounds[0]] + control + content[bounds[1]:]
+			continue
+		}
+		if !strings.Contains(content, token) {
+			return nil, fmt.Errorf("一期Word报告模板缺少必需字段：%s", tag)
 		}
 		content = strings.ReplaceAll(content, token, escaped.String())
 	}
@@ -231,6 +264,31 @@ func replaceWordTemplateTokens(document []byte, tokens map[string]string) ([]byt
 		return nil, fmt.Errorf("一期Word报告模板存在未映射占位符：%s", unresolved)
 	}
 	return []byte(content), nil
+}
+
+func replaceWordContentControlText(control, escapedValue string) (string, error) {
+	contentStart := strings.Index(control, "<w:sdtContent>")
+	contentEnd := strings.LastIndex(control, "</w:sdtContent>")
+	if contentStart < 0 || contentEnd <= contentStart {
+		return "", errors.New("content control body missing")
+	}
+	contentStart += len("<w:sdtContent>")
+	body := control[contentStart:contentEnd]
+	matches := wordTextPattern.FindAllStringSubmatchIndex(body, -1)
+	if len(matches) == 0 {
+		return "", errors.New("content control text missing")
+	}
+	var rebuilt strings.Builder
+	last := 0
+	for index, match := range matches {
+		rebuilt.WriteString(body[last:match[4]])
+		if index == 0 {
+			rebuilt.WriteString(escapedValue)
+		}
+		last = match[5]
+	}
+	rebuilt.WriteString(body[last:])
+	return control[:contentStart] + rebuilt.String() + control[contentEnd:], nil
 }
 
 func replaceWordChartValues(chart []byte, values []float64) ([]byte, error) {

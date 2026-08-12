@@ -8,11 +8,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	pdfapi "github.com/pdfcpu/pdfcpu/pkg/api"
+	pdfmodel "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/shopspring/decimal"
+	"github.com/talent-assessment/refactored/internal/config"
 	"github.com/talent-assessment/refactored/internal/service"
+	"github.com/talent-assessment/refactored/pkg/graphpdf"
+	"github.com/talent-assessment/refactored/pkg/libreofficepdf"
 )
 
 // TestBugFB116_Phase1WordTemplateMapsFrozenReportData
@@ -97,7 +105,19 @@ func TestPhase1CustomerWordTemplateHasCompleteStableContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read customer Word template: %v", err)
 	}
-	tokens, charts, err := buildPhase1WordTemplateData(phase1WordTestData())
+	productionData := phase1WordTestData()
+	reportText := productionData["reportText"].(service.Phase1ReportTextSnapshot)
+	longDiagnosis := strings.Repeat("面对复杂工作情境时能够依据事实分析问题并推进任务，同时建议通过持续复盘和实践练习巩固优势、改善不足。", 3)
+	for dimensionID := range reportText.DimensionTexts {
+		reportText.DimensionTexts[dimensionID] = longDiagnosis
+	}
+	reportText.OverallText = strings.Repeat("整体工作表现符合岗位要求，能够完成常规任务并保持稳定交付，建议结合实际工作表现持续提升。", 3)
+	reportText.ValidityText = "本次测评作答效度良好，结果具有较好的参考价值。测评结果仍应结合实际工作表现、行为观察、访谈及其他评价信息进行综合解读。"
+	reportText.Disclaimer = strings.Repeat("本测评结果基于受测者自陈反应，不应作为人才决策的唯一依据，应结合面试、绩效表现和行为观察进行综合判断。", 2)
+	reportText.GroupTexts["general_ability"] = "通用能力由五个子维度构成，反映受测者作为职业人的通用能力综合情况。"
+	reportText.GroupTexts["psychological_quality"] = "心理素养由五个子维度构成，反映受测者心理状态和工作动机的综合情况。"
+	productionData["reportText"] = reportText
+	tokens, charts, err := buildPhase1WordTemplateData(productionData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,6 +150,38 @@ func TestPhase1CustomerWordTemplateHasCompleteStableContract(t *testing.T) {
 	t.Fatal("rendered Word document.xml missing")
 }
 
+// TestBugFB117_CustomerTemplateUsesHiddenContentControls
+// 对应：docs/regression-tests.md #FB-117
+// 复现：客户直接打开运行模板时，长{{...}}字段换行并挤压下划线、图形和固定图片。
+// 期望：页面只显示正常示例值，49个稳定字段键保存在Word内容控件Tag元数据中。
+func TestBugFB117_CustomerTemplateUsesHiddenContentControls(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := readWordPart(t, template, "word/document.xml")
+	if unresolved := wordTemplateTokenPattern.Find(document); unresolved != nil {
+		t.Fatalf("customer-visible placeholder remains: %s", unresolved)
+	}
+	tags := wordContentControlTagPattern.FindAllSubmatch(document, -1)
+	if len(tags) != 49 {
+		t.Fatalf("Word content-control tags=%d, want 49", len(tags))
+	}
+	seen := make(map[string]bool, len(tags))
+	for _, match := range tags {
+		tag := string(match[1])
+		if seen[tag] {
+			t.Fatalf("duplicate Word content-control tag: %s", tag)
+		}
+		seen[tag] = true
+	}
+	for _, required := range []string{"participant.name", "overall.level", "validity.notice", "dimension.competency-b1-05.diagnosis"} {
+		if !seen[required] {
+			t.Fatalf("required Word content-control tag missing: %s", required)
+		}
+	}
+}
+
 func TestPhase1WordRendererUsesConfiguredTemplateAndConverter(t *testing.T) {
 	converter := &capturingPhase1Converter{pdf: append([]byte("%PDF-1.7\n"), bytes.Repeat([]byte("x"), 2048)...)}
 	renderer := &phase1WordReportRenderer{templatePath: "../../configs/export-templates/competency-phase1-report.docx", converter: converter, timeout: time.Second}
@@ -146,6 +198,102 @@ func TestPhase1WordRendererUsesConfiguredTemplateAndConverter(t *testing.T) {
 	}
 	if len(reader.File) == 0 {
 		t.Fatal("captured DOCX empty")
+	}
+}
+
+func TestNewPhase1WordReportRendererSelectsConfiguredConverter(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        config.Phase1WordReportCfg
+		wantNil    bool
+		wantClient any
+	}{
+		{name: "disabled", cfg: config.Phase1WordReportCfg{}, wantNil: true},
+		{name: "libreoffice default", cfg: config.Phase1WordReportCfg{Enabled: true, TimeoutSeconds: 30}, wantClient: (*libreofficepdf.Client)(nil)},
+		{name: "graph", cfg: config.Phase1WordReportCfg{Enabled: true, Converter: "graph", TimeoutSeconds: 30}, wantClient: (*graphpdf.Client)(nil)},
+		{name: "unknown", cfg: config.Phase1WordReportCfg{Enabled: true, Converter: "unknown", TimeoutSeconds: 30}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			renderer := newPhase1WordReportRenderer(&config.Config{Phase1WordReport: test.cfg})
+			if test.wantNil {
+				if renderer != nil {
+					t.Fatal("disabled renderer was created")
+				}
+				return
+			}
+			if renderer == nil {
+				t.Fatal("enabled renderer is nil")
+			}
+			switch test.wantClient.(type) {
+			case *libreofficepdf.Client:
+				if _, ok := renderer.converter.(*libreofficepdf.Client); !ok {
+					t.Fatalf("converter type=%T, want LibreOffice", renderer.converter)
+				}
+			case *graphpdf.Client:
+				if _, ok := renderer.converter.(*graphpdf.Client); !ok {
+					t.Fatalf("converter type=%T, want Graph", renderer.converter)
+				}
+			default:
+				if renderer.converter != nil {
+					t.Fatalf("unknown converter type was accepted: %T", renderer.converter)
+				}
+			}
+		})
+	}
+}
+
+func TestPhase1CustomerWordTemplateLibreOfficeProducesExpectedPages(t *testing.T) {
+	executable := os.Getenv("LIBREOFFICE_INTEGRATION_PATH")
+	if executable == "" {
+		t.Skip("LIBREOFFICE_INTEGRATION_PATH is not configured")
+	}
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, charts, err := buildPhase1WordTemplateData(phase1WordTestData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	docx, err := renderPhase1WordTemplate(template, tokens, charts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDir := os.Getenv("LIBREOFFICE_INTEGRATION_ARTIFACT_DIR")
+	if artifactDir != "" {
+		if err := os.MkdirAll(artifactDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(artifactDir, "phase1-report.docx"), docx, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	convertCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pdf, err := libreofficepdf.NewClient(executable).Convert(convertCtx, "phase1-report.docx", docx)
+	if err != nil {
+		t.Fatalf("LibreOffice conversion: %v", err)
+	}
+	if artifactDir != "" {
+		if err := os.WriteFile(filepath.Join(artifactDir, "phase1-report.pdf"), pdf, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pageCount, err := pdfapi.PageCount(bytes.NewReader(pdf), pdfmodel.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatalf("read converted PDF: %v", err)
+	}
+	expectedPages := 11
+	if configured := os.Getenv("LIBREOFFICE_INTEGRATION_EXPECTED_PAGES"); configured != "" {
+		parsed, parseErr := strconv.Atoi(configured)
+		if parseErr != nil || parsed <= 0 {
+			t.Fatalf("invalid LIBREOFFICE_INTEGRATION_EXPECTED_PAGES=%q", configured)
+		}
+		expectedPages = parsed
+	}
+	if pageCount != expectedPages {
+		t.Fatalf("LibreOffice PDF pages=%d, want %d", pageCount, expectedPages)
 	}
 }
 
@@ -220,6 +368,31 @@ func makeWordTemplateFixture(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func readWordPart(t *testing.T, docx []byte, partName string) []byte {
+	t.Helper()
+	reader, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range reader.File {
+		if file.Name != partName {
+			continue
+		}
+		rc, openErr := file.Open()
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		body, readErr := io.ReadAll(rc)
+		rc.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		return body
+	}
+	t.Fatalf("Word part missing: %s", partName)
+	return nil
 }
 
 var _ = xml.EscapeText

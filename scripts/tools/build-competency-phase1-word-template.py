@@ -21,6 +21,37 @@ DIMENSIONS = [
 
 PARAGRAPH_RE = re.compile(r'<w:p(?:\s[^>]*)?>.*?</w:p>', re.S)
 TEXT_RE = re.compile(r'(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)', re.S)
+RUN_RE = re.compile(r'<w:r(?:\s[^>]*)?>.*?</w:r>', re.S)
+RUN_PROPERTIES_RE = re.compile(r'<w:rPr>.*?</w:rPr>', re.S)
+TOKEN_RE = re.compile(r'\{\{([a-zA-Z0-9_.-]+)\}\}')
+VERTICAL_ATTR_RE = re.compile(r'(w:(?:line|before|after|val)=")([0-9]+)(")')
+FINAL_DIMENSION_BLOCK_PARA_ID = '658A5D56'
+
+CONTENT_CONTROL_SAMPLES = {
+    'report.date': '2026年8月12日',
+    'participant.name': '张三',
+    'participant.age': '30',
+    'participant.gender': '男',
+    'participant.telephone': '13800000000',
+    'participant.affiliation': '示例单位',
+    'participant.post': '示例岗位',
+    'result.submittedAt': '2026年8月12日',
+    'result.userTime': '20',
+    'overall.level': '合格胜任',
+    'overall.diagnosis': '此处显示总体诊断。',
+    'validity.notice': '此处显示作答效度提示。',
+    'report.disclaimer': '此处显示经批准的报告免责声明。',
+    'group.general_ability.score': '3.50',
+    'group.general_ability.level': '较高分',
+    'group.general_ability.description': '此处显示通用能力说明。',
+    'group.psychological_quality.score': '3.50',
+    'group.psychological_quality.level': '较高分',
+    'group.psychological_quality.description': '此处显示心理素养说明。',
+}
+for _, dimension_id in DIMENSIONS:
+    CONTENT_CONTROL_SAMPLES[f'dimension.{dimension_id}.score'] = '3.50'
+    CONTENT_CONTROL_SAMPLES[f'dimension.{dimension_id}.level'] = '合格'
+    CONTENT_CONTROL_SAMPLES[f'dimension.{dimension_id}.diagnosis'] = '此处显示该维度的诊断与发展建议。'
 
 
 def paragraph_text(paragraph):
@@ -46,6 +77,13 @@ def set_whole(paragraph, value):
     return set_runs(paragraph, [value])
 
 
+def scale_run_fonts(paragraph, factor):
+    def scale(match):
+        return match.group(1) + str(max(1, round(int(match.group(2)) * factor))) + match.group(3)
+
+    return re.sub(r'(w:(?:sz|szCs) w:val=")([0-9]+)(")', scale, paragraph)
+
+
 def transform_document(document):
     dimension_by_name = dict(DIMENSIONS)
     title_counts = {name: 0 for name, _ in DIMENSIONS}
@@ -56,13 +94,22 @@ def transform_document(document):
     group_level_index = 0
     group_description_index = 0
     replacements = 0
+    reading_section = False
 
     def transform(match):
         nonlocal score_index, level_index, diagnosis_index
         nonlocal group_score_index, group_level_index, group_description_index, replacements
+        nonlocal reading_section
         paragraph = match.group(0)
         text = paragraph_text(paragraph)
         stripped = text.strip()
+
+        if stripped == '报告阅读说明':
+            reading_section = True
+        elif stripped.startswith('特别说明：'):
+            reading_section = False
+        elif reading_section:
+            paragraph = scale_run_fonts(paragraph, 0.9)
 
         if stripped in dimension_by_name:
             title_counts[stripped] += 1
@@ -121,6 +168,7 @@ def transform_document(document):
             replacements += 1
             return set_whole(paragraph, f'评价等级：{{{{dimension.{dimension_id}.level}}}}')
         if stripped.startswith('【诊断】'):
+            current_diagnosis_index = diagnosis_index
             if diagnosis_index == -1:
                 token = '{{overall.diagnosis}}'
             elif diagnosis_index < len(DIMENSIONS):
@@ -129,10 +177,15 @@ def transform_document(document):
                 return paragraph
             diagnosis_index += 1
             replacements += 1
-            return set_whole(paragraph, '【诊断】' + token)
+            paragraph = set_whole(paragraph, '【诊断】' + token)
+            if current_diagnosis_index == 8:
+                paragraph = scale_run_fonts(paragraph, 0.4)
+            return paragraph
         return paragraph
 
     transformed = PARAGRAPH_RE.sub(transform, document)
+    transformed = tune_libreoffice_layout(transformed)
+    transformed = convert_tokens_to_content_controls(transformed)
     required_tokens = 49  # dimension definitions remain customer-maintained fixed Word content
     if replacements != required_tokens:
         raise RuntimeError(f'placeholder replacements={replacements}, want {required_tokens}')
@@ -140,6 +193,86 @@ def transform_document(document):
     if unresolved_dimensions:
         raise RuntimeError('dimension titles missing: ' + ','.join(unresolved_dimensions))
     return transformed
+
+
+def make_text_run(run_properties, text):
+    if not text:
+        return ''
+    return '<w:r>' + run_properties + '<w:t xml:space="preserve">' + html.escape(text, quote=False) + '</w:t></w:r>'
+
+
+def make_content_control(run_properties, tag):
+    if tag not in CONTENT_CONTROL_SAMPLES:
+        raise RuntimeError(f'content-control sample missing: {tag}')
+    sample = html.escape(CONTENT_CONTROL_SAMPLES[tag], quote=False)
+    metadata = html.escape(tag, quote=True)
+    return (
+        '<w:sdt><w:sdtPr>'
+        f'<w:alias w:val="{metadata}"/><w:tag w:val="{metadata}"/><w:text/>'
+        '</w:sdtPr><w:sdtContent>'
+        f'<w:r>{run_properties}<w:t>{sample}</w:t></w:r>'
+        '</w:sdtContent></w:sdt>'
+    )
+
+
+def convert_tokens_to_content_controls(document):
+    converted = []
+
+    def convert_run(match):
+        run = match.group(0)
+        text_matches = list(TEXT_RE.finditer(run))
+        if not text_matches:
+            return run
+        visible_text = ''.join(html.unescape(item.group(2)) for item in text_matches)
+        tokens = list(TOKEN_RE.finditer(visible_text))
+        if not tokens:
+            return run
+        properties_match = RUN_PROPERTIES_RE.search(run)
+        properties = properties_match.group(0) if properties_match else ''
+        parts = []
+        last = 0
+        for token_match in tokens:
+            parts.append(make_text_run(properties, visible_text[last:token_match.start()]))
+            tag = token_match.group(1)
+            parts.append(make_content_control(properties, tag))
+            converted.append(tag)
+            last = token_match.end()
+        parts.append(make_text_run(properties, visible_text[last:]))
+        return ''.join(parts)
+
+    result = RUN_RE.sub(convert_run, document)
+    if len(converted) != 49 or len(set(converted)) != 49:
+        raise RuntimeError(f'content-control tags={len(converted)}/{len(set(converted))}, want 49/49')
+    unresolved = TOKEN_RE.findall(result)
+    if unresolved:
+        raise RuntimeError('visible placeholders remain: ' + ','.join(unresolved))
+    return result
+
+
+def tune_libreoffice_layout(document):
+    """Keep the customer layout while compensating for LibreOffice's larger vertical metrics."""
+    def scale_paragraph(match):
+        tag = match.group(0)
+        if not tag.startswith('<w:spacing'):
+            return tag
+
+        def scale_attr(attr_match):
+            value = int(attr_match.group(2))
+            return attr_match.group(1) + str(max(1, round(value * 0.4))) + attr_match.group(3)
+
+        return VERTICAL_ATTR_RE.sub(scale_attr, tag)
+
+    document = re.sub(r'<w:spacing\b[^>]*/>', scale_paragraph, document)
+
+    def scale_row_height(match):
+        value = int(match.group(2))
+        return match.group(1) + str(max(1, round(value * 0.4))) + match.group(3)
+
+    document = re.sub(r'(<w:trHeight\b[^>]*w:val=")([0-9]+)("[^>]*/>)', scale_row_height, document)
+    final_block = f'<w:p w14:paraId="{FINAL_DIMENSION_BLOCK_PARA_ID}"><w:pPr>'
+    if document.count(final_block) != 1:
+        raise RuntimeError('final dimension block pagination anchor is missing or duplicated')
+    return document.replace(final_block, final_block + '<w:pageBreakBefore/>', 1)
 
 
 def build(source, output):
@@ -150,15 +283,18 @@ def build(source, output):
             if item.filename == 'word/document.xml':
                 data = transform_document(data.decode('utf-8')).encode('utf-8')
             compression = zipfile.ZIP_STORED if item.is_dir() or not data else zipfile.ZIP_DEFLATED
-            generated.writestr(item.filename, data, compress_type=compression)
+            item.compress_type = compression
+            generated.writestr(item, data)
     with zipfile.ZipFile(output) as check:
         document = check.read('word/document.xml').decode('utf-8')
-        tokens = sorted(set(re.findall(r'\{\{[a-zA-Z0-9_.-]+\}\}', document)))
-        if len(tokens) != 49:
-            raise RuntimeError(f'unique placeholder count={len(tokens)}, want 49')
+        tags = re.findall(r'<w:tag\s+w:val="([a-zA-Z0-9_.-]+)"\s*/>', document)
+        if len(tags) != 49 or len(set(tags)) != 49:
+            raise RuntimeError(f'content-control tag count={len(tags)}/{len(set(tags))}, want 49/49')
+        if TOKEN_RE.search(document):
+            raise RuntimeError('customer-visible placeholder remains')
     print('PHASE1_WORD_TEMPLATE_BUILT')
     print(f'output={output}')
-    print(f'placeholders={len(tokens)}|charts=12')
+    print(f'content_controls={len(tags)}|charts=12')
 
 
 def main():
