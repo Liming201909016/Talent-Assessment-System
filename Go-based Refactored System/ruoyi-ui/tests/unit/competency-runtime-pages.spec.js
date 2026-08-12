@@ -157,5 +157,8 @@ describe('Competency runtime pages', () => {
     expect(wrapper.text()).toContain('合格胜任')
     expect(wrapper.text()).toContain('中分')
     expect(wrapper.text()).toContain('合格')
+    // TestBugFB114_Phase1ApprovedDisclaimerIsVisibleInPDF
+    // 对应：docs/regression-tests.md #FB-114
+    expect(wrapper.text()).toContain('正式免责声明')
   })
 })
