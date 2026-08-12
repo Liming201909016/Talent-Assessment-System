@@ -7,7 +7,7 @@
       </div>
       <el-button icon="el-icon-back" @click="$router.back()">返回</el-button>
     </div>
-    <el-alert v-if="examProductVersion === 'competency-frontline-phase1-v1'" title="一期结果可查看、筛选和导出；L1-L5、一级维度与效度提示的正式报告模板接入前，报告生成和下载保持关闭。" type="warning" :closable="false" show-icon class="mb12" />
+    <el-alert v-if="examProductVersion === 'competency-frontline-phase1-v1'" title="一期十页报告模板已接入；仅完整答卷可选择生成。内容包未完成双重批准时，系统会返回具体门禁原因。" type="warning" :closable="false" show-icon class="mb12" />
 
     <el-form :inline="true" size="small" class="search-form">
       <el-form-item label="姓名">
@@ -303,7 +303,7 @@ export default {
       this.$router.push({ name: 'CompetencyReport', params: { paperId: row.paperId } })
     },
     isReportSelectable(row) {
-      return row.isComplete === 1 && row.productVersion !== 'competency-frontline-phase1-v1'
+      return row.isComplete === 1
     },
     handleSelectionChange(rows) {
       this.selectedRows = rows.filter(this.isReportSelectable)
@@ -318,6 +318,7 @@ export default {
       this.reportLoading = true
       this.reportAction = 'generate'
       let succeeded = 0
+      let firstError = ''
       try {
         for (let index = 0; index < targetRows.length; index++) {
           this.reportProgress = `正在生成测评报告（${index + 1}/${targetRows.length}）`
@@ -325,12 +326,13 @@ export default {
             await generateCompetencyReport({ paperId: targetRows[index].paperId, force: false })
             succeeded++
           } catch (error) {
+            if (!firstError) firstError = error.message || '未知错误'
             // Continue so one failed report does not block the remaining selected rows.
           }
         }
         const failed = targetRows.length - succeeded
         if (failed === 0) this.$message.success(`批量生成完成，共${succeeded}份`)
-        else this.$message.warning(`批量生成完成：成功${succeeded}份，失败${failed}份`)
+        else this.$message.warning(`批量生成完成：成功${succeeded}份，失败${failed}份；原因：${firstError}`)
       } finally {
         this.reportLoading = false
         this.reportAction = ''

@@ -79,15 +79,35 @@ describe('Competency result management', () => {
     })
   })
 
-  it('keeps phase-1 report actions disabled until its renderer is implemented', () => {
+  // TestBugFB113_Phase1CompleteResultReachesReportApprovalGate
+  // 对应：docs/regression-tests.md #FB-113
+  it('allows a complete phase-1 result to reach the backend report approval gate', () => {
     const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
-    expect(wrapper.vm.isReportSelectable({ isComplete: 1, productVersion: 'competency-frontline-phase1-v1' })).toBe(false)
+    expect(wrapper.vm.isReportSelectable({ isComplete: 1, productVersion: 'competency-frontline-phase1-v1' })).toBe(true)
     expect(wrapper.vm.isReportSelectable({ isComplete: 1, productVersion: 'competency-generic-v1' })).toBe(true)
+    expect(wrapper.vm.isReportSelectable({ isComplete: 0, productVersion: 'competency-frontline-phase1-v1' })).toBe(false)
+  })
+
+  it('shows the backend approval reason when phase-1 batch generation is rejected', async () => {
+    generateCompetencyReport.mockReset().mockRejectedValue(new Error('一期正式报告内容尚未完成双重批准'))
+    const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
+    wrapper.vm.$message = { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
+    wrapper.vm.selectedRows = [{
+      paperId: 'paper-phase1-complete', participantName: '一期受测者', isComplete: 1,
+      productVersion: 'competency-frontline-phase1-v1'
+    }]
+
+    await wrapper.vm.batchGenerateReports()
+
+    expect(generateCompetencyReport).toHaveBeenCalledWith({ paperId: 'paper-phase1-complete', force: false })
+    expect(wrapper.vm.$message.warning).toHaveBeenCalledWith('批量生成完成：成功0份，失败1份；原因：一期正式报告内容尚未完成双重批准')
+    const apiSource = fs.readFileSync(path.resolve(process.cwd(), 'src/api/competency/index.js'), 'utf8')
+    expect(apiSource).toContain("rejectWithBusinessMessage: true")
   })
 
   it('generates and downloads a complete temporary competency PDF report', async () => {
-    generateCompetencyReport.mockClear()
-    downloadCompetencyReport.mockClear()
+    generateCompetencyReport.mockReset().mockResolvedValue({ data: { id: 'report-1' } })
+    downloadCompetencyReport.mockReset().mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }))
     const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
     wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
     await wrapper.vm.generateReport({ paperId: 'paper-complete-1', isComplete: 1 })

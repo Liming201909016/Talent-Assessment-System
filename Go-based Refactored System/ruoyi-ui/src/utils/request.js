@@ -105,6 +105,9 @@ service.interceptors.response.use(res => {
       Notification.error({
         title: msg
       })
+      if (res.config.rejectWithBusinessMessage) {
+        return Promise.reject(new Error(msg))
+      }
       return Promise.reject('error')
     } else {
       return res.data

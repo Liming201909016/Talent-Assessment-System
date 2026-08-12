@@ -465,6 +465,7 @@
 | Result UI | query and reset buttons | P1 | ✅ | Component test verifies reset clears identity/completion/sorting, returns to page 1 and reloads |
 | Result UI | overlapping list/detail requests return out of order | P1 | ✅ | FB-081 uses independent monotonic sequences for list/detail; only the latest response may update data/loading, and list requests receive a frozen query snapshot |
 | Result UI | no complete row selected for batch report action | P1 | ✅ | Buttons bind disabled state to selected complete rows; `selectable` rejects incomplete rows |
+| Result UI | complete phase-1 row exists after the ten-page renderer is implemented | P0 | ✅ | FB-113: complete rows are selectable; generation reaches the backend dual-approval gate, and the batch summary preserves its actionable business error |
 | Result UI | one or more complete rows selected for batch generation | P1 | ✅ | Component test verifies one generation call per selected paper, loading cleanup and summary feedback |
 | Result UI | one or more complete rows selected for batch download | P1 | ✅ | Component test verifies one download/save per selected paper, loading cleanup and participant filenames |
 | Result UI | selection changes while batch generation/download is running | P1 | ✅ | FB-082 captures a filtered/shallow-copied complete-result snapshot at task start; loops, progress and totals never read live selectedRows afterward |

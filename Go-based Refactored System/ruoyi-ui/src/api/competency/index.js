@@ -48,7 +48,14 @@ export function fetchCompetencyResults(data) { return post('/exam/api/competency
 export function fetchCompetencyResultDetail(paperId) { return post('/exam/api/competency/results/detail', { paperId }) }
 export function fetchCompetencyReportData(paperId) { return request({ url: '/exam/api/competency/admin/report-data', method: 'get', params: { paperId } }) }
 export function fetchCompetencyInternalReportData(paperId, token) { return request({ url: '/exam/api/competency/internal/report-data', method: 'get', params: { paperId }, headers: { isToken: false, 'X-Internal-Token': token } }) }
-export function generateCompetencyReport(data) { return post('/exam/api/competency/reports/generate', data) }
+export function generateCompetencyReport(data) {
+  return request({
+    url: '/exam/api/competency/reports/generate',
+    method: 'post',
+    data,
+    rejectWithBusinessMessage: true
+  })
+}
 
 function readBlobText(blob) {
   if (typeof blob.text === 'function') return blob.text()
