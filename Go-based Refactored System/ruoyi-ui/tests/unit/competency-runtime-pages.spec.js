@@ -104,15 +104,15 @@ describe('Competency runtime pages', () => {
     expect(source).toContain('.dimension-page{font-size:14px;line-height:1.6;padding:38px 60px}')
     expect(source).toContain('.overview-page{font-size:14px;line-height:1.6;padding:38px 60px}')
     expect(source).toContain('.overview-page .overall-score{width:120px;height:120px')
-    expect(source).toContain('.phase1-guide{font-size:12px;line-height:1.55;padding:34px 54px}')
-    expect(source).toContain('.phase1-report .report-page{height:850px;max-height:850px;break-inside:avoid;overflow:hidden}')
+    expect(source).toContain('.phase1-guide{font-size:11px;line-height:1.62}')
+    expect(source).toContain('.phase1-report .report-page{height:850px;max-height:850px;break-inside:avoid;overflow:hidden;')
   })
 
   it('contains an isolated fixed ten-page phase-1 report framework', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/paper/exam/competencyReport.vue'), 'utf8')
   for (const required of [
-    "reportKind === 'frontline_phase1'", 'phase1-report', 'phase1Pages', 'overallMaxScore',
-    'phase1-groups', 'phase1-radar', 'phase1-dimension-pair', 'showRawScoreToParticipant',
+    "reportKind === 'frontline_phase1'", 'phase1-report', 'phase1Pages',
+    'phase1-groups', 'phase1-radar', 'phase1-detail-flow', 'showRawScoreToParticipant',
     "import phase1Catalog from '@/data/competencyPhase1ReportCatalog'", 'catalogDimension',
     'secondaryLevelLabel', 'groupLevelLabel', 'overallLevelLabel', 'radar-chart', 'radarPoints',
     'dimension.definition', 'data.meta.examTitle', 'phase1Catalog.fixedTexts.coverTitle',
@@ -151,7 +151,6 @@ describe('Competency runtime pages', () => {
     } })
     expect(wrapper.findAll('.report-page')).toHaveLength(10)
     expect(wrapper.find('.radar-chart').exists()).toBe(true)
-    expect(wrapper.text()).toContain('基层员工一期测评')
     expect(wrapper.text()).toContain('逻辑思维')
     expect(wrapper.text()).toContain('运用归纳、演绎等逻辑方法分析问题')
     expect(wrapper.text()).toContain('合格胜任')
@@ -160,5 +159,19 @@ describe('Competency runtime pages', () => {
     // TestBugFB114_Phase1ApprovedDisclaimerIsVisibleInPDF
     // 对应：docs/regression-tests.md #FB-114
     expect(wrapper.text()).toContain('正式免责声明')
+  })
+
+  // TestBugFB115_Phase1ReportMatchesCustomerTemplateStructure
+  // 对应：docs/regression-tests.md #FB-115
+  it('uses the customer DOCX page composition instead of the generic card layout', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/paper/exam/competencyReport.vue'), 'utf8')
+    for (const required of [
+      'phase1-cover-illustration', 'phase1-running-head', 'phase1-page-footer',
+      'phase1-overall-orbit', 'phase1-group-table', 'phase1-group-pie',
+      'phase1-radar-label', 'phase1-detail-flow', 'phase1DetailPages',
+      "import phase1CoverIllustration from '@/assets/images/competency-phase1-cover.png'"
+    ]) expect(source).toContain(required)
+    expect(source).not.toContain('group-score-grid')
+    expect(source).not.toContain('phase1-dimension-pair')
   })
 })
