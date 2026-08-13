@@ -41,6 +41,7 @@
 | 2026-08-11 09:35 | Go全量、`go vet`、Linux build通过 | 23文件139项；production build成功（2个既有体积warning） | staging真实90题发布→组卷→全答→提交→结果→筛选→三Sheet导出；2/10/90快照、10+2+1+1结果、3/L3、30/weak、10/good、重复请求幂等、清理0、传统签名不变 | 一期正式报告渲染器仍关闭；timeout不完整统一运行时本轮未在staging重复造数；production未部署 |
 | 2026-08-11 10:31 | 前序Go/构建结果不变 | 前序23文件139项不变 | staging三组负向链：88/90 timeout产生overall/二级/一级/效度NULL并拒绝报告；40/questionable显式可查但默认排名排除且导出正确；快照INSERT强制失败后发布事务零残留、同草稿可重试；最终清理与传统签名通过 | 独立常模/汇总统计端点及一期正式报告渲染器仍未实现；production未部署 |
 | 2026-08-12 20:15 | Go全量、go vet、Windows/Linux build通过 | 24文件；新增模板管理3项；production build成功（2个既有体积warning） | 统一报告模板页；管理员权限；49/12/0严格校验；非法Tag拒绝且SHA不变；合法上传备份+生效；真实API下载；1440/390浏览器下载/上传/移动无溢出 | staging后端=`210aac516088e610e8b5be6307391e59062f0a0d3053006277843c902f72d639`，前端index=`1afdb1ce766546584a2c1c1e5d0d492bead56d54b98e0653df2394a38fa0a80c`；production未部署 |
+| 2026-08-13 13:50 | 后端未变 | 24文件；FB-118专项5/5、全量通过；production build成功（2个既有体积warning） | staging真实新建一期测评：首次保存payload=`name,gender,telephone`，Detail一致，考生页立即恰好3项；临时测评/会话0 | 前端index=`15a66ff8234068ba0384faa995f251c6175db90ba5644c8ab32b57db94e3446c`；production未部署 |
 
 ## 当前已验证规模
 

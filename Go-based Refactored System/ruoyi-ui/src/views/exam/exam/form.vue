@@ -473,7 +473,7 @@ export default {
       if (value === 'competency') {
         this.postForm.scoringMode = 'competency_average'
         this.postForm.publishStatus = 0
-        this.applyPhase1Profile()
+        this.applyPhase1Profile(true)
         this.postForm.repoList = []
         this.postForm.showPdf = false
         this.loadCompetencyDimensions()
@@ -491,7 +491,7 @@ export default {
       this.$nextTick(() => this.$refs.postForm && this.$refs.postForm.clearValidate())
     },
 
-    applyPhase1Profile() {
+    applyPhase1Profile(applyRequiredFieldDefaults = false) {
       this.postForm.competencyReportAudience = 'frontline_employee'
       this.postForm.competencyProductVersion = 'competency-frontline-phase1-v1'
       this.postForm.competencyScoringVersion = 'competency-phase1-scoring-v1'
@@ -501,7 +501,7 @@ export default {
       if (!Number(this.postForm.totalTime) || Number(this.postForm.totalTime) <= 0) {
         this.postForm.totalTime = 20
       }
-      if (!this.postForm.id) {
+      if (applyRequiredFieldDefaults && !this.postForm.id) {
         this.requiredFieldsList = ['name', 'gender', 'age', 'telephone', 'affiliation', 'post']
       }
     },
