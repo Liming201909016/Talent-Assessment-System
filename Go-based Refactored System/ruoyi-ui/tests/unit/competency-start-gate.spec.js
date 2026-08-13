@@ -22,8 +22,14 @@ describe('competency start gate', () => {
     expect(Preview.computed.canStart.call(vm)).toBe(false)
     const reason = Preview.computed.startDisabledReason.call({ ...vm, canStart: false })
     expect(reason).toContain('尚未发布')
-    expect(Preview.computed.displayDesc.call(vm)).toContain('16道题目')
-    expect(Preview.computed.displayDesc.call(vm)).not.toContain('90道题目')
+    const description = Preview.computed.displayDesc.call(vm)
+    expect(description).toContain('本测评旨在全面了解您在各项工作情景中的行为表现与内在倾向')
+    expect(description).toContain('作答说明：')
+    expect(description).toContain('所有题目无对错、好坏之分')
+    expect(description).toContain('请依据您的第一反应如实作答')
+    expect(description).toContain('您的作答结果将严格保密')
+    expect(description).toContain('本次测验共计90道题目，每道题目都必须作答')
+    expect(description).not.toContain('16道题目')
     vm.canStart = false
     vm.startDisabledReason = reason
     await Preview.methods.handleCreate.call(vm)

@@ -39,6 +39,7 @@ scripts/tools/*.ps1
 !scripts/test/staging-competency-import-rollback-e2e.js
 !scripts/test/staging-template-management-e2e.js
 !scripts/test/staging-phase1-required-fields-e2e.js
+!scripts/test/staging-phase1-description-e2e.js
 
 # User-specific editor settings
 .vscode/

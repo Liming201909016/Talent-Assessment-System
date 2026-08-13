@@ -68,6 +68,14 @@ import { createCompetencyPaper } from '@/api/competency'
 const desc1 = '本份问卷每道题目均由一对语句构成，请从每对语句中选择一个与您个人情况更相吻合或您更赞同的一种说法。每道题的不同选项之间并没有好坏、正误之分，只需您如实作答。<br><span style="color:red;">请注意，本次测验共计90道题目，每道题目都必须回答。如果您对题目中的两个语句都赞同或都不赞同，就请选择您相对而言更可接受的说法。</span>'
 const desc2 = '在进行测验时，请仔细阅读每一个陈述，并根据自己的真实感受和经历，选择最符合您情况的选项。每道题的不同选项之间并没有好坏、正误之分，只需诚实地反映您的当前状态和感受。<br><span style="color:red;">请注意，本次测验共计140道题目，每道题目都必须回答，您必须且只能选择一个符合选项。</span>'
 const desc3 = '本测验每道题目均设置A、B两个选项，请根据自身情况的符合程度选择对应圆圈，圆圈距离A或B越近，代表符合程度越高。每道题的不同选项之间并没有好坏、正误之分，只需诚实地反映您当前的状态和感受。<br><span style="color:red;">请注意，本次测验共计48道题目，每道题目都必须作答。</span>'
+const competencyDesc = [
+  '本测评旨在全面了解您在各项工作情景中的行为表现与内在倾向。请您仔细阅读每一题，从中选出更符合您实际情况或更贴近您真实感受的一项。',
+  '<strong>作答说明：</strong>',
+  '1. 所有题目无对错、好坏之分，仅反映不同的行为偏好与应对倾向。',
+  '2. 请依据您的第一反应如实作答，不必猜测“应该选什么”。',
+  '您的作答结果将严格保密，仅用于个人发展评估及组织人才决策。感谢您的参与和配合！',
+  '<span style="color:red;">请注意，本次测验共计90道题目，每道题目都必须作答。</span>'
+].join('<br>')
 export default {
   data() {
     return {
@@ -105,8 +113,7 @@ export default {
     },
     displayDesc() {
       if (this.detailData.assessmentType === 'competency') {
-        const count = (this.detailData.competencyDimensions || []).reduce((total, item) => total + Number(item.questionCount || 0), 0)
-        return `本测评采用五级量表，请根据自身真实情况选择最符合的选项。<br><span style="color:red;">请注意，本次测验共计${count}道题目，每道题目都必须作答。</span>`
+        return competencyDesc
       }
       const code = this.repoCode || ''
       let raw
