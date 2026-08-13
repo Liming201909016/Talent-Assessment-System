@@ -3,7 +3,7 @@ import { shallowMount } from '@vue/test-utils'
 import CompetencyExam from '@/views/paper/exam/competencyExam.vue'
 import CompetencyReport from '@/views/paper/exam/competencyReport.vue'
 import phase1Catalog from '@/data/competencyPhase1ReportCatalog'
-import { fetchCompetencyInternalReportData, submitCompetencyPaper } from '@/api/competency'
+import { fetchCompetencyInternalReportData, saveCompetencyAnswer, submitCompetencyPaper } from '@/api/competency'
 import fs from 'fs'
 import path from 'path'
 
@@ -48,6 +48,42 @@ describe('Competency runtime pages', () => {
     expect(wrapper.findAll('.question-nav button').at(0).attributes('aria-label')).toContain('已答')
     expect(wrapper.findAll('.question-nav button').at(1).attributes('aria-label')).toContain('未答')
     expect(wrapper.find('.question-nav button').attributes('aria-current')).toBe('true')
+    expect(wrapper.find('.question-code').exists()).toBe(false)
+    expect(wrapper.find('.question-type').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('D01-Q01')
+    expect(wrapper.text()).not.toContain('五级量表')
+  })
+
+  // TestBugFB119_AnswerSaveAdvancesWithoutAutoSubmitting
+  // 对应：docs/regression-tests.md #FB-119
+  it('advances after a successful save, but stays on failure and on the final question', async () => {
+    const wrapper = shallowMount(CompetencyExam, {
+      methods: { loadPaper: vi.fn() },
+      mocks: { $route: { params: { paperId: 'p1' } } },
+      stubs: ['el-card','el-radio-group','el-radio','el-button','el-progress']
+    })
+    await wrapper.setData({
+      paper: { totalCount: 2, answeredCount: 0, unansweredCount: 2, questions: [
+        { id: 'q1', answered: false, rawValue: 5, options: [] },
+        { id: 'q2', answered: false, rawValue: null, options: [] }
+      ] },
+      currentIndex: 0,
+      loading: false
+    })
+    saveCompetencyAnswer.mockResolvedValueOnce({ data: { answeredCount: 1, expired: false } })
+    await wrapper.vm.handleAnswer(5)
+    expect(wrapper.vm.currentIndex).toBe(1)
+
+    wrapper.vm.paper.questions[1].rawValue = 4
+    saveCompetencyAnswer.mockRejectedValueOnce(new Error('save failed'))
+    await wrapper.vm.handleAnswer(4)
+    expect(wrapper.vm.currentIndex).toBe(1)
+
+    wrapper.vm.paper.questions[1].rawValue = 3
+    saveCompetencyAnswer.mockResolvedValueOnce({ data: { answeredCount: 2, expired: false } })
+    await wrapper.vm.handleAnswer(3)
+    expect(wrapper.vm.currentIndex).toBe(1)
+    expect(submitCompetencyPaper).not.toHaveBeenCalled()
   })
 
   it('timeout UI lets the server derive timeout instead of trusting a client timeout claim', async () => {

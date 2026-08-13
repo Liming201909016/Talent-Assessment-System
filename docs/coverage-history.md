@@ -43,6 +43,7 @@
 | 2026-08-12 20:15 | Go全量、go vet、Windows/Linux build通过 | 24文件；新增模板管理3项；production build成功（2个既有体积warning） | 统一报告模板页；管理员权限；49/12/0严格校验；非法Tag拒绝且SHA不变；合法上传备份+生效；真实API下载；1440/390浏览器下载/上传/移动无溢出 | staging后端=`210aac516088e610e8b5be6307391e59062f0a0d3053006277843c902f72d639`，前端index=`1afdb1ce766546584a2c1c1e5d0d492bead56d54b98e0653df2394a38fa0a80c`；production未部署 |
 | 2026-08-13 13:50 | 后端未变 | 24文件；FB-118专项5/5、全量通过；production build成功（2个既有体积warning） | staging真实新建一期测评：首次保存payload=`name,gender,telephone`，Detail一致，考生页立即恰好3项；临时测评/会话0 | 前端index=`15a66ff8234068ba0384faa995f251c6175db90ba5644c8ab32b57db94e3446c`；production未部署 |
 | 2026-08-13 14:25 | 后端未变 | 24文件；准备页专项1/1、全量通过；production build成功（2个既有体积warning） | staging真实一期准备页完整显示行为倾向说明、2条作答规则、保密说明和红色90题必答提示；旧短描述与80题提示均不存在 | 前端index=`07206680f9a71a3ab3c5174d5104061fd3aa5934f9a63cb4c7562cc71bd562a4`；production未部署 |
+| 2026-08-13 14:45 | 后端未变 | 24文件；FB-119～121专项17项、全量通过；production build成功（2个既有体积warning） | staging答题E2E：成功自动下一题、失败停留、末题停留不提交、内部标签隐藏；微信Android UA经无hash中转页加载真实考生入口且无错误/溢出 | 前端index=`588f7fb1f95ad61fa4780c265ce7492bc917fcd23c1d1f2e92a7fae72489f62b`、中转页=`28af89d9d1417f2c0aa166a3c7f6d8a540ca6e59c8fa0eef9c61cdadf54a15c7`；production未部署 |
 
 ## 当前已验证规模
 

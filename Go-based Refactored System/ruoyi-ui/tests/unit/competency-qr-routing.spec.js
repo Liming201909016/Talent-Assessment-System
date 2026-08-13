@@ -22,13 +22,21 @@ describe('FB-102 competency QR routing', () => {
 
     const origin = 'http://localhost:9527'
     expect(buildExamEntryURL({ id: 'open-exam', stuFlag: 0, isOpen: 1, assessmentType: 'competency', repoCode: '' }, origin))
-      .toBe('http://localhost:9527/#/my/exam/candidate/open-exam/0/00401')
+      .toBe('http://localhost:9527/exam-entry.html?examId=open-exam&stuFlag=0&repoCode=00401&isOpen=1')
     expect(buildExamEntryURL({ id: 'closed-exam', stuFlag: 0, isOpen: 2, assessmentType: 'competency', repoCode: '' }, origin))
-      .toBe('http://localhost:9527/#/my/exam/tester/closed-exam/00401')
+      .toBe('http://localhost:9527/exam-entry.html?examId=closed-exam&stuFlag=0&repoCode=00401&isOpen=2')
     expect(buildExamEntryURL({ id: 'legacy-open', stuFlag: 1, isOpen: 1, assessmentType: 'legacy', repoCode: '00102' }, origin))
-      .toBe('http://localhost:9527/#/my/exam/candidate/legacy-open/1/00102')
+      .toBe('http://localhost:9527/exam-entry.html?examId=legacy-open&stuFlag=1&repoCode=00102&isOpen=1')
     expect(buildExamEntryURL({ id: 'legacy-closed', stuFlag: 0, isOpen: 2, assessmentType: 'legacy', repoCode: '00202' }, origin))
-      .toBe('http://localhost:9527/#/my/exam/tester/legacy-closed/00202')
+      .toBe('http://localhost:9527/exam-entry.html?examId=legacy-closed&stuFlag=0&repoCode=00202&isOpen=2')
+  })
+
+  it('ships a WeChat-compatible static entry bridge', () => {
+    const bridge = fs.readFileSync(path.resolve(process.cwd(), 'public/exam-entry.html'), 'utf8')
+    expect(bridge).toContain('location.replace')
+    expect(bridge).toContain('/#/my/exam/candidate/')
+    expect(bridge).toContain('/#/my/exam/tester/')
+    expect(bridge).toContain('encodeURIComponent')
   })
 
   // FB-102: docs/regression-tests.md

@@ -21,10 +21,6 @@
     </header>
 
     <el-card v-if="currentQuestion" class="question-card" shadow="never">
-      <div class="question-meta">
-        <span class="question-code">{{ currentQuestion.code }}</span>
-        <span class="question-type">五级量表</span>
-      </div>
       <div class="question-content">{{ currentQuestion.content }}</div>
       <div class="scale-hint">请选择最符合自身实际情况的一项</div>
       <el-radio-group class="scale-options" v-model="selectedValue" :disabled="saving || submitting" aria-label="请选择符合程度" @change="handleAnswer">
@@ -101,15 +97,20 @@ export default {
       } finally { this.loading = false }
     },
     async handleAnswer(value) {
+      const answerIndex = this.currentIndex
+      const question = this.currentQuestion
       this.saving = true; this.saveState = '保存中…'
       try {
-        const response = await saveCompetencyAnswer(this.paperId, this.currentQuestion.id, value, this.paperToken)
+        const response = await saveCompetencyAnswer(this.paperId, question.id, value, this.paperToken)
         if (response.data.expired) { this.finish(); return }
-        if (!this.currentQuestion.answered) { this.currentQuestion.answered = true }
+        if (!question.answered) { question.answered = true }
         this.paper.answeredCount = response.data.answeredCount
         this.paper.unansweredCount = this.paper.totalCount - response.data.answeredCount
         this.saveState = '已保存'
-      } catch (error) { this.saveState = '保存失败，请重新选择'; this.currentQuestion.rawValue = null }
+        if (this.currentIndex === answerIndex && answerIndex < this.paper.questions.length - 1) {
+          this.currentIndex = answerIndex + 1
+        }
+      } catch (error) { this.saveState = '保存失败，请重新选择'; question.rawValue = null }
       finally { this.saving = false }
     },
     locateFirstUnanswered() { const index = this.paper.questions.findIndex(question => !question.answered); if (index >= 0) this.currentIndex = index },
@@ -209,29 +210,9 @@ export default {
 
 .question-card ::v-deep .el-card__body { padding: 30px 32px 24px; }
 
-.question-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.question-code,
-.question-type {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.question-code { color: var(--primary); background: var(--primary-soft); }
-.question-type { color: var(--muted); background: #f2f3f7; }
-
 .question-content {
   min-height: 62px;
-  margin: 28px 0 20px;
+  margin: 0 0 20px;
   font-size: 22px;
   font-weight: 500;
   line-height: 1.75;

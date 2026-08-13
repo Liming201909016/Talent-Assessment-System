@@ -22,6 +22,7 @@ function buildQuestions() {
   const page = await context.newPage()
   const questions = buildQuestions()
   const saveRequests = []
+  const submitRequests = []
 
   await page.route('**/exam/api/competency/participant/paper-detail', route => {
     const answeredCount = questions.filter(question => question.answered).length
@@ -47,22 +48,37 @@ function buildQuestions() {
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: { answeredCount, expired: false } }) })
   })
 
+  await page.route('**/exam/api/competency/participant/submit', async route => {
+    submitRequests.push(route.request().postDataJSON())
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: {} }) })
+  })
+
   try {
     await page.goto(`${BASE_URL}/?v=answer-flow-e2e#/exam/competency/start/answer-flow-paper`)
     await page.getByRole('button', { name: '第 9 题，未答' }).click()
+    const questionCardBefore = await page.locator('.question-card').innerText()
+    assert(!questionCardBefore.includes('D05-Q09'), 'internal question code must be hidden')
+    assert(!questionCardBefore.includes('五级量表'), 'scale implementation label must be hidden')
     await page.getByRole('radio', { name: '非常符合' }).click()
-    await page.getByRole('status').filter({ hasText: '已保存' }).waitFor()
+    await page.getByText('第 10 题', { exact: true }).waitFor()
 
     assert.strictEqual(saveRequests.length, 1, 'one option click must produce one save request')
     assert.deepStrictEqual(saveRequests[0], { paperId: 'answer-flow-paper', paperQuestionId: 'answer-flow-pq-9', rawValue: 5 })
     const stats = await page.locator('.exam-stats strong').allTextContents()
     assert.deepStrictEqual(stats.slice(0, 2), ['9', '31'], 'answered/unanswered counts must update to 9/31')
     assert((await page.getByRole('button', { name: '第 9 题，已答' }).getAttribute('class')).includes('answered'), 'question navigation must update to answered')
+    assert((await page.getByRole('button', { name: '第 10 题，未答' }).getAttribute('class')).includes('active'), 'successful save must advance to question 10')
+
+    await page.getByRole('button', { name: '第 40 题，未答' }).click()
+    await page.getByRole('radio', { name: '比较符合' }).click()
+    await page.getByRole('button', { name: '第 40 题，已答' }).waitFor()
+    assert((await page.getByRole('button', { name: '第 40 题，已答' }).getAttribute('class')).includes('active'), 'final answer must stay on question 40')
+    assert.strictEqual(submitRequests.length, 0, 'final answer must not auto-submit the paper')
 
     await page.reload()
     await page.getByRole('button', { name: '第 9 题，已答' }).click()
     assert(await page.getByRole('radio', { name: '非常符合' }).isChecked(), 'saved value must be restored after reload')
-    assert.strictEqual(saveRequests.length, 1, 'reload must not submit another answer')
+    assert.strictEqual(saveRequests.length, 2, 'reload must not submit another answer')
     console.log('COMPETENCY_ANSWER_FLOW_E2E_PASS')
   } finally {
     await browser.close()

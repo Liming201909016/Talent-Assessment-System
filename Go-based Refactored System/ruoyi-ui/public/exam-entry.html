@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>正在打开测评</title>
+  <style>
+    body{margin:0;background:#f7f8fc;color:#303133;font:16px/1.6 Arial,"Microsoft YaHei",sans-serif}
+    .entry{max-width:360px;margin:96px auto;padding:24px;text-align:center}
+    .spinner{width:30px;height:30px;margin:0 auto 18px;border:3px solid #dcdfe6;border-top-color:#409eff;border-radius:50%;animation:spin .8s linear infinite}
+    .error{color:#f56c6c}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <main class="entry">
+    <div id="spinner" class="spinner"></div>
+    <div id="message">正在打开测评，请稍候…</div>
+  </main>
+  <script>
+    (function () {
+      function readQuery() {
+        var result = {};
+        var query = window.location.search.replace(/^\?/, '').split('&');
+        for (var i = 0; i < query.length; i++) {
+          if (!query[i]) continue;
+          var pair = query[i].split('=');
+          result[decodeURIComponent(pair[0] || '')] = decodeURIComponent((pair[1] || '').replace(/\+/g, ' '));
+        }
+        return result;
+      }
+      function safe(value, pattern) { return pattern.test(value || '') ? value : ''; }
+      var query = readQuery();
+      var examId = safe(query.examId, /^[A-Za-z0-9-]+$/);
+      var stuFlag = safe(query.stuFlag, /^\d+$/) || '0';
+      var repoCode = safe(query.repoCode, /^[A-Za-z0-9-]+$/);
+      var isOpen = safe(query.isOpen, /^[12]$/);
+      if (!examId || !repoCode || !isOpen) {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('message').className = 'error';
+        document.getElementById('message').innerHTML = '测评链接无效，请重新扫描二维码。';
+        return;
+      }
+      var route = isOpen === '1'
+        ? '/#/my/exam/candidate/' + encodeURIComponent(examId) + '/' + encodeURIComponent(stuFlag) + '/' + encodeURIComponent(repoCode)
+        : '/#/my/exam/tester/' + encodeURIComponent(examId) + '/' + encodeURIComponent(repoCode);
+      window.location.replace(route);
+    }());
+  </script>
+</body>
+</html>
