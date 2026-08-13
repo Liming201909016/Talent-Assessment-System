@@ -77,6 +77,18 @@
 - chart2：10个数值；
 - chart3–chart12：每个2个数值。
 
+### 内嵌Excel候选模板
+
+已生成候选文件`configs/export-templates/competency-phase1-report-embedded.docx`。它在当前模板版式基础上：
+
+- 内嵌一个`word/embeddings/competency-phase1-chart-data.xlsx`；
+- 12个图表全部改为内部package关系，不再引用原作者电脑上的Excel路径；
+- 报告生成时同时更新图表XML缓存和内嵌Excel单元格；
+- Word中“编辑数据”可打开随DOCX携带的工作簿，刷新图表不会恢复外部示例文件；
+- 图表的位置、大小和样式仍可在Word中调整。
+
+候选模板尚未替换当前staging生效模板；切换前应由客户在Microsoft Word中确认“编辑数据”、版式和分页。
+
 ## 6. 转换配置
 
 默认采用LibreOffice，不需要Microsoft 365组织租户或客户端密钥：

@@ -20,9 +20,13 @@ import (
 	"github.com/talent-assessment/refactored/internal/service"
 	"github.com/talent-assessment/refactored/pkg/graphpdf"
 	"github.com/talent-assessment/refactored/pkg/libreofficepdf"
+	"github.com/xuri/excelize/v2"
 )
 
-const maxPhase1WordTemplateBytes = 20 << 20
+const (
+	maxPhase1WordTemplateBytes = 20 << 20
+	phase1ChartWorkbookPath    = "word/embeddings/competency-phase1-chart-data.xlsx"
+)
 
 var (
 	wordTemplateTokenPattern     = regexp.MustCompile(`\{\{[a-zA-Z0-9_.-]+\}\}`)
@@ -202,6 +206,11 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 			if err != nil {
 				return nil, err
 			}
+		} else if file.Name == phase1ChartWorkbookPath {
+			body, err = replacePhase1EmbeddedChartWorkbook(body, charts)
+			if err != nil {
+				return nil, err
+			}
 		} else if values, ok := charts[file.Name]; ok {
 			body, err = replaceWordChartValues(body, values)
 			if err != nil {
@@ -224,6 +233,47 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 		return nil, errors.New("完成一期Word报告文件失败")
 	}
 	return output.Bytes(), nil
+}
+
+func replacePhase1EmbeddedChartWorkbook(workbook []byte, charts map[string][]float64) ([]byte, error) {
+	book, err := excelize.OpenReader(bytes.NewReader(workbook))
+	if err != nil {
+		return nil, errors.New("打开一期Word内嵌图表数据失败")
+	}
+	defer book.Close()
+	groupScores := charts["word/charts/chart1.xml"]
+	dimensionScores := charts["word/charts/chart2.xml"]
+	if len(groupScores) != 2 || len(dimensionScores) != 10 {
+		return nil, errors.New("一期Word内嵌图表数据不完整")
+	}
+	for index, value := range groupScores {
+		if err := book.SetCellValue("Sheet1", fmt.Sprintf("B%d", index+2), value); err != nil {
+			return nil, errors.New("更新一期Word内嵌一级维度数据失败")
+		}
+	}
+	for index, value := range dimensionScores {
+		if err := book.SetCellValue("Sheet2", fmt.Sprintf("B%d", index+4), value); err != nil {
+			return nil, errors.New("更新一期Word内嵌雷达图数据失败")
+		}
+	}
+	for index := 0; index < 10; index++ {
+		values := charts[fmt.Sprintf("word/charts/chart%d.xml", index+3)]
+		if len(values) != 2 {
+			return nil, fmt.Errorf("一期Word内嵌环形图数据不完整：chart%d", index+3)
+		}
+		row := index + 33
+		if err := book.SetCellValue("Sheet2", fmt.Sprintf("B%d", row), values[0]); err != nil {
+			return nil, errors.New("更新一期Word内嵌环形图数据失败")
+		}
+		if err := book.SetCellValue("Sheet2", fmt.Sprintf("C%d", row), values[1]); err != nil {
+			return nil, errors.New("更新一期Word内嵌环形图数据失败")
+		}
+	}
+	buffer, err := book.WriteToBuffer()
+	if err != nil {
+		return nil, errors.New("保存一期Word内嵌图表数据失败")
+	}
+	return buffer.Bytes(), nil
 }
 
 func replaceWordTemplateTokens(document []byte, tokens map[string]string) ([]byte, error) {

@@ -21,6 +21,7 @@ import (
 	"github.com/talent-assessment/refactored/internal/service"
 	"github.com/talent-assessment/refactored/pkg/graphpdf"
 	"github.com/talent-assessment/refactored/pkg/libreofficepdf"
+	"github.com/xuri/excelize/v2"
 )
 
 // TestBugFB116_Phase1WordTemplateMapsFrozenReportData
@@ -203,6 +204,73 @@ func TestPhase1WordTemplateUploadValidation(t *testing.T) {
 	}
 }
 
+func TestPhase1EmbeddedWorkbookTemplateContract(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report-embedded.docx")
+	if err != nil {
+		t.Fatalf("read embedded workbook template: %v", err)
+	}
+	if contract, err := validatePhase1WordTemplateUpload(template); err != nil || contract.ContentControls != 49 || contract.Charts != 12 {
+		t.Fatalf("embedded template upload contract=%+v error=%v", contract, err)
+	}
+	workbook := readWordPart(t, template, phase1ChartWorkbookPath)
+	book, err := excelize.OpenReader(bytes.NewReader(workbook))
+	if err != nil {
+		t.Fatalf("open embedded workbook: %v", err)
+	}
+	defer book.Close()
+	if value, _ := book.GetCellValue("Sheet1", "A2"); value != "通用能力" {
+		t.Fatalf("Sheet1 A2=%q", value)
+	}
+	if value, _ := book.GetCellValue("Sheet2", "A13"); value != "合作意识" {
+		t.Fatalf("Sheet2 A13=%q", value)
+	}
+	for chartIndex := 1; chartIndex <= 12; chartIndex++ {
+		rels := string(readWordPart(t, template, fmt.Sprintf("word/charts/_rels/chart%d.xml.rels", chartIndex)))
+		if strings.Contains(rels, "TargetMode=\"External\"") || !strings.Contains(rels, `relationships/package`) || !strings.Contains(rels, `../embeddings/competency-phase1-chart-data.xlsx`) {
+			t.Fatalf("chart%d is not linked to embedded workbook: %s", chartIndex, rels)
+		}
+		chart := string(readWordPart(t, template, fmt.Sprintf("word/charts/chart%d.xml", chartIndex)))
+		if strings.Contains(chart, "260805数据图表.xlsx") || strings.Contains(chart, "[数据图表.xlsx]") || !strings.Contains(chart, "[competency-phase1-chart-data.xlsx]") {
+			t.Fatalf("chart%d formulas do not use the embedded workbook", chartIndex)
+		}
+	}
+}
+
+func TestPhase1RenderingUpdatesChartCacheAndEmbeddedWorkbook(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report-embedded.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, charts, err := buildPhase1WordTemplateData(phase1WordTestData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := renderPhase1WordTemplate(template, tokens, charts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workbook := readWordPart(t, rendered, phase1ChartWorkbookPath)
+	book, err := excelize.OpenReader(bytes.NewReader(workbook))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer book.Close()
+	for cell, expected := range map[string]string{"B2": "3.75", "B3": "3.5"} {
+		if value, _ := book.GetCellValue("Sheet1", cell); value != expected {
+			t.Fatalf("Sheet1 %s=%q, want %q", cell, value, expected)
+		}
+	}
+	for cell, expected := range map[string]string{"B4": "3.75", "B13": "3.5", "B33": "3.75", "C33": "1.25"} {
+		if value, _ := book.GetCellValue("Sheet2", cell); value != expected {
+			t.Fatalf("Sheet2 %s=%q, want %q", cell, value, expected)
+		}
+	}
+	chart := string(readWordPart(t, rendered, "word/charts/chart3.xml"))
+	if !strings.Contains(chart, "<c:v>3.75</c:v>") || !strings.Contains(chart, "<c:v>1.25</c:v>") {
+		t.Fatalf("chart3 cache not updated: %s", chart)
+	}
+}
+
 func TestInstallPhase1WordTemplateBacksUpAndAtomicallyReplaces(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "competency-phase1-report.docx")
@@ -287,7 +355,11 @@ func TestPhase1CustomerWordTemplateLibreOfficeProducesExpectedPages(t *testing.T
 	if executable == "" {
 		t.Skip("LIBREOFFICE_INTEGRATION_PATH is not configured")
 	}
-	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	templatePath := os.Getenv("LIBREOFFICE_INTEGRATION_TEMPLATE_PATH")
+	if templatePath == "" {
+		templatePath = "../../configs/export-templates/competency-phase1-report.docx"
+	}
+	template, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatal(err)
 	}
