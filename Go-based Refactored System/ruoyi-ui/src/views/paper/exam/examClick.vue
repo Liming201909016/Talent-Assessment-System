@@ -520,6 +520,7 @@ export default {
         })
 
         // 当前选定
+        this.resumeAtFirstUnanswered()
         this.fetchQuData(this.cardItem)
       })
 
@@ -527,6 +528,10 @@ export default {
         this.idAndShowPdf = response.data
         console.log("showPdf:", this.idAndShowPdf)
       })
+    },
+
+    resumeAtFirstUnanswered() {
+      this.cardItem = this.allItem.find(item => !item.answered) || this.allItem[0]
     }
 
   }

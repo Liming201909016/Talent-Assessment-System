@@ -137,7 +137,7 @@
         <div>
           <small>{{ dimension.dimensionCode }}</small><h2>{{ dimension.dimensionName }}</h2>
           <p>能力等级：<b>{{ levelLabel(dimension.levelCode) }}</b></p>
-          <p>题目完成：{{ dimension.answeredQuestionCount }}/{{ dimension.totalQuestionCount }} · 得分合计：{{ dimension.scoreSum }}</p>
+          <p>题目完成：{{ dimension.answeredQuestionCount }}/{{ dimension.totalQuestionCount }} · 得分合计：{{ format(dimension.scoreSum) }}</p>
         </div>
       </div>
       <div class="meaning-box"><h3>【核心含义】</h3><p>{{ dimensionCoreMeaning(dimension) }}</p></div>

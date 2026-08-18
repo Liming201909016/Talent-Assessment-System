@@ -93,6 +93,8 @@ export default {
         const response = await fetchCompetencyPaper(this.paperId, this.paperToken)
         this.paper = response.data
         if (this.paper.state === 2) { this.finish() ; return }
+        const firstUnanswered = this.paper.questions.findIndex(question => !question.answered)
+        if (firstUnanswered >= 0) this.currentIndex = firstUnanswered
         this.timer = setInterval(() => { this.now = Date.now(); if (this.remainingSeconds === 0) this.submit('timeout') }, 1000)
       } finally { this.loading = false }
     },

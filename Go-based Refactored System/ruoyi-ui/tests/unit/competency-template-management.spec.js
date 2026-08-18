@@ -28,8 +28,14 @@ describe('phase-one competency report template management', () => {
       size: 568208,
       modTime: '2026-08-12 18:10:00',
       sha256: 'abc123',
+      schemaVersion: 'competency-phase1-template-schema-v2',
       contentControls: 49,
+      registeredFields: 75,
+      usedFields: 49,
       charts: 12,
+      businessCharts: 12,
+      embeddedWorkbooks: 1,
+      externalLinks: 0,
       visibleTokens: 0,
       valid: true
     } })
@@ -39,8 +45,30 @@ describe('phase-one competency report template management', () => {
     }
     await ReportTemplates.methods.fetchPhase1Template.call(vm)
     expect(fetchPhase1WordTemplate).toHaveBeenCalled()
-    expect(vm.phase1Template).toEqual(expect.objectContaining({ valid: true, contentControls: 49, charts: 12 }))
+    expect(vm.phase1Template).toEqual(expect.objectContaining({ valid: true, schemaVersion: 'competency-phase1-template-schema-v2', registeredFields: 75, businessCharts: 12 }))
     expect(vm.phase1Loading).toBe(false)
+  })
+
+  it('explains the transparent V2 field and chart contract', () => {
+    const vm = {
+      phase1Template: {
+        exists: true,
+        schemaVersion: 'competency-phase1-template-schema-v2',
+        contentControls: 49,
+        registeredFields: 75,
+        usedFields: 49,
+        charts: 12,
+        businessCharts: 12,
+        embeddedWorkbooks: 1,
+        externalLinks: 0,
+        visibleTokens: 0
+      }
+    }
+    const text = ReportTemplates.computed.phase1ContractText.call(vm)
+    expect(text).toContain('V2')
+    expect(text).toContain('49/75 字段')
+    expect(text).toContain('12 业务图表')
+    expect(text).toContain('0 外链')
   })
 
   it('downloads the active DOCX with its configured file name', async () => {
@@ -53,10 +81,14 @@ describe('phase-one competency report template management', () => {
     vi.spyOn(document.body, 'removeChild').mockImplementation(() => link)
     vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:template')
     vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {})
-    const vm = { phase1Template: { fileName: 'competency-phase1-report.docx' }, $message: { error: vi.fn() } }
+    const vm = {
+      phase1Template: { fileName: 'competency-phase1-report.docx', sha256: '3b6a83fd4a2f' },
+      phase1DownloadFileName: ReportTemplates.methods.phase1DownloadFileName,
+      $message: { error: vi.fn() }
+    }
     await ReportTemplates.methods.downloadPhase1Template.call(vm)
     expect(downloadPhase1WordTemplate).toHaveBeenCalled()
-    expect(link.setAttribute).toHaveBeenCalledWith('download', 'competency-phase1-report.docx')
+    expect(link.setAttribute).toHaveBeenCalledWith('download', 'competency-phase1-report-3b6a83fd.docx')
     expect(click).toHaveBeenCalled()
   })
 

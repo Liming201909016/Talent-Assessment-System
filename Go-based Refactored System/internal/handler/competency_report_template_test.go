@@ -54,3 +54,28 @@ func TestPhase1WordTemplateManagementRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestBugFB122_TemplateDownloadDisablesBrowserCaching(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := &CompetencyReportHandler{examH: &ExamHandler{cfg: &config.Config{Phase1WordReport: config.Phase1WordReportCfg{
+		TemplatePath: "../../configs/export-templates/competency-phase1-report.docx",
+	}}}}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("loginUser", &model.LoginUser{UserID: 1})
+		c.Next()
+	})
+	router.GET("/template/download", handler.DownloadPhase1Template)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/template/download", nil)
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store, no-cache, must-revalidate" {
+		t.Fatalf("Cache-Control=%q", got)
+	}
+	if got := response.Header().Get("Pragma"); got != "no-cache" {
+		t.Fatalf("Pragma=%q", got)
+	}
+}

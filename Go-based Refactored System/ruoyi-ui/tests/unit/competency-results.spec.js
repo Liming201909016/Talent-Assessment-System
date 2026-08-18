@@ -99,19 +99,23 @@ describe('Competency result management', () => {
 
     await wrapper.vm.batchGenerateReports()
 
-    expect(generateCompetencyReport).toHaveBeenCalledWith({ paperId: 'paper-phase1-complete', force: false })
+    expect(generateCompetencyReport).toHaveBeenCalledWith({ paperId: 'paper-phase1-complete', force: true })
     expect(wrapper.vm.$message.warning).toHaveBeenCalledWith('批量生成完成：成功0份，失败1份；原因：一期正式报告内容尚未完成双重批准')
     const apiSource = fs.readFileSync(path.resolve(process.cwd(), 'src/api/competency/index.js'), 'utf8')
     expect(apiSource).toContain("rejectWithBusinessMessage: true")
   })
 
-  it('generates and downloads a complete temporary competency PDF report', async () => {
+  // TestBugFB151_ExplicitGenerateRebuildsCompletedReport
+  // 对应：docs/regression-tests.md #FB-151
+  // 复现：模板更新后点击“生成报告”仍发送force=false，后端直接复用旧PDF。
+  // 期望：单份和批量“生成报告”都显式force=true，下载动作仍只下载当前实例。
+  it('regenerates and downloads a complete temporary competency PDF report', async () => {
     generateCompetencyReport.mockReset().mockResolvedValue({ data: { id: 'report-1' } })
     downloadCompetencyReport.mockReset().mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }))
     const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
     wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
     await wrapper.vm.generateReport({ paperId: 'paper-complete-1', isComplete: 1 })
-    expect(generateCompetencyReport).toHaveBeenCalledWith({ paperId: 'paper-complete-1', force: false })
+    expect(generateCompetencyReport).toHaveBeenCalledWith({ paperId: 'paper-complete-1', force: true })
     await wrapper.vm.downloadReport({ paperId: 'paper-complete-1', isComplete: 1 })
     expect(downloadCompetencyReport).toHaveBeenCalledWith('paper-complete-1')
   })
@@ -124,6 +128,20 @@ describe('Competency result management', () => {
     expect(source).toContain('scope.row.userTime')
     expect(source).toContain('label="得分合计"')
     expect(source).toContain('prop="scoreSum"')
+  })
+
+  // TestBugFB123_CompetencyScoresUseTwoDecimals
+  // 对应：docs/regression-tests.md #FB-123
+  it('formats all aggregate scores with two decimal places', () => {
+    const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
+    expect(wrapper.vm.formatScore(4)).toBe('4.00')
+    expect(wrapper.vm.formatScore(3.5)).toBe('3.50')
+    expect(wrapper.vm.formatScore('4.625')).toBe('4.63')
+    expect(wrapper.vm.formatScore(null)).toBe('—')
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/exam/exam/competencyResults.vue'), 'utf8')
+    for (const value of ['scope.row.overallScore', 'scope.row.sortDimensionScore', 'scope.row.evaluationAverage', 'selectedRow.overallScore', 'scope.row.groupScore', 'scope.row.scoreSum', 'scope.row.dimensionScore']) {
+      expect(source).toContain(`formatScore(${value})`)
+    }
   })
 
   it('shows and filters phase-1 group and validity results for administrators', () => {
@@ -180,7 +198,7 @@ describe('Competency result management', () => {
     ] })
     await wrapper.vm.batchGenerateReports()
     expect(generateCompetencyReport).toHaveBeenCalledTimes(2)
-    expect(generateCompetencyReport).toHaveBeenNthCalledWith(1, { paperId: 'paper-1', force: false })
+    expect(generateCompetencyReport).toHaveBeenNthCalledWith(1, { paperId: 'paper-1', force: true })
     await wrapper.vm.batchDownloadReports()
     expect(downloadCompetencyReport).toHaveBeenCalledTimes(2)
     expect(saveAs).toHaveBeenCalledTimes(2)
@@ -208,8 +226,8 @@ describe('Competency result management', () => {
     await task
 
     expect(generateCompetencyReport).toHaveBeenCalledTimes(2)
-    expect(generateCompetencyReport).toHaveBeenNthCalledWith(1, { paperId: 'paper-1', force: false })
-    expect(generateCompetencyReport).toHaveBeenNthCalledWith(2, { paperId: 'paper-2', force: false })
+    expect(generateCompetencyReport).toHaveBeenNthCalledWith(1, { paperId: 'paper-1', force: true })
+    expect(generateCompetencyReport).toHaveBeenNthCalledWith(2, { paperId: 'paper-2', force: true })
     expect(wrapper.vm.$message.success).toHaveBeenCalledWith('批量生成完成，共2份')
   })
 

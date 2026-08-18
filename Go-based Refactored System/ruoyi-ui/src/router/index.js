@@ -108,7 +108,7 @@ export const constantRoutes = [
     hidden: true,
     component: () => import('@/views/paper/exam/list'),
     name: 'ExamOnline',
-    meta: { title: '在线测评', noCache: true, icon: 'guide' }
+    meta: { title: '在线测评', noCache: true, icon: 'guide', hideSystemTitle: true }
   },
 
   {
@@ -116,14 +116,14 @@ export const constantRoutes = [
     hidden: true,
     component: () => import('@/views/paper/exam/thankYou'),
     name: 'ExamThankYou',
-    meta: { title: '测评完成', noCache: true }
+    meta: { title: '测评完成', noCache: true, hideSystemTitle: true }
   },
 
   {
     path: '/my/exam/tester/:examId/:repoCode?',
     component: () => import('@/views/paper/exam/tester'),
     name: 'tester',
-    meta: { title: '考生信息', noCache: false, activeMenu: '/my/exam' },
+    meta: { title: '考生信息', noCache: false, activeMenu: '/my/exam', hideSystemTitle: true },
     hidden: true
   },
 
@@ -131,7 +131,7 @@ export const constantRoutes = [
     path: '/my/exam/candidate/:examId/:stuFlag/:repoCode/:testerId?',
     component: () => import('@/views/paper/exam/candidate'),
     name: 'candidateInfo',
-    meta: { title: '考生信息', noCache: false, activeMenu: '/my/exam' },
+    meta: { title: '考生信息', noCache: false, activeMenu: '/my/exam', hideSystemTitle: true },
     hidden: true
   },
 
@@ -139,7 +139,7 @@ export const constantRoutes = [
     path: '/my/exam/prepare/:examId/:id',
     component: () => import('@/views/paper/exam/preview'),
     name: 'PreExam',
-    meta: { title: '准备测评', noCache: true, activeMenu: '/my/exam' },
+    meta: { title: '准备测评', noCache: true, activeMenu: '/my/exam', hideSystemTitle: true },
     hidden: true
   },
 
@@ -147,7 +147,7 @@ export const constantRoutes = [
     path: '/exam/mbti/start/:id/:testerId',
     component: () => import('@/views/paper/exam/mbtiExam'),
     name: 'MbtiExam',
-    meta: { title: 'MBTI测评', noCache: true, activeMenu: '/my/exam' },
+    meta: { title: 'MBTI测评', noCache: true, activeMenu: '/my/exam', hideSystemTitle: true },
     hidden: true
   },
 
@@ -155,7 +155,7 @@ export const constantRoutes = [
     path: '/exam/competency/start/:paperId',
     component: () => import('@/views/paper/exam/competencyExam'),
     name: 'CompetencyExam',
-    meta: { title: '胜任力测评', noCache: true, activeMenu: '/my/exam' },
+    meta: { title: '胜任力测评', noCache: true, activeMenu: '/my/exam', hideSystemTitle: true },
     hidden: true
   },
   {
@@ -170,7 +170,7 @@ export const constantRoutes = [
     path: '/exam/mbti/result/:id/:testerId',
     component: () => import('@/views/paper/exam/mbtiResult'),
     name: 'MbtiResult',
-    meta: { title: 'MBTI结果', noCache: true, activeMenu: '/my/exam' },
+    meta: { title: 'MBTI结果', noCache: true, activeMenu: '/my/exam', hideSystemTitle: true },
     hidden: true
   },
 
@@ -178,14 +178,14 @@ export const constantRoutes = [
     path: '/my/exam/result/:id/:testerId',
     component: () => import('@/views/paper/exam/result.vue'),
     name: 'ShowExam',
-    meta: { title: '测评结果', noCache: true, activeMenu: '/online/exam' },
+    meta: { title: '测评结果', noCache: true, activeMenu: '/online/exam', hideSystemTitle: true },
     hidden: true
   },
   {
     path: '/my/exam/result2/:id/:testerId',
     component: () => import('@/views/paper/exam/result2.vue'),
     name: 'ShowMngExam',
-    meta: { title: '测评结果', noCache: true, activeMenu: '/online/exam' },
+    meta: { title: '测评结果', noCache: true, activeMenu: '/online/exam', hideSystemTitle: true },
     hidden: true
   },
 
@@ -193,7 +193,7 @@ export const constantRoutes = [
     path: '/my/exam/finish',
     component: () => import('@/views/paper/exam/finish.vue'),
     name: 'Finish',
-    meta: { title: '感谢参与', noCache: true, activeMenu: '/online/exam' },
+    meta: { title: '感谢参与', noCache: true, activeMenu: '/online/exam', hideSystemTitle: true },
     hidden: true
   },
 
@@ -210,7 +210,7 @@ export const constantRoutes = [
     // roles: ['student', 'admin'],
     component: () => import('@/views/paper/exam/exam'),
     name: 'StartExam',
-    meta: { title: '开始测评' },
+    meta: { title: '开始测评', hideSystemTitle: true },
     hidden: true
   },
 
@@ -219,7 +219,7 @@ export const constantRoutes = [
     // roles: ['student', 'admin'],
     component: () => import('@/views/paper/exam/examClick.vue'),
     name: 'StartExamClick',
-    meta: { title: '开始测评' },
+    meta: { title: '开始测评', hideSystemTitle: true },
     hidden: true
   },
 

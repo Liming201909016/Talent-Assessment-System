@@ -1,5 +1,17 @@
 # 00401 一期胜任力报告模板客户维护说明（内嵌Excel版）
 
+> **暂停使用（2026-08-14）**：当前内嵌Excel V2模板在Microsoft Word中仍无法稳定打开，已从staging撤回。staging当前下载的是此前经Microsoft Word实际编辑验证的V1内容控件模板，SHA-256=`3b6a83fd4a2fddf7c0a47c1eda5e2e4141b7d0d72fd9431980928be598e86b92`。以下V2规则仅保留为后续研发说明，客户当前不要基于V2候选文件修改。
+
+> **当前版本补充（2026-08-17）**：staging的V1流式布局模板已更新为SHA-256=`42866f2768bf35115831ce0c24deb7aeff0f14a62fb441305e9dffe0faaca297`，下载文件名为`competency-phase1-report-42866f27.docx`。V2内嵌Excel继续暂停，以下V2规则仍不得用于当前客户模板。
+
+> **FB-127补充（2026-08-17）**：当前V1模板SHA-256=`37caebca5ae3b0cf5b986cf1f797e0d7be16bab6189c7154a5c24f3c322aa869`，下载文件名为`competency-phase1-report-37caebca.docx`；十个维度环形图均固定在对应表格单元格内。V2内嵌Excel仍暂停。
+
+> **FB-128补充（2026-08-17）**：当前V1模板SHA-256=`70bcf95368b3387c7090a7ba848971a614723e24f0bf62c8f9f4baff7abcdf2b`，下载文件名为`competency-phase1-report-70bcf953.docx`；一级汇总和分析分值已动态同步。V2内嵌Excel仍暂停。
+
+> **FB-129补充（2026-08-17）**：当前V1模板SHA-256=`6f43de7c05bf5335a891ad6c1af694b9599954e48acb241fe1a131f506de3736`，下载文件名为`competency-phase1-report-6f43de7c.docx`；一级维度采用独立0–5横向得分条。V2内嵌Excel仍暂停。
+
+> **FB-131最终版本（2026-08-18）**：当前staging V1模板SHA-256=`0899d49768cf1463ecb97544d2ef7d11332ef6ae42133a10e89501d9e7a33fac`，下载文件名为`competency-phase1-report-0899d497.docx`；已由本机Microsoft Word 16真实打开验证。V2内嵌Excel仍暂停。
+
 ## 1. 交付文件
 
 - Word模板：`competency-phase1-report-embedded.docx`
@@ -8,10 +20,13 @@
 
 模板内置：
 
-- 49个动态内容控件；
+- 49个当前已使用的动态内容控件；
+- 75个系统已注册业务字段（49个必需、26个可选）；
 - 12个原生Word图表；
 - 1个内嵌Excel工作簿；
 - 10个固定二级维度及2个一级维度。
+
+模板契约版本为`competency-phase1-template-schema-v2`。内嵌Excel的`FieldDictionary`工作表列出全部业务键、中文名称、类型、必需性、是否可重复、示例值和说明，客户不需要理解数据库字段或DOCX内部文件名。
 
 ## 2. 可以修改的内容
 
@@ -38,7 +53,8 @@
 ### 禁止操作
 
 - 不要删除内容控件后只保留普通文字；
-- 不要修改、翻译或重复使用Tag；
+- 不要修改或翻译Tag；
+- 标记为“可重复”的Tag可以在封面、正文或页脚多次使用；标记为“不可重复”的Tag不得复制；
 - 不要复制整个维度模块后保留原Tag；
 - 不要将一个维度的得分、等级或诊断Tag放到另一个维度。
 
@@ -47,6 +63,8 @@
 - `dimension.<维度ID>.score`
 - `dimension.<维度ID>.level`
 - `dimension.<维度ID>.diagnosis`
+
+系统还提供可选字段，例如`overall.score`、`overall.percentage`、`participant.degree`、`participant.major`、`dimension.<维度ID>.remainingScore`和`dimension.<维度ID>.percentage`。在Word中新增纯文本内容控件并填写已注册Tag后即可使用，不需要修改数据库。完整清单以模板内`FieldDictionary`为准；未知Tag会在上传时被拒绝。
 
 固定维度ID：
 
@@ -76,13 +94,21 @@
 
 模板包含一个内嵌Excel工作簿。选中图表后，可使用“图表设计 → 编辑数据”打开它。
 
-### 图表映射
+### 图表业务键
 
-| 图表 | 数据 |
+| 业务键 | 数据 |
 |---|---|
-| chart1 | 通用能力、心理素养两个一级维度得分 |
-| chart2 | 十个二级维度雷达图 |
-| chart3–chart12 | 十个二级维度环形得分图 |
+| `chart.group.overview` | 通用能力、心理素养两个一级维度得分 |
+| `chart.dimension.radar` | 十个二级维度雷达图 |
+| `chart.dimension.<维度ID>` | 对应二级维度环形得分图 |
+
+图表业务键保存在Word图表对象的“替代文字标题”中。程序根据“业务键 → Word关系ID → 实际图表文件”定位图表，不依赖`chart1.xml`～`chart12.xml`物理编号。Word重新编号内部图表文件不会改变业务含义。
+
+### 内嵌Excel结构
+
+- `FieldDictionary`：字段契约说明，只用于帮助客户理解和选择动态字段；
+- `ChartData`：图表数据，A列为稳定业务键、B列为中文名称、C列为得分、D列为距满分差值；
+- 运行时只更新`ChartData`数值列和图表缓存，不修改业务键及字段字典。
 
 运行时系统会同时更新：
 
@@ -101,9 +127,9 @@
 不要：
 
 - 删除图表后重新插入新图表；
-- 复制图表替代其他维度图表；
+- 复制图表替代其他维度图表，除非同时把“替代文字标题”改为目标业务图表键；
 - 改变数据系列数量或数据点数量；
-- 删除或重命名内嵌工作表`Sheet1`、`Sheet2`；
+- 删除或重命名内嵌工作表`FieldDictionary`、`ChartData`；
 - 修改图表的数据区域。
 
 ## 6. 分页要求
@@ -123,8 +149,12 @@ Microsoft Word与服务器LibreOffice的分页可能不同。客户完成调整�
 上传时系统检查：
 
 - DOCX结构；
-- 49个内容控件Tag完整且唯一；
-- 12个图表结构；
+- 49个必需内容控件Tag完整；
+- 可选Tag必须来自75个已注册业务字段；
+- 不可重复Tag唯一，可重复Tag允许多处使用；
+- 12个图表业务键完整且唯一；
+- `FieldDictionary`与`ChartData`结构；
+- 1个内嵌工作簿、正确图表数据区域和零外部Excel链接；
 - 不存在可见的`{{...}}`占位符。
 
 校验失败不会覆盖当前模板。校验成功后系统先备份旧模板，再启用新模板。
@@ -132,8 +162,10 @@ Microsoft Word与服务器LibreOffice的分页可能不同。客户完成调整�
 ## 8. 客户交付前检查清单
 
 - [ ] 文件为DOCX；
-- [ ] 49个内容控件未删除、未重复；
+- [ ] 49个必需内容控件未删除；
+- [ ] 新增内容控件Tag存在于`FieldDictionary`；
 - [ ] 12个图表均存在；
+- [ ] 12个图表“替代文字标题”业务键完整且唯一；
 - [ ] 内嵌Excel可通过“编辑数据”打开；
 - [ ] 图表数据区域未修改；
 - [ ] 图片和图形无重叠；

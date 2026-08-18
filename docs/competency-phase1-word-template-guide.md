@@ -87,7 +87,17 @@
 - Word中“编辑数据”可打开随DOCX携带的工作簿，刷新图表不会恢复外部示例文件；
 - 图表的位置、大小和样式仍可在Word中调整。
 
-内嵌Excel模板已切换为当前staging生效模板。客户应下载该版本，在Microsoft Word中确认“编辑数据”、版式和分页；修改后通过“报告模板”页面重新上传并生成真实PDF验收。
+> [纠正 - 2026-08-14] 内嵌Excel V2模板因Microsoft Word仍无法稳定打开，已暂停并从staging撤回。staging当前恢复为V1内容控件模板，SHA-256=`3b6a83fd4a2fddf7c0a47c1eda5e2e4141b7d0d72fd9431980928be598e86b92`。下载文件名包含SHA前8位，应为`competency-phase1-report-3b6a83fd.docx`；客户当前应基于此文件调整版式。V2候选不得重新上传为生效模板。
+
+> [补充 - 2026-08-17] FB-125已将V1模板升级为LibreOffice兼容的流式布局，当前staging模板SHA-256=`42866f2768bf35115831ce0c24deb7aeff0f14a62fb441305e9dffe0faaca297`，下载文件名应为`competency-phase1-report-42866f27.docx`。十个维度标题与定义已由浮动组合图形改为普通流式段落，服务器真实报告恢复为A4 9页且无重叠、空白页和错误总页数。V2内嵌Excel仍暂停。
+
+> [补充 - 2026-08-17 FB-127] 当前staging V1模板SHA-256=`37caebca5ae3b0cf5b986cf1f797e0d7be16bab6189c7154a5c24f3c322aa869`，下载文件名应为`competency-phase1-report-37caebca.docx`。十个维度环形图均已固定为对应得分表格单元格内的行内对象，避免LibreOffice将首图浮到图示说明区域。V2内嵌Excel继续暂停。
+
+> [补充 - 2026-08-17 FB-128] 当前staging V1模板SHA-256=`70bcf95368b3387c7090a7ba848971a614723e24f0bf62c8f9f4baff7abcdf2b`，下载文件名应为`competency-phase1-report-70bcf953.docx`。一级得分汇总行和结果分析区已使用同一组动态字段，避免模板示例分值与真实报告不一致。V2内嵌Excel继续暂停。
+
+> [补充 - 2026-08-17 FB-129] 当前staging V1模板SHA-256=`6f43de7c05bf5335a891ad6c1af694b9599954e48acb241fe1a131f506de3736`，下载文件名应为`competency-phase1-report-6f43de7c.docx`。两个一级维度改为共同0–5刻度的独立横向得分条，不再使用构成比饼图。V2内嵌Excel继续暂停。
+
+> [纠正并完成 - 2026-08-18 FB-131] 根因不是单纯Schema错误，而是LibreOffice重存改写整个Word包；即使SDK零错误仍可能被Word拒绝。最终模板从Word原生V1基线定向构建，当前staging SHA-256=`0899d49768cf1463ecb97544d2ef7d11332ef6ae42133a10e89501d9e7a33fac`，下载文件名应为`competency-phase1-report-0899d497.docx`。本机Word 16已真实打开空模板、填充DOCX和staging API下载文件，均无修复写回；LibreOffice报告保持A4 9页。
 
 ## 6. 转换配置
 

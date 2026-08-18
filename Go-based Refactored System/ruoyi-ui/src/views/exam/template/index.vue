@@ -42,7 +42,7 @@
         <span class="selected-file" :title="phase1File ? phase1File.name : ''">{{ phase1File ? phase1File.name : '未选择文件' }}</span>
         <el-button type="primary" icon="el-icon-upload2" :loading="phase1Uploading" :disabled="!phase1File" @click="uploadPhase1Template">上传并生效</el-button>
       </div>
-      <p class="upload-hint">仅支持 20MB 以内 DOCX。系统将校验 49 个唯一内容控件、12 个图表及可见占位符，校验通过后备份旧模板并原子替换。</p>
+      <p class="upload-hint">仅支持 20MB 以内 DOCX。V1 模板继续兼容；V2 将校验必需/可选业务字段、12 个业务图表、FieldDictionary、ChartData、内嵌工作簿及零外部链接，校验通过后备份旧模板并原子替换。</p>
     </el-card>
 
     <div style="margin: 16px 0 8px;">
@@ -131,8 +131,14 @@ export default {
         sha256: '',
         valid: false,
         validationError: '',
+        schemaVersion: '',
         contentControls: 0,
+        registeredFields: 0,
+        usedFields: 0,
         charts: 0,
+        businessCharts: 0,
+        embeddedWorkbooks: 0,
+        externalLinks: 0,
         visibleTokens: 0
       }
     }
@@ -146,6 +152,9 @@ export default {
     },
     phase1ContractText() {
       if (!this.phase1Template.exists) return '—'
+      if (this.phase1Template.schemaVersion === 'competency-phase1-template-schema-v2') {
+        return `V2 · ${this.phase1Template.usedFields || 0}/${this.phase1Template.registeredFields || 0} 字段 · ${this.phase1Template.businessCharts || 0} 业务图表 · ${this.phase1Template.embeddedWorkbooks || 0} 内嵌工作簿 · ${this.phase1Template.externalLinks || 0} 外链`
+      }
       return `${this.phase1Template.contentControls || 0} 控件 / ${this.phase1Template.charts || 0} 图表 / ${this.phase1Template.visibleTokens || 0} 可见占位符`
     }
   },
@@ -168,6 +177,11 @@ export default {
     formatFileSize(size) {
       if (!size) return '—'
       return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(2)} MB` : `${(size / 1024).toFixed(0)} KB`
+    },
+    phase1DownloadFileName() {
+      const base = (this.phase1Template.fileName || 'competency-phase1-report.docx').replace(/\.docx$/i, '')
+      const version = (this.phase1Template.sha256 || '').slice(0, 8)
+      return `${base}${version ? '-' + version : ''}.docx`
     },
     beforePhase1Upload(file) {
       const isDocx = /\.docx$/i.test(file.name || '')
@@ -193,7 +207,7 @@ export default {
         const link = document.createElement('a')
         link.style.display = 'none'
         link.href = blobUrl
-        link.setAttribute('download', this.phase1Template.fileName || 'competency-phase1-report.docx')
+        link.setAttribute('download', this.phase1DownloadFileName())
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)

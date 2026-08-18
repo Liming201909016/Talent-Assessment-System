@@ -1,5 +1,49 @@
 # Business Branches
 
+## 00401 Phase-1 Word Template V2 Contract (2026-08-13)
+
+| Function | Branch | Priority | Coverage |
+|----------|--------|----------|----------|
+| Field registry | required business field is present exactly once | P0 | ✅ |
+| Field registry | optional registered field is omitted or used by the template | P1 | ✅ |
+| Field registry | unknown field, missing required field, or illegal duplicate is uploaded | P0 | ✅ |
+| Field registry | repeatable registered field is used in more than one content control | P1 | ✅ |
+| Chart registry | V2 business chart key resolves through document relationship to any physical `chartN.xml` | P0 | ✅ |
+| Chart registry | chart files are reordered while business chart keys remain stable | P0 | ✅ |
+| Chart registry | missing, duplicated, or unknown business chart key is uploaded | P0 | ✅ |
+| Embedded workbook | `FieldDictionary` explains every registered field and declares schema V2 | P0 | ✅ |
+| Embedded workbook | `ChartData` exposes stable business keys and receives runtime score/cache updates | P0 | ✅ |
+| Embedded workbook | a chart uses an external workbook or an unexpected data range | P0 | ✅ |
+| Backward compatibility | V1 template has no business chart keys and continues using the legacy physical mapping | P0 | ✅ |
+| Template metadata | management API reports schema version, registered/used fields, business charts, workbook, and external-link counts | P1 | ✅ |
+| Microsoft Word compatibility | active staging DOCX opens normally in desktop Microsoft Word without repair | P0 | ✅ V1用户实证；V2暂停 |
+| Result score display | aggregate overall/group/dimension/score-sum values are null | P1 | ✅ display `—` |
+| Result score display | aggregate values have 0, 1, 2, or 3+ decimal places | P0 | ✅ display exactly two decimals without changing stored precision |
+| Closed tester create | ID number present | P0 | ✅ use ID number as exam-scoped identifier |
+| Closed tester create | ID number empty and telephone present | P0 | ✅ use telephone as exam-scoped identifier and default password source |
+| Closed tester create | both ID number and telephone empty | P0 | ✅ reject before database write |
+| Word-to-PDF layout | Word desktop layout is valid but Linux LibreOffice reflows floating shapes/anchors | P0 | ✅ staging real-data PDF uses flow paragraphs for all 10 dimension titles/definitions; 9-page visual review has no overlap or title reordering |
+| Word-to-PDF layout | generated PDF page count differs from fixed footer total | P1 | ✅ staging template removes unreliable NUMPAGES total and retains automatic PAGE |
+| Word-to-PDF layout | section page transition and explicit page break are stacked | P0 | ✅ final staging template removes two redundant explicit breaks; all 9 generated pages are non-empty |
+| Word-to-PDF layout | completed report was generated before a template replacement | P0 | ✅ persisted historical PDF remains unchanged by design; user-selected paper `658dc083...` was force-regenerated and revalidated without bulk rewriting other reports |
+| Word-to-PDF layout | user explicitly clicks individual or batch generate after a template replacement | P0 | ✅ FB-151 staging GREEN: both actions send `force:true`; real historical paper regenerated from current template as A4 10 pages |
+| Word-to-PDF layout | dimension doughnut chart is stored outside or floats relative to its score table cell | P0 | ✅ chart3–chart12 are inline children of their matching score cells; verified by structure test and staging screenshot |
+| Word report data | first-level score appears in summary row, chart, and analysis block | P0 | ✅ repeatable group score controls keep summary/chart/analysis aligned; staging user report shows `3.50/3.60` throughout |
+| Word report semantics | customer chooses the original 3D overview pie despite independent-score semantics | P0 | ✅ customer decision retained; chart1 values use two decimals and do not display percentages |
+| Word report profile | requiredFields contains only a subset of the six profile fields | P1 | ✅ staging report filters unconfigured cells/rows, spans retained cells, and preserves time/duration |
+| Word report pagination | approved full text flows to 9 physical pages instead of the original 10-page sample | P2 | ⚠️ no content loss or blank page; final page is sparse and page-count preference needs confirmation before forcing pagination |
+| Microsoft Word compatibility | template is produced by broad LibreOffice re-save instead of targeted edits to Word-native package | P0 | ✅ final template is rebuilt from Word-open V1 baseline; staging API download and filled DOCX both open in Word 16 without repair/writeback |
+| Customer template Tag boundary | static `【诊断】` label is inside the dynamic diagnosis content control | P1 | ✅ local customer candidate keeps label outside a1-04 control; text/layout metrics unchanged and runtime label verified |
+| Customer template chart source | charts retain external local Excel relationships | P1 | ✅ customer chose link removal; 11 external relationships and 11 externalData nodes removed while caches/style/layout remain |
+| Customer template pagination | four explicit page breaks plus two next-page sections | P1 | ✅ customer confirms the 10-page composition and page-4 continuation are intentional; all physical pages contain content |
+| Customer template module flow | one dimension title/definition is separated from its score/diagnosis by a page break | P1 | ✅ all 10 three-row modules use cantSplit + title/score keepNext; Word and LibreOffice exports keep each module intact |
+| Customer template cross-version pagination | a first-level analysis table overflows by one line while an explicit break immediately precedes the secondary section | P0 | ✅ remove only the stacked explicit break; staging LibreOffice 24.2 real-data output matches Word at 11 nonblank pages and keeps all 10 modules intact |
+| Customer doughnut chart label | Word displays centred but LibreOffice 24.2 PDF interprets manual label layout differently | P0 | ✅ keep Word template unchanged; apply chart3–12 calibration only before LibreOffice conversion and require every rendered centre delta ≤2px at 180 DPI |
+| Customer template re-save | data-label font size or manual layout changes while chart identity remains the same | P0 | ✅ FB-152 requires the current long-text staging PDF to pass all ten rendered centre checks before release |
+| Customer template re-save | Word restores a section-adjacent page break or changes a dimension chart from inline to anchor | P0 | ✅ structural gates reject both regressions; latest template removes one break and restores only chart7 to inline |
+| Customer chart score format | visible group/dimension score labels omit explicit number format | P0 | ✅ chart1 and chart3–12 require `0.00`; real staging PDF summary and analysis both show `3.50/3.60` |
+| Customer template calibration version | template coordinates/layout change after LibreOffice offsets were measured | P0 | ✅ recalibrate against the same real long-text paper; final 180 DPI rendered-pixel gate passes 10/10 |
+
 | Area | Branch | Status | Notes |
 |------|--------|--------|-------|
 | MBTI full report generation | document.xml contains static body runs with w14:textFill / w14:props3d | ✅ | Triggered by production tofu-box issue; now covered by FB-042 fallback |
@@ -424,6 +468,12 @@
 | Exam timing | competency total time is zero or negative | P0 | ✅ | Save/publish reject; no hidden default duration |
 | Create paper | current time is after exam end time | P0 | ✅ | New paper path rejects before snapshot read, shuffle or insert |
 | Create paper | paper started before exam end time and personal duration remains | P0 | ✅ | Existing paper restore path precedes end-time start guard and preserves personal limit time |
+| Resume UI | traditional all-question page restores saved answers and scrolls to the first unanswered question | P0 | ✅ | UF-022 / FB-141 STAGING GREEN: deployed exact tested bundle; restored answer flags select the first unanswered card and scroll it into view after rendering |
+| Resume UI | traditional single-question page opens the first unanswered question | P0 | ✅ | UF-022 / FB-141 STAGING GREEN: deployed exact tested bundle; flattened restored paper selects the first unanswered item before loading question detail |
+| Resume UI | MBTI page opens the first unanswered question | P0 | ✅ | FB-141 STAGING GREEN: deployed exact tested bundle; regression suite confirms the existing first-unanswered behavior |
+| Resume UI | 00401 competency page opens the first unanswered question while preserving saved answers | P0 | ✅ | UF-022 / FB-141 STAGING GREEN: real API restored the same paper with 10 answers and real Chromium opened question 11 |
+| Mobile browser title | participant entry, preparation, answering, result and completion routes | P1 | ✅ | UF-023 / FB-144 STAGING GREEN: 13 public participant routes opt out; real staging Chromium returned an empty title through login, preparation and answering |
+| Mobile browser title | administrator routes | P1 | ✅ | System title must remain available for the management interface |
 
 ### L. Competency Submit, Results, and Report Data
 

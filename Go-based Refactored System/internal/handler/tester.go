@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -190,6 +191,36 @@ type testerReq struct {
 	PaperID *string `json:"paperId"`
 }
 
+func prepareTesterCreateIdentity(r testerReq) (string, string, string, error) {
+	if strings.TrimSpace(r.ExamID) == "" {
+		return "", "", "", errors.New("缺少 examId")
+	}
+	idNumber := strings.TrimSpace(r.IDNumber)
+	telephone := ""
+	if r.Telephone != nil {
+		telephone = strings.TrimSpace(*r.Telephone)
+	}
+	identifierColumn, identifier := "id_number", idNumber
+	if identifier == "" {
+		identifierColumn, identifier = "telephone", telephone
+	}
+	if identifier == "" {
+		return "", "", "", errors.New("手机号或身份证号不能为空")
+	}
+	password := strings.TrimSpace(r.Password)
+	if password == "" {
+		passwordSource := telephone
+		if passwordSource == "" {
+			passwordSource = idNumber
+		}
+		if len(passwordSource) > 4 {
+			passwordSource = passwordSource[len(passwordSource)-4:]
+		}
+		password = passwordSource
+	}
+	return identifierColumn, identifier, password, nil
+}
+
 // 对齐 Java TesterServiceImpl.insertTester — 写 el_tester 单表
 // POST /exam/api/tester
 func (h *TesterHandler) Create(c *gin.Context) {
@@ -202,8 +233,9 @@ func (h *TesterHandler) Create(c *gin.Context) {
 		response.AjaxErr(c, "姓名不能为空")
 		return
 	}
-	if r.IDNumber == "" || r.ExamID == "" {
-		response.AjaxErr(c, "缺少 idNumber 或 examId")
+	identifierColumn, identifier, pwd, err := prepareTesterCreateIdentity(r)
+	if err != nil {
+		response.AjaxErr(c, err.Error())
 		return
 	}
 
@@ -216,7 +248,7 @@ func (h *TesterHandler) Create(c *gin.Context) {
 	// 唯一性检查：(id_number, exam_id) 不可重复
 	var dup int64
 	h.db.Table("el_tester").
-		Where("id_number = ? AND exam_id = ? AND (del_flag IS NULL OR del_flag = '0')", r.IDNumber, r.ExamID).
+		Where(identifierColumn+" = ? AND exam_id = ? AND (del_flag IS NULL OR del_flag = '0')", identifier, r.ExamID).
 		Count(&dup)
 	if dup > 0 {
 		response.AjaxErr(c, "该测评人员已存在当前测评")
@@ -224,15 +256,6 @@ func (h *TesterHandler) Create(c *gin.Context) {
 	}
 
 	// 默认密码：身份证号后 4 位
-	pwd := r.Password
-	if pwd == "" {
-		if len(r.IDNumber) >= 4 {
-			pwd = r.IDNumber[len(r.IDNumber)-4:]
-		} else {
-			pwd = r.IDNumber
-		}
-	}
-
 	now := time.Now()
 	delZero := 0
 	tester := model.Tester{

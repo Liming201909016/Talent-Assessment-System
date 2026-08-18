@@ -8,10 +8,11 @@
 export default  {
   name:  'App',
     metaInfo() {
+    const hideSystemTitle = Boolean(this.$route && this.$route.meta && this.$route.meta.hideSystemTitle)
         return {
-            title: this.$store.state.settings.dynamicTitle && this.$store.state.settings.title,
+      title: hideSystemTitle ? '' : this.$store.state.settings.dynamicTitle && this.$store.state.settings.title,
             titleTemplate: title => {
-                return title ? `${title} - ${process.env.VUE_APP_TITLE}` : process.env.VUE_APP_TITLE
+        return hideSystemTitle ? '' : title ? `${title} - ${process.env.VUE_APP_TITLE}` : process.env.VUE_APP_TITLE
             }
         }
     },

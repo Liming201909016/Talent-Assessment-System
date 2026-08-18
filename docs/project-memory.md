@@ -1,5 +1,140 @@
 # Project Memory
 
+## 2026-08-18 UF-026 / FB-152 最新模板重部署与图表居中终验
+
+- 用户再次保存的客户模板原始SHA=`565c640349cccbb8a0e6a91d64f3f59c4cd85d54f498a8ac063ca151e5c65284`、538720 bytes。结构RED确认一级/二级之间的叠加显式分页再次出现；最小修复只删除该分页，保留本次标签字体和版式调整。最终模板SHA=`19c0f1d4c6474781f98d8761d72bedaaed9b51a45e2e03e8c5b582b1d6ab9b2f`、531944 bytes，Tag边界、零外链、模块流和两位小数四项门禁通过。
+- Word 16真实只读打开最终模板为10页、5表、15 inline、5 shapes，关闭后SHA不变；工作区正式运行模板已同步为同一SHA。本地LibreOffice短夹具为A4 10页，但后续真实长文案验收证明短夹具不能替代staging校准。
+- staging首轮真实paper=`4bb5506b-3ba5-4c43-b7e7-2a117287bc3b`生成A4 11页，180-DPI像素门禁9/10失败；第二轮仅chart11仍偏移`x=8px,y=-3px`。根据真实PDF反馈更新chart3–12的LibreOffice转换前校准，第三轮最终后端SHA=`228bca0060e0aae7c39f8f1a3ac5de1af8b4da1c579ac9481f6a153c1d830311`。
+- 当前数据库实例、服务器文件和API下载均为512403 bytes、SHA=`3bd9b279ae8a63618b3ac1e12fba602ede226dbe8a23a9a5c1ab39cd3ecf72d3`，LibreOffice 24.2、A4 11页。180 DPI下chart3–12十图的数字字形中心与圆环白洞中心横纵偏差全部不超过2px，10/10通过；汇总、一级图和分析区均为实际`通用能力3.10 / 心理素养2.75`。
+- 11页逐页总览无整页空白、重叠、裁切或模块错序。部署前正式备份保留于`/opt/talent-assessment/backups/fb152_latest_template_20260818_164414`，数据库gzip 12582798 bytes、SHA=`bbfcd8f3854645ad3148ad81fc342fdc8f412e8d4b1bc8b406d7cabc4420804d`。
+- staging与本地过程文件、临时后端、PDF、截图及短时会话均清零；三服务active、内外health正常、应用关键错误和Nginx 5xx均0。production未修改。
+
+## 2026-08-18 UF-025 / FB-151 历史报告复用本地修复
+
+- 用户指定报告`456-4bb5506b-3ba5-4c43-b7e7-2a117287bc3b-胜任力临时测试报告`与staging当前模板不一致。只读核验实际实例PDF创建于2026-08-13 23:14:47，LibreOffice 24.2、A4 12页、538378 bytes、SHA=`63b7ff4f9f0bfd82039851cf788b1066cc845d7acc444a980632a070122cb8ec`，页脚仍显示旧`/13`；不是当前模板SHA=`50b238cc...`的10页产物。
+- 根因是结果页单份和批量“生成报告”均发送`force:false`，后端对completed实例按设计直接reuse；用户点击生成并未真正重渲染。最初怀疑模板示例值不一致，已由实例时间、文件和运行时同源替换证据排除，FB-150标记superseded。
+- FB-151测试先取得4项RED，修复后两处显式生成均发送`force:true`。聚焦19/19、前端全量26文件160项、production build、模板分值契约、Go一级动态控件/3D图表测试和真实本地LibreOffice页数集成门禁均通过，编辑器诊断0。
+- 遵照用户“先测试、不部署”，未部署staging/production，也未重生成指定paper。staging真实GREEN需用户后续明确授权部署前端后再对该paper执行生成、下载和模板逐页对比。
+- [纠正 - 2026-08-18] 用户随后明确授权部署并删除过程文件。staging部署前完整备份=`/opt/talent-assessment/backups/fb151_force_regenerate_20260818_160704`，数据库gzip 12582859 bytes/SHA=`3c4fdc5e7301c07404151e186b2a6c40c8eabd39495e51f3a96d42fb3b3ddd2e`，并保存旧dist、后端、模板和旧报告，目录/文件0700/0600。
+- 新前端index SHA=`9e51b0b4c19201c4ff37ef57152a7d79a3905b2764eb5cec03d40993c60599c3`，本地/远端/公网原始字节一致。指定paper经真实API `force=true`重生成LibreOffice 24.2 A4 10页、502212 bytes、SHA=`b80c58a42e929517fcaf4712547bb2ed11786ac7dfd9bc6fbd26e7c7fdfb02ca`；数据库实例、服务器文件、API下载三方一致，regenerate成功审计1。
+- 新PDF汇总表、一级饼图和分析区均显示同一实际值`通用能力3.10 / 心理素养2.75`，旧静态`3.75/3.70`计数0。十页逐页总览无整页空白、重叠、裁切或模块错序。自动环形图像素脚本因该paper部分两位小数在窄标签框中换行而无法识别字形，未作为本次格式一致性通过证据；人工总览确认图表位于对应单元格内。
+- staging和本地本任务过程文件、临时dist回滚目录及短时Redis会话均清零；三服务active、内外health正常、应用关键错误和Nginx 5xx均0。正式备份保留，production未修改。
+
+## 2026-08-18 UF-023 / FB-144 手机端考生标题本地删除
+
+- 用户确认只删除考生公开流程在手机浏览器顶部显示的系统名称，管理后台继续保留系统标题。
+- `App.vue`按路由`hideSystemTitle`元数据返回空浏览器标题；考生入口、信息、准备、001/002/003/00401答题、结果及完成共13个路由启用该标记，管理端路由不启用。
+- FB-144先取得RED 2失败/1通过，修复后专项3/3；前端全量26文件160项通过，production build退出码0，仅保留既有2个资源体积warning；相关文件编辑器诊断0。当前仅本地完成，未部署staging或production。
+- [纠正 - 2026-08-18] 上述“未部署staging”已失效。FB-151统一发布的前端index SHA=`9e51b0b4c19201c4ff37ef57152a7d79a3905b2764eb5cec03d40993c60599c3`已包含FB-144；本次重建本地index得到同一SHA，远端379文件且公网原始字节一致，无需重复覆盖。真实Chromium经考生登录→准备→00401答题后`document.title`为空；管理标题保留由同一部署包的专项3/3覆盖。production未修改。
+
+## 2026-08-18 UF-022 / FB-141 全测评断点续答本地完成
+
+- 用户确认断点续答适用于001/002/003/00401全部测评；具体测评ID和考生ID未知。本切片只处理断点续答，手机浏览器标题删除按“一次一个逻辑变更”留待下一步。
+- 已核验既有后端和准备页会恢复同一份进行中试卷及已保存答案；MBTI页面原本已定位第一道未答。缺口只在前端恢复位置：传统整页停留顶部、传统单题页和00401停留第1题。
+- FB-141先取得RED 3失败/1通过，再实现GREEN 4/4：传统整页在渲染后滚动到第一道未答；传统单题页和00401直接打开第一道未答；MBTI既有行为保持。以“前10题已答、第11题未答”验证，已答数量和答案状态不变。
+- 前端全量25文件157项通过，production build退出码0，仅保留既有2个资源体积warning；改动文件编辑器新增错误0。当前仅本地完成，未部署staging或production。
+- [纠正 - 2026-08-18] 上述“未部署staging”已失效。FB-151统一发布的同一index SHA=`9e51b0b4...`已包含FB-141。本次前端全量26文件160项和production build再次通过；staging临时00401考生真实API答10题后重新登录，登录返回paperId、restore返回paperId均保持`0ce1312a-...`，paper-detail为已答10/未答80且第11题未答。真实Chromium按正常登录→准备→答题链打开第11题，导航活动项为“第11题，未答”。测试tester/paper/paper_qu/result清理计数`0/0/0/0`，临时浏览器脚本和profile已删除，production未修改。
+
+## 2026-08-17 FB-125 Word→LibreOffice PDF版式兼容修复
+
+- staging当前V1模板生成的真实PDF已逐页复核：物理12页，第3页几乎空白，第5页雷达图说明与逻辑思维卡片严重重叠，页脚缓存显示`5 / 13`，与物理页数不一致。
+- 根因不是报告数据或图表缓存，而是Microsoft Word与LibreOffice对浮动锚点定位参数、分节、显式分页符和`NUMPAGES`字段缓存的解释不同。原V1与LibreOffice重存稿均含16个`wp:anchor`和15个`wp:inline`，但重存会改写对象定位和分页结构：原V1为2个显式分页符，重存稿为2个`nextPage`分节加3个显式分页符，重叠明显消失但产生冗余空白页。
+- 最终模板基于LibreOffice重存稿，移除“特别说明”后及“一级维度测评结果分析”前的两个冗余显式分页符，将页脚从`PAGE / NUMPAGES`改为仅`PAGE`，并将十个维度的浮动标题/定义组合图形改为普通流式标题和定义段落。这样维度标题、定义、得分与诊断按正文顺序分页，不再依赖绝对锚点。
+- staging部署前完整备份位于`/opt/talent-assessment/backups/fb125_pdf_layout_20260817_173005`，数据库gzip为12,229,020 bytes、SHA-256=`f719fde5d930ea5e85eed7f28f05076366d97d70760bfc3c95b2835f3b89c347`，同时保留原V1模板SHA=`3b6a83fd...`和首版候选SHA=`2ef8572c...`，目录/文件权限为0700/0600。
+- staging最终生效模板与工作区正式模板SHA-256均为`42866f2768bf35115831ce0c24deb7aeff0f14a62fb441305e9dffe0faaca297`、452,788 bytes。模板API实证为schema-v1、49内容控件、12图表、0可见占位符、valid=true，下载SHA一致且保持no-store/no-cache。
+- 使用完整一期paper=`93a26b3b-047d-4ad9-890a-3b4fe6d042e4`强制重生成报告成功：LibreOffice 24.2、A4 9页、606,276 bytes、PDF SHA-256=`95fb9b0d24be92306a7ffb70566028dc22c1441c9d2dd419e7cadb1a7318faec`。数据库实例、服务器文件和API下载三方大小/哈希一致；九页均有内容、十维标题10/10、内部业务键/占位符/错误`/13`页数均为0。逐页96DPI总览确认无原雷达说明与卡片重叠、无整页空白、无下一维度标题提前或空色块。
+- 本地模板专项36项、Go全量和Go build通过；staging临时LibreOffice目录、短时会话和远端验收文件均为0，talent-assessment/nginx/mysql active，内外health正常，部署窗口关键应用错误和Nginx 5xx均为0。production未修改。Microsoft Word桌面外观仍需用户下载新SHA版本后最终确认。
+- [FB-126历史报告补充] 用户指出的`123-658dc083-6216-4373-93b3-a7b1d188ec44-胜任力临时测试报告`实际是2026-08-13生成并持久化的旧PDF；模板替换不会自动重写已完成实例。旧文件已先备份为`fb125_pdf_layout_20260817_173005/123-658dc083-old-before-fb126.pdf`，SHA=`42bc4ae3...`、535448 bytes、A4 12页。仅对该paper执行force重生成后，新报告为LibreOffice 24.2、A4 9页、601397 bytes、SHA=`74c52f8af6322d48968a66fcd4a37f38bc02a4b86eb40139cc4155962b7f20fe`；数据库、服务器文件和API下载三方一致，regenerate成功审计1，九页非空、十维10/10且无原重叠/空白/错序/`/13`。其他历史报告未批量重生成，production未修改。
+- [FB-127图表入格补充] 用户截图进一步发现首个逻辑思维环形图仍浮在图示说明区。OOXML实证为chart3虽位于表格单元格中但仍使用`wp:anchor`和段落偏移，chart4–chart12均已是单元格内`wp:inline`。新增`TestBugFB127_Phase1DimensionChartsAreInlineInsideScoreCells`先RED命中chart3，再将chart3转换为原得分单元格内的inline；最终模板SHA=`37caebca5ae3b0cf5b986cf1f797e0d7be16bab6189c7154a5c24f3c322aa869`、452773 bytes，部署前版本已备份为`competency-phase1-report-before-fb127.docx`。
+- FB-127使用同一用户paper force重生成后，报告为LibreOffice 24.2、A4 9页、601416 bytes、SHA=`948eb7ca30a1bfb491e7be6c2786cc845d515165d7d4f19b02d9944081b69c87`；实例/文件/下载三方一致，累计regenerate审计2。120DPI截图确认逻辑思维3.50图已进入左侧得分单元格，数字应用、计划执行、持续学习等图表也都在各自表格内。结构专项、模板专项37项、Go全量和build通过；临时文件/会话0、三服务和内外health正常、关键日志与Nginx 5xx均0。production未修改。
+- [FB-127后模板全页审查] 120DPI逐页审查确认当前9个物理页均非空，无新重叠、裁切、图表越格、内部业务键或错误总页数；49内容控件、12图表、0可见占位符和chart3–12全部inline+in-cell保持通过。最后一页内容利用率较低，但客户原样例末页也留白，是否强制恢复10个物理页属于版式选择，未擅自增加分页。
+- 审查发现三个尚未修正的明确问题：①一级得分汇总行仍是静态`3.75/3.70`，而该paper数据库、图表和分析区为`3.50/3.60`；②chart1仍为`pie3DChart`，把两个独立1–5分误画为构成比，违反2026-08-10已确认口径；③该测评requiredFields仅`name,telephone`，模板仍显示年龄/性别/单位/岗位标签并留空。分别登记FB-128/129/130，当前未修改模板或staging，需按独立RED→GREEN切片处理。
+- [FB-128完成] 一级汇总行的静态`3.75/3.70`已替换为可重复`group.general_ability.score`和`group.psychological_quality.score`内容控件；两个Tag均由1处增为2处，运行时同步填充汇总行和分析区。最终模板SHA=`70bcf95368b3387c7090a7ba848971a614723e24f0bf62c8f9f4baff7abcdf2b`、452806 bytes，部署前FB-127模板已备份为`competency-phase1-report-before-fb128.docx`。
+- 用户paper=`658dc083-6216-4373-93b3-a7b1d188ec44`重生成后，一级汇总行、图表标签和分析区均为实际`3.50/3.60`；PDF为LibreOffice 24.2、A4 9页、601414 bytes、SHA=`dc144195ddaf7b0367d74245d72bdb3d44494c9f664c0bbc7525ddad90079c39`，实例/文件/下载三方一致。RED→GREEN、相邻FB-127/V1契约、LibreOffice转换、Go全量和build通过；临时文件/会话0、三服务和内外health正常、关键日志/Nginx 5xx为0。production未修改。FB-129/130仍保持RED，未与本切片混改。
+- [FB-129完成] 一级图表由误导性的`pie3DChart`改为横向clustered bar：两个分值使用共同0–5值轴、主刻度1、两位小数标签、独立绿色/青色条，不显示百分比和冗余图例。最终模板SHA=`6f43de7c05bf5335a891ad6c1af694b9599954e48acb241fe1a131f506de3736`、452965 bytes，部署前FB-128模板已备份为`competency-phase1-report-before-fb129.docx`。
+- 用户paper再次重生成后，图表显示通用能力3.50、心理素养3.60的独立0–5长度，汇总行和分析区保持一致；PDF为LibreOffice 24.2、A4 9页、564100 bytes、SHA=`3e25629470cf7220eeb78eae101e39ef2f9b09a2dc7ee4dfd72259083ce3b49b`，实例/文件/下载三方一致，累计regenerate审计4。FB-127～129、模板契约39项、Go全量和build通过；临时文件/会话0、服务/health/日志通过。production未修改。FB-130仍为下一独立切片。
+- [FB-130本地GREEN / staging阻塞] `phase1WordPayload.Meta`已接入`requiredFields`。Word填充前按六个稳定字段键裁剪个人信息表：删除未配置字段的单元格或整行，单字段行跨两列，姓名/手机号及固定时间/时长保留；空requiredFields继续保留六项兼容行为。RED命中年龄标签残留，GREEN后用户同款`name,telephone`本地LibreOffice报告为A4 9页，只显示姓名、手机号、时间和时长，无年龄/性别/单位/岗位。
+- FB-130本地模板/handler专项40项、Go全量通过；Linux后端已构建为48,340,473 bytes、SHA=`1099a2aa37f41033c7991d054ee0efeeb66aaaf0ace57d235c1c29a8becce2fb`，模板继续使用FB-129 SHA=`6f43de7c...`。部署前SSH以ConnectTimeout 10/20秒连续三次超时，TCP/22不可达，但公网health仍ok。遵守“先备份再部署”，数据库备份命令未启动、后端未上传/替换、报告未重生成；production未修改。SSH恢复后顺序固定为：完整备份→部署后端（模板无需变）→force重生成用户paper→验证仅姓名/手机号及三方哈希→清理/health/日志。
+- [UF-017 / FB-131 Word打不开最终根因纠正] 当前FB-129模板ZIP、45个部件和全部XML都完整，LibreOffice可转换。初步发现chart1新增2个Schema错误，但修成Office 2019 SDK零错误后，本机Word 16仍拒绝，证明SDK零错误不是Word可打开的充分条件。逐版Word COM二分实证：Git HEAD V1 SHA=`3b6a83fd...`可打开；LibreOffice重存基线SHA=`a341e3a3...`首次失败，之后FB-125～131所有基于该稿的候选均失败。LO重存相对Word基线改写39个部件、新增6个、删除51个，是全包兼容损坏根因。
+- 最终方案放弃LO重存稿，从用户曾确认可打开的Git V1基线出发，仅做定向变换：删除冗余分页、10个维度标题/定义改流式段落、chart3入格、一级汇总动态控件、chart1独立0–5条形图、footer4仅PAGE。最终包相对基线仅`word/document.xml`和`word/charts/chart1.xml`内容变化，无部件增删；模板SHA=`0899d49768cf1463ecb97544d2ef7d11332ef6ae42133a10e89501d9e7a33fac`、531586 bytes。
+- 本机Microsoft Word 16.0 build 19127真实打开最终空模板与运行时填充DOCX成功：Word物理8页、9表、16 inline、5 shapes，关闭不保存后SHA均不变；从staging API下载的同SHA模板也真实打开成功。Office 2019 SDK仍有24项原V1兼容提示，但chart1新增错误0；这些提示不阻止Word，真实COM结果优先。LibreOffice填充报告继续为A4 9页、仅PAGE页码、无错误总页数。
+- staging备份=`/opt/talent-assessment/backups/fb130_131_20260818_092103`，数据库gzip 12230193 bytes/SHA=`1ce92faf...`，旧后端=`515801f1...`、旧坏模板=`6f43de7c...`。已部署FB-130后端SHA=`1099a2aa...`及FB-131模板SHA=`0899d497...`。用户paper重生成PDF为529952 bytes、SHA=`fed9ccb0a440e9bff414a5f91b75f189721bbe0edfbfbcb6f3d173fd9aad4c15`、A4 9页；仅显示姓名/手机号/时间/时长，一级独立图和二级图表正常，实例/文件/下载一致，regenerate审计5。临时文件/会话/LO工作区0，三服务和内外health正常，关键日志/Nginx 5xx为0。production未修改。
+- [UF-018 / FB-132附件修复与系统替换] 用户第二次提交的同名附件实际SHA=`36f3fe9472590b3ff4d4c3c5f1504eb2d894f2f9f371798054e63048e098ff96`、542140 bytes，仍不是官方`0899d497...`。Word 16返回“文件可能已经损坏”；上传门禁拒绝重复`dimension.competency-a1-05.diagnosis`；附件为52控件/49唯一字段/5表，chart1回退pie3D。与官方文本差异主要是内容控件内示例诊断文案，运行时生成时会被正式冻结文案覆盖，不需要迁移；附件旧版布局和图表反而会回退FB-125～131修复。
+- 原附件已备份为`tmp/user-submitted-template-36f3fe94.docx`，随后用官方Word原生模板修复同名`docs/competency-phase1-report-0899d497.docx`。修复文件SHA=`0899d49768cf1463ecb97544d2ef7d11332ef6ae42133a10e89501d9e7a33fac`、531586 bytes；Word真实打开8页/9表/16 inline/5 shapes且无写回，上传契约51控件/49字段/12图表/0占位符通过，LibreOffice填充为A4 9页。
+- staging替换备份=`/opt/talent-assessment/backups/template_user_repair_20260818_104725`，备份和生效SHA均=`0899d497...`（等内容原子替换）。模板API返回51/49/12/0、valid=true、no-store及正确MIME；下载回本机Word 16实开成功。用户paper强制重生成PDF 529952 bytes、SHA=`ba768e17ae309fdb5959441f68be98c0711e2f887dc807be028965242c53946a`、A4 9页，实例/文件/下载一致。临时文件/会话/LO工作区0，三服务和内外health正常，关键日志/Nginx 5xx为0。production未修改。
+- [UF-019 / FB-133模板审查] 新附件`docs/胜任力测评报告模板.docx`实际SHA=`b606aedc39c12a7162df25036a65951e7acbceb2a0b728dfec9f951e9567e3bc`、542105 bytes，不是系统模板。Word 16实开提示“文件可能已经损坏”；Office 2019校验24项WPS图表扩展错误；服务端上传门禁拒绝重复`dimension.competency-a1-05.diagnosis`。结构为52控件/49唯一字段/5表/15 inline，chart1回退pie3D；相对官方改20部件并删除footer2-4/header3-4。
+- 附件的10个诊断控件填入长示例文本，其中沟通表达被复制为2个同Tag；这些示例在系统运行时会被数据库正式文案覆盖，不能作为迁移附件的理由。LibreOffice可宽容生成A4 10页，但与系统9页门禁不符：第4页仅半个一级分析框且大面积空白，第6-10页回到旧式布局，并显示内部`competency-a1-0x诊断`文字。结论为不合格，未修改工作区正式模板、未上传/替换staging、未重生成报告；系统仍保持Word验证通过的`0899d497...`。
+- [FB-134仅修Tag] 按用户“只修复Tag，不修改文字和布局”要求，先备份`docs/胜任力测评报告模板.before-tag-fix.docx`，再解除第二个重复`dimension.competency-a1-05.diagnosis`内容控件但原样保留其`sdtContent`。修复文件为`docs/胜任力测评报告模板.docx`，SHA=`f0b49aff0d2c881fce27b564aa82fbc482a5dddc2ec0a0a9609c1a63e1355dba`、534729 bytes。
+- 修复前后只有`word/document.xml`变化，ZIP部件无增删；可见文字SHA完全一致，文本长度3398、段落141、表格5、行42、单元格61、绘图20均不变。内容控件52→51、唯一字段49，合法重复仅两个一级得分字段；服务端上传门禁通过。本机Word 16正常打开且关闭后SHA不变。该附件仍保留其旧5表/旧pie3D/10页布局及第二份静态沟通表达诊断文字，因为用户明确禁止改文字和布局；本次未替换工作区正式模板、未部署staging，系统仍为`0899d497...`。
+- [客户模板进一步审查] 用户确认业务内容由Tag替换且当前只作候选后，对Tag修复稿做运行时填充、图表/关系、分页和页脚深审。49个唯一业务字段齐全且顺序整体正确；chart3-12均在表格单元格内，页脚仅PAGE。仍有四类结构问题：①`dimension.competency-a1-04.diagnosis`把静态`【诊断】`包在控件内，运行时替换后持续学习模块丢失该标签（实测PDF确认）；②chart1仍为旧3D饼图；③11个图表关系指向原作者本机`C:\Users\...\数据图表.xlsx`，PDF依赖缓存可生成，但Word编辑/刷新不可移植并泄露本机路径；④4个显式分页符+2个nextPage分节导致Linux A4 10页，第4页明显稀疏。另有24项WPS图表扩展Schema提示，但Tag修复后Word 16已实开，属于版本兼容风险而非当前打开阻塞。该候选未部署，系统模板仍为`0899d497...`。
+- [FB-135持续学习Tag边界本地完成] 备份=`docs/胜任力测评报告模板.before-boundary-fix.20260818_113235.docx`，SHA=`f0b49aff...`。将静态`【诊断】`从`dimension.competency-a1-04.diagnosis`控件内移到同位置控件前，并将Alias从错误的a1-03同步为a1-04；不改其他Tag。修复后候选SHA=`a85373277889117883e8b6c15d1ed0bd7cf5839d858dfa41389453b884ae8a05`、534733 bytes。
+- 边界修复前后可见文字SHA完全一致，3398字符、141段落、5表、42行、61单元格、20绘图均不变。新增Python回归先RED后GREEN；Word 16打开且无写回；服务端上传门禁及重复Tag负向门禁通过；真实LibreOffice填充PDF显示`【诊断】competency-a1-04 诊断`。本切片未处理11个外部Excel关系或一级3D饼图，等待客户选择；未替换系统模板、未部署staging。
+- [FB-136客户选择与外链清理] 用户选择“清除外链”而非内嵌Excel，并确认保留客户3D一级饼图。清理前备份=`docs/胜任力测评报告模板.before-external-link-fix.20260818_113921.docx`，SHA=`a8537327...`。删除chart2–12共11条TargetMode=External关系及11个对应`c:externalData`节点；不改图表缓存、样式、得分点、正文或布局。
+- 当前客户候选`docs/胜任力测评报告模板.docx` SHA=`434495c26dbb7ea28662168384467139fff522d8412a5131bc96ff82825496d7`、533117 bytes。外链测试RED→GREEN；修复前后可见文字SHA、141段落、5表、20绘图完全一致；Word 16打开且无写回，服务端上传契约通过，LibreOffice缓存图表仍生成A4 10页，持续学习运行时标签正确。一级3D饼图按客户选择保留，不再作为本轮待修项；候选仍未部署，系统模板保持`0899d497...`。
+- [纠正 - 2026-08-18 全新分页复核] 先前把客户候选“第4页内容较少/明显稀疏”列为问题不准确，用户明确确认不存在。基于当前SHA=`434495c2...`重新从零填充并以120DPI渲染10页：全部物理页非空；物理第4页含一级得分、图表及通用/心理素养分析，物理第5页为心理素养分析延续，属于客户10页编排，不再列缺陷。旧结论保留在历史记录中，本条为正式纠正。
+- 全新复核仍发现两个实际跨页点：逻辑思维标题/定义在物理第6页末，得分与诊断在第7页开头；自律性标题/定义/得分在第9页，诊断在第10页开头。其他八个维度模块的标题、定义、得分和诊断均在同一物理页。是否修复这两个跨页需客户确认；可通过局部keep-with-next或表格行分页控制处理，不应再以“第4页较少”为理由重排整份模板。
+- [FB-137全部维度模块分页优化完成] 用户要求完成优化后，先备份`docs/胜任力测评报告模板.before-page-flow-fix.20260818_115714.docx`，SHA=`0af9370b...`。首轮只处理逻辑思维/自律性虽解决Linux两处跨页，但Word端仍可能拆其他模块；最终将门禁扩展到全部10维度：每个模块的标题/定义、得分、诊断三行均`cantSplit`，标题行和得分行的单元格直接段落均`keepNext`，不修改组合图内部段落。
+- 最终客户候选`docs/胜任力测评报告模板.docx` SHA=`ba98522523235bd66fc47cdd553a347a0c7ddd5a426541ecfc5f50ca2f410884`。优化前后可见文字SHA一致，3398字符、142段落、5表、42行、61单元格、20绘图均不变；Tag边界和零外链测试保持GREEN，Word 16打开且无写回，上传契约通过。LibreOffice为A4 10物理页，逻辑思维完整移到第7页、自律性完整移到第10页，十个模块均不跨页；Word导出为11物理页，合作意识完整位于最后一页，十个模块同样不拆分。Word/LO页数差异来自排版引擎，不是空白页或内容丢失。候选尚未替换系统模板、未部署staging。
+- [staging发布阻塞 - 2026-08-18] 用户明确要求部署并测试。最终关闭Word后候选SHA再次确认=`ba98522523235bd66fc47cdd553a347a0c7ddd5a426541ecfc5f50ca2f410884`、533187 bytes；Tag边界、零外链、全部10维模块同页、上传契约、Word 16实开（11页且无写回）和LibreOffice A4 10页门禁全部通过。部署前数据库/模板备份SSH以ConnectTimeout=20连续两次超时，第三次只读握手仍超时；TCP/22不可达但公网health正常。遵守先备份纪律，备份命令未启动、模板未上传/替换、真实报告未重生成，staging仍使用`0899d497...`，production未修改。SSH恢复后继续：备份→原子替换`ba985225...`→模板API/Word下载实开→force重生成用户paper→10页逐页/三方SHA/清理终验。
+- [FB-138客户模板staging分页兼容完成 - 2026-08-18] SSH恢复后首次部署全模块候选`ba985225...`，真实用户paper在staging LibreOffice 24.2生成12页：物理第5页仅有一级“心理素养”说明尾行，下一显式分页又强制二级结果从第6页开始。该结果未通过门禁，模板立即回滚至`0899d497...`，用户报告恢复9页；production未修改。
+- 三份相同测试数据的无控制/两模块/全模块DOCX在staging 24.2均为9页，证明固定短夹具不能替代真实长文案验收。新增RED回归精确拒绝一级分析表与“二级维度测评结果及建议”之间的叠加显式分页；最终仅删除该空分页段落，保留10模块全部`cantSplit + keepNext`、可见文字、Tag、图表和其余客户分页结构。
+- 最终客户模板SHA-256=`9bf1cbb77b2cb6f23d37d878fb2d0e9da7664f296a90b2f50cc8c62a423c216d`、533147 bytes。Tag边界、零外链、全模块流式结构测试通过；本机Word 16与staging API下载稿均真实打开为11页、5表、14 inline、6 shapes，关闭后SHA不变。模板API为51控件/49字段/12图表/0占位符、valid=true、no-store和正确DOCX MIME。
+- staging发布前备份=`/opt/talent-assessment/backups/customer_template_sparse_fix_20260818_123253`，数据库gzip 12231339 bytes/SHA=`c9a83d7e62583491b3d94e9bf6cb5a37f255988c06c0764375b12803fc4444d1`，旧模板SHA=`0899d497...`。真实paper=`658dc083-6216-4373-93b3-a7b1d188ec44`强制重生成后为LibreOffice 24.2、A4 11页、500691 bytes、PDF SHA=`8ae5a38662efc849d33c9722829707e33ca8b960edb74352a78d50065855e2f1`；数据库、服务器文件和下载副本三方一致。120DPI逐页总览确认11页均有内容、无重叠/裁切/整页空白，10个维度模块均未拆页。短时会话、LO profile和客户模板远端临时文件均为0，三服务及内外health正常，关键错误0；production未修改。
+- [FB-139环形图分值居中完成 - 2026-08-18] 用户截图指出环形图内数字未居中。chart3–12可见标签均保留手工`x/y`和Office 2013扩展`w/h`，但十图的标签框中心`(x+w/2,y+h/2)`均未统一落在图心；chart3首个RED水平偏移`-0.005068372027874496`。新增结构回归后，只将每图可见标签改为`x=-w/2,y=-h/2`，不改图表缓存、颜色、数据、字体、正文或分页。
+- 最终模板SHA-256=`4bcf5aceb62b0424af5f89dd315f8575725f615ee1f1d8a827dc943a73b923fe`、533152 bytes。十图标签居中、Tag边界、零外链和模块分页四项门禁通过；本机正式模板和staging API下载稿均由Word 16真实打开为11页/5表/14 inline/6 shapes，关闭后SHA不变。模板API继续为51/49/12/0、valid=true、no-store和正确MIME。
+- staging部署前备份=`/opt/talent-assessment/backups/customer_chart_label_center_20260818_125701`，数据库gzip 12231411 bytes/SHA=`6e4c2172b014470f62f8603ff87778b8ab0657ce5a43b03fbaef9b7dfd9e28b9`，旧模板SHA=`9bf1cbb7...`。同一真实paper重生成后为LibreOffice 24.2、A4 11页、500686 bytes、PDF SHA=`11aed2b94619ca8469de8d33104aff98a74543a40180d7c4160ffb37df2e29f8`；数据库/服务器/下载三方一致。180DPI逐页总览确认10个环形图内分值均水平、垂直居中且无分页/重叠回归。production未修改。
+- [纠正 / UF-021 / FB-140 - 2026-08-18] 上述FB-139“10图均居中”结论有误。原因是仅验证OOXML标签框`x=-w/2,y=-h/2`并人工查看缩略总览，没有测量LibreOffice输出像素。用户复核指出多个图仍偏移后，新增真实PDF像素门禁：180 DPI自动识别10个圆环和内部数字字形框，要求水平/垂直中心差均不超过2px。旧PDF十图全部失败，偏移范围为x=`0～15px`、y=`-3.5～20.5px`。
+- 正确方案不再修改客户Word模板（Word中本来居中），而是在后端仅对LibreOffice转换前的已填充DOCX应用chart3–12独立校准；Graph和Word模板不受影响。校准值来自同一真实报告的像素反馈，并通过三轮收敛，最终真实11页PDF十图均通过2px强制门禁。Go聚焦、全量测试和Windows/Linux构建通过。
+- staging部署前备份=`/opt/talent-assessment/backups/fb140_pdf_chart_center_20260818_131740`，数据库gzip 12231459 bytes/SHA=`d48ee559b46297ae612e72b9c84386cf6a136c4ffb694e82e702a7e6e133d339`，旧后端SHA=`1099a2aa...`，模板SHA=`4bcf5ace...`。最终后端SHA=`bb932884ac09d9d3c163ceb7f573c7cbbdc6d2d78262f43b59692073656fc74f`；真实paper生成LibreOffice 24.2 A4 11页、500688 bytes、PDF SHA=`70821dd0ca2f5ae4d80d83f8fa474c2621d40639b3f2e1d2086b3787b7e9981f`，数据库/服务器/下载三方一致。180 DPI像素测试10/10通过，逐页总览无分页或重叠回归；远端临时文件、LO profile和短时会话均0，三服务、内外health和关键日志通过。production未修改。
+- [最新客户模板重新校验 / FB-147～149 - 2026-08-18] 用户重新保存的模板SHA=`e85ccec5...`、542612 bytes。RED门禁发现三个回归：一级/二级区之间的显式分页再次出现，chart7由单元格内inline退回anchor，chart3–12缺少显式`0.00`标签格式。两个一级得分Tag仍各有2个，汇总表并未丢失动态控件。
+- 最小修复仅删除该叠加分页、将chart7恢复inline，并给chart3–12可见标签增加`0.00`；可见文字3398字符及SHA保持不变。最终模板SHA=`50b238cc30d0480d534fb2291842248b9306f0878fb095f8008236aeaa894cd6`、535238 bytes，Word 16真实打开10页/5表/14 inline/6 shapes且无写回；Tag边界、零外链、模块流、动态一级表格、两位小数和上传契约51/49/12/0均通过。
+- staging备份=`/opt/talent-assessment/backups/customer_template_jump_20260818_151823`，数据库gzip 12231731 bytes/SHA=`247be7cc...`，旧后端=`bb932884...`、旧模板=`4bcf5ace...`。模板与首轮后端已部署；真实paper=`658dc083-6216-4373-93b3-a7b1d188ec44`生成LibreOffice 24.2 A4 10页、499767 bytes、SHA=`ff14d0dd...`，实例/文件/下载三方一致。一级汇总表为真实`3.50/3.60`，分析区一致，静态`3.75/3.70`计数0，图表及正文分值均为两位小数。
+- 首轮真实PDF像素门禁仍失败，证明新模板保存后旧FB-140校准值不能复用；基于真实长文案像素反馈生成第二轮后端SHA=`9cdfa3f1c91ee81d3765a0f5c63145fdeb8276d04008c94b5b520b7b26da85b1`并部署。SSH恢复后同一paper重生成LibreOffice 24.2 A4 10页、499772 bytes、PDF SHA=`37e115246d366b03276b7ec88d32df172c837434371364b1a2973cda3018c5e3`；数据库实例、服务器文件和API下载三方一致，180 DPI十图像素门禁10/10通过。十页逐页总览无整页空白、重叠、裁切或模块错序；短时会话、任务临时文件和LO profile均0，三服务active、内外health正常、关键应用错误和Nginx 5xx均0。production未修改。
+
+## 2026-08-17 staging统一发布与回归
+
+- 用户确认仅发布staging（`20.200.136.133`），production未修改。发布前Go全量、go vet、Linux build、前端24文件153项及production build通过；前端仅2个既有资源体积warning。
+- 发布前完整备份位于`/opt/talent-assessment/backups/release_verify_20260817_20260817_162021`，目录0700、文件0600；数据库gzip通过完整性检查，SHA-256=`d6572b07f4743171b31c18f4b3dd91cf0ea094e45bc998f1260f7a0511e48ff3`，同时备份后端、前端和V1稳定模板。
+- staging生效版本：后端SHA-256=`515801f10a183d053edf9acab06cf2a9eb477463ee6316b9b18a875cb339d370`，前端index SHA-256=`4be781a62ee7895b2b610ff897b9424df52dfc03235ce1e245ae603d6e8edded`，V1 Word模板SHA-256=`3b6a83fd4a2fddf7c0a47c1eda5e2e4141b7d0d72fd9431980928be598e86b92`；公网index哈希一致，内外health正常。
+- staging真实测试通过：模板元数据/下载为schema-v1、no-store、正确SHA；完整一期答卷强制重生成LibreOffice 24.2 A4 12页PDF，API/数据库size与SHA一致；结果页面列表`34.13`、10维详情和10个报告分值均为两位小数；真实封闭测评新增空身份证人员按手机号识别、默认密码后4位并清理0；传统00101/00201/00301各完成2题组卷→答题→交卷→结果→标准分，整链清理0。
+- 终验talent-assessment/nginx/mysql均active，发布与浏览器短时会话0、LibreOffice临时工作区0、临时发布文件0、传统烟测和人员验收数据0、应用关键错误0、Nginx最近5xx=0。production未部署。
+- 用户再次提供旧错误截图后，通过公网`http://20.200.136.133/prod-api/exam/api/tester`重新实测：真实封闭测评`1786520226890178516`、身份证空、手机号非空新增返回code=200，身份证保持空、默认密码为手机号后4位；测试行和短时会话清理为0。截图中的“缺少 idNumber 或 examId”不再存在于当前代码路径。
+
+## 2026-08-13 FB-123/124 测评管理分值与封闭人员新增 staging修复
+
+- FB-123将胜任力管理列表的整体分、所选维度分、评价均值，以及详情中的整体分、一级得分、得分合计、维度分统一显示两位小数；空值显示`—`，不改变数据库DECIMAL精度，也不把题数、逐题原始值和逐题计分值改成小数。Vue/Chromium报告原有`format(...).toFixed(2)`保持，并补齐报告“得分合计”的格式化；Word报告继续使用`StringFixed(2)`。
+- FB-124统一手工新增与Excel导入契约：封闭测评人员身份证号可空；身份证存在时按`id_number+exam_id`识别，身份证为空时按`telephone+exam_id`识别；默认密码优先取手机号后4位。手机号与身份证同时为空仍在数据库写入前拒绝。
+- 本地RED→GREEN后Go全量、go vet、Linux build、前端24文件153项和production build通过。staging备份位于`/opt/talent-assessment/backups/fb123_124_20260813_235807`，数据库gzip SHA-256=`4309492e0627381efd8592e9d52ec122f95fc052eb4fb55e8e21201470ba1104`。
+- staging后端SHA-256=`03551509cd8a85c7d99c2ef16b2e3630a2cdc0ee2da53a13b71ab0471c324a81`，前端index SHA-256=`8e9cf6661e84c2004e2c881ac278cc6707520e56930410f02bcaff07d85e01a3`。真实封闭测评`1786520226890178516`新增空身份证人员成功，手机号/默认密码核对通过且清理为0；真实一期结果浏览器显示列表整体分`34.13`、10维详情得分和10个报告得分全部两位小数。production未修改。
+- 公网index与远端哈希一致，公网health正常；talent-assessment/nginx/mysql均active，FB-123/124短时会话0、验收人员0、部署临时文件0、关键日志0。
+
+## 2026-08-13 一期Word模板V2透明业务键（本地）
+
+- 在不修改数据库结构的前提下新增代码字段注册表：75个稳定业务键，其中49个必需、26个可选；当前人员/结果/正式文案DTO作为数据源，得分百分比、满分和距满分差值在运行时派生。可重复字段允许在Word多处使用，不可重复字段仍由上传门禁拒绝重复。
+- 12个图表增加稳定业务键：`chart.group.overview`、`chart.dimension.radar`及10个`chart.dimension.<维度ID>`；业务键保存在Word图表对象替代文字标题，运行时通过document关系解析实际图表部件，不再依赖`chart1.xml`～`chart12.xml`物理编号。V1无业务键模板继续使用旧物理映射。
+- V2内嵌Excel仅含`FieldDictionary`和`ChartData`：前者自描述75个字段与schema版本，后者用稳定业务键承载2个一级和10个二级图表数据；运行时同步更新ChartData与图表缓存。上传门禁校验业务字段、12图表键、公式区域、package关系、1个内嵌工作簿和0外链，并向管理页面返回透明契约元数据。
+- 确定性生成器连续运行SHA一致；候选模板SHA-256=`0f1a23a895df3417bf9a1e939ab101728c27ae26b0a7a6961234e47da65539fd`。V1/V2聚焦、负向矩阵、Go全量、Windows build、前端全量/production build通过；本机LibreOffice真实转换为A4 12页。当前仅本地完成，未切换staging，production未修改。
+
+## 2026-08-13 一期Word模板V2 staging部署完成
+
+- staging部署前完整备份位于`/opt/talent-assessment/backups/phase1_v2_contract_20260813_230941`，目录0700、文件0600；数据库`element.sql.gz`通过`gzip -t`且SHA-256=`953cdb431fef76f43b801c1c360ba0be64333c72fed5402b4d240256bc40fc20`，同时备份旧后端、旧前端和旧模板。旧前端即时回滚目录保留为`/opt/talent-assessment/dist.pre-phase1-v2-20260813_230941`。
+- staging生效后端SHA-256=`a0f96c8fc947b2ced89e9b86122098ff0b3ec5fce5952a84f374beb73a9bc231`，前端index SHA-256=`2bce116eb5357872c4315d40ba05aee06cf2bfbe22835f222fb72e777a1c5055`，V2模板SHA-256=`0f1a23a895df3417bf9a1e939ab101728c27ae26b0a7a6961234e47da65539fd`；公网index与远端原始字节哈希一致，公网health正常。
+- 模板管理真实API返回`schema-v2 / registeredFields=75 / usedFields=49 / businessCharts=12 / embeddedWorkbooks=1 / externalLinks=0 / visibleTokens=0 / valid=true`。远端DOCX独立结构审计为1个内嵌工作簿、12个唯一业务图表标题、12个package关系和0外链。
+- 使用完整一期paper=`93a26b3b-047d-4ad9-890a-3b4fe6d042e4`强制重生成报告成功；reportId=`60f14a12-bef8-42d3-a22a-831ea260b2c2`，LibreOffice 24.2、A4 12页、539250 bytes、PDF SHA-256=`da7c7e9a92985be04f784d81bb1d0849165cfa05f3f362228e07bfaaf7801a68`。人员文本和未解析占位符检查通过，API下载与数据库size/SHA一致。
+- 模板管理页面使用的三个真实接口已复验：元数据返回V2有效契约；下载返回正确DOCX MIME、562496 bytes且SHA-256与生效模板一致；上传同一合法V2模板后备份数2→3、返回备份名`competency-phase1-report.docx.20260813_231848_000.bak`并保持生效SHA不变。前端专项4/4覆盖页面加载、V2契约展示、下载文件名、上传确认/刷新和失败保留文件。
+- 终验talent-assessment/nginx/mysql均active，运行时临时工作区0、V2短时Redis会话0、部署窗口关键journal错误0、Nginx最近5xx=0；上传、验收和本地发布临时文件已清理。production未修改。
+
+## 2026-08-13 FB-122 Microsoft Word模板兼容修复
+
+- 用户真实Microsoft Word打开staging下载的旧V2模板（562496 bytes、SHA-256=`0f1a23a895df3417bf9a1e939ab101728c27ae26b0a7a6961234e47da65539fd`）时报“Word在试图打开文件时遇到错误”。下载接口、ZIP和LibreOffice均正常，说明原验收遗漏桌面Word的严格OPC检查。
+- 根因已定位：生成器把`<Default Extension="xlsx">`追加到`[Content_Types].xml`末尾，位于全部`<Override>`之后；实际位置lastDefault=8448、firstOverride=389，违反OPC要求的Default先于Override。LibreOffice容忍该结构，Microsoft Word拒绝整个DOCX。
+- FB-122先RED后GREEN：内嵌工作簿改为显式`/word/embeddings/competency-phase1-chart-data.xlsx` Override；上传门禁新增Content Types顺序、显式Override和禁止全局xlsx Default检查。修复后lastDefault=333、firstOverride=389。
+- 修复已部署staging：后端SHA-256=`5b73b91dda1af522987d05b71d04d7c60b70144c54b7f24782bf3a002159afec`，模板562521 bytes、SHA-256=`a2387516f20c18037dca84b3e17cd7eb04ce60640004d8d88c0118f8912b0793`；备份位于`/opt/talent-assessment/backups/fb122_word_compat_20260813_234503`。真实下载与结构门禁通过，完整一期报告仍由LibreOffice 24.2生成A4 12页。当前执行环境未安装Microsoft Word COM，最终桌面Word打开结果需用户删除旧下载并重新下载后确认；production未修改。
+- [纠正 - 2026-08-14] 上述首次FB-122修复无效，用户确认SHA=`a2387516...`仍无法由Microsoft Word打开。Open XML SDK显示V1/V2均有源模板遗留的202条兼容性警告，不能据此隔离；LibreOffice重存会大幅改写图表公式/部件，也不能直接作为可维护模板。V2内嵌Excel方案现已暂停，不再宣称staging可用。
+- staging已回退为此前经客户Microsoft Word编辑并多次上传成功的V1内容控件模板：557442 bytes、SHA-256=`3b6a83fd4a2fddf7c0a47c1eda5e2e4141b7d0d72fd9431980928be598e86b92`，schema-v1、49控件、12图表、校验有效；完整一期报告仍生成A4 12页。坏V2备份位于`/opt/talent-assessment/backups/fb122_v2_suspended_20260814_001235`。
+- 为防止浏览器继续返回或用户误开同名旧坏文件，下载接口增加`Cache-Control: no-store, no-cache, must-revalidate`、`Pragma: no-cache`；页面下载文件名包含SHA前8位，当前应为`competency-phase1-report-3b6a83fd.docx`。缓存修复后端SHA-256=`515801f10a183d053edf9acab06cf2a9eb477463ee6316b9b18a875cb339d370`，前端index SHA-256=`4be781a62ee7895b2b610ff897b9424df52dfc03235ce1e245ae603d6e8edded`。production未修改。
+- [用户确认 - 2026-08-14] 从staging重新下载的`competency-phase1-report-3b6a83fd.docx`已可由Microsoft Word正常打开，V1回退闭环完成。V2内嵌Excel继续暂停，不得重新部署或向客户交付；后续优化以当前V1模板为稳定基线。
+
 ## 2026-08-11 客户 V1 题本与报告模板复核
 
 - 新版客户题本 `260810基层员工胜任力测评题本+等级评价+总体评价V1.xlsx` SHA-256=`f33b878e6fa3f3b8496a838c1a8e648dda29b1e75a41a21a73e90362a978b42f`。实读为3个Sheet、10个A/B维度、80道维度题、10道效度题；维度题62正向/18反向，效度题10道正向；90个题号和题干均唯一。题目、方向、10×5维度文案和5条总体文案与既有候选JSON逐字段一致。

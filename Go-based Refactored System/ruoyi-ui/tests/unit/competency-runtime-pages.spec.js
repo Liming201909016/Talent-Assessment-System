@@ -210,4 +210,14 @@ describe('Competency runtime pages', () => {
     expect(source).not.toContain('group-score-grid')
     expect(source).not.toContain('phase1-dimension-pair')
   })
+
+  // TestBugFB123_ReportAggregateScoresUseTwoDecimals
+  // 对应：docs/regression-tests.md #FB-123
+  it('formats report score sums with two decimal places', () => {
+    const wrapper = shallowMount(CompetencyReport, { mocks: { $route: { params: { paperId: 'p1' }, query: {} } } })
+    expect(wrapper.vm.format(4)).toBe('4.00')
+    expect(wrapper.vm.format(3.5)).toBe('3.50')
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/paper/exam/competencyReport.vue'), 'utf8')
+    expect(source).toContain('得分合计：{{ format(dimension.scoreSum) }}')
+  })
 })

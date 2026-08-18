@@ -183,6 +183,7 @@ export default {
             }
           })
         })
+        this.resumeAtFirstUnanswered()
         console.log(this.answers)
       })
 
@@ -191,6 +192,15 @@ export default {
       getShowPdf(params).then(response => {
         this.idAndShowPdf = response.data
         console.log("showPdf:", this.idAndShowPdf)
+      })
+    },
+
+    resumeAtFirstUnanswered() {
+      const index = this.paperQuData.radioList.findIndex(item => !item.answered)
+      if (index < 0) return
+      this.$nextTick(() => {
+        const target = document.getElementById(this.setQuId(index))
+        if (target) target.scrollIntoView({ block: 'start' })
       })
     },
 

@@ -91,7 +91,9 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="整体分" prop="overallScore" width="100" align="center" sortable="custom" />
+      <el-table-column label="整体分" prop="overallScore" width="100" align="center" sortable="custom">
+        <template slot-scope="scope">{{ formatScore(scope.row.overallScore) }}</template>
+      </el-table-column>
     <el-table-column label="效度状态" width="110" align="center">
     <template slot-scope="scope">
       <el-tag :type="scope.row.validityStatus === 'good' ? 'success' : scope.row.validityStatus === 'questionable' ? 'danger' : 'warning'" size="mini">
@@ -100,8 +102,12 @@
     </template>
     </el-table-column>
     <el-table-column label="效度分" prop="validityScore" width="85" align="center" />
-      <el-table-column v-if="query.sortBy === 'dimensionScore'" label="所选维度分" prop="sortDimensionScore" width="120" align="center" />
-      <el-table-column label="评价均值" prop="evaluationAverage" width="100" align="center" />
+      <el-table-column v-if="query.sortBy === 'dimensionScore'" label="所选维度分" prop="sortDimensionScore" width="120" align="center">
+        <template slot-scope="scope">{{ formatScore(scope.row.sortDimensionScore) }}</template>
+      </el-table-column>
+      <el-table-column label="评价均值" prop="evaluationAverage" width="100" align="center">
+        <template slot-scope="scope">{{ formatScore(scope.row.evaluationAverage) }}</template>
+      </el-table-column>
       <el-table-column label="提交方式" width="90" align="center">
         <template slot-scope="scope">{{ scope.row.submitType === 'timeout' ? '到时提交' : '手工提交' }}</template>
       </el-table-column>
@@ -131,7 +137,7 @@
         <el-descriptions v-if="selectedRow" :column="$store.state.app.device === 'mobile' ? 1 : 4" border size="small">
           <el-descriptions-item label="姓名">{{ selectedRow.participantName }}</el-descriptions-item>
           <el-descriptions-item label="手机号">{{ selectedRow.participantTelephone || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="整体分">{{ selectedRow.overallScore }}</el-descriptions-item>
+          <el-descriptions-item label="整体分">{{ formatScore(selectedRow.overallScore) }}</el-descriptions-item>
           <el-descriptions-item label="完整性">{{ selectedRow.isComplete === 1 ? '完整' : '不完整' }}</el-descriptions-item>
         </el-descriptions>
         <el-tabs v-if="detail" v-model="detailTab" style="margin-top:16px">
@@ -141,7 +147,9 @@
             <el-table-column label="完成维度" width="110" align="center">
             <template slot-scope="scope">{{ scope.row.effectiveDimensionCount }}/{{ scope.row.totalDimensionCount }}</template>
             </el-table-column>
-            <el-table-column label="一级得分" prop="groupScore" width="100" align="center" />
+            <el-table-column label="一级得分" prop="groupScore" width="100" align="center">
+              <template slot-scope="scope">{{ formatScore(scope.row.groupScore) }}</template>
+            </el-table-column>
             <el-table-column label="等级" prop="levelCode" width="100" align="center" />
           </el-table>
           </el-tab-pane>
@@ -152,8 +160,12 @@
               <el-table-column label="完成题数" width="110" align="center">
                 <template slot-scope="scope">{{ scope.row.answeredQuestionCount }}/{{ scope.row.totalQuestionCount }}</template>
               </el-table-column>
-              <el-table-column label="得分合计" prop="scoreSum" width="100" align="center" />
-              <el-table-column label="维度分" prop="dimensionScore" width="100" align="center" />
+              <el-table-column label="得分合计" prop="scoreSum" width="100" align="center">
+                <template slot-scope="scope">{{ formatScore(scope.row.scoreSum) }}</template>
+              </el-table-column>
+              <el-table-column label="维度分" prop="dimensionScore" width="100" align="center">
+                <template slot-scope="scope">{{ formatScore(scope.row.dimensionScore) }}</template>
+              </el-table-column>
               <el-table-column label="等级" prop="levelCode" width="100" align="center" />
             </el-table>
           </el-tab-pane>
@@ -229,6 +241,11 @@ export default {
     this.loadResults()
   },
   methods: {
+    formatScore(value) {
+      if (value === null || value === undefined || value === '') return '—'
+      const number = Number(value)
+      return Number.isFinite(number) ? number.toFixed(2) : '—'
+    },
     loadExam() {
       fetchDetail(this.query.examId).then(response => {
         const exam = response.data || {}
@@ -323,7 +340,7 @@ export default {
         for (let index = 0; index < targetRows.length; index++) {
           this.reportProgress = `正在生成测评报告（${index + 1}/${targetRows.length}）`
           try {
-            await generateCompetencyReport({ paperId: targetRows[index].paperId, force: false })
+            await generateCompetencyReport({ paperId: targetRows[index].paperId, force: true })
             succeeded++
           } catch (error) {
             if (!firstError) firstError = error.message || '未知错误'
@@ -369,7 +386,7 @@ export default {
     },
     async generateReport(row) {
       if (!this.isReportSelectable(row)) return
-      await generateCompetencyReport({ paperId: row.paperId, force: false })
+      await generateCompetencyReport({ paperId: row.paperId, force: true })
       this.$message.success('临时测试PDF生成成功')
     },
     async downloadReport(row) {
