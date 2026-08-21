@@ -33,6 +33,7 @@ var (
 	wordContentControlPattern    = regexp.MustCompile(`(?s)<w:sdt>.*?</w:sdt>`)
 	wordContentControlTagPattern = regexp.MustCompile(`<w:tag\s+w:val="([a-zA-Z0-9_.-]+)"\s*/>`)
 	wordTextPattern              = regexp.MustCompile(`(?s)(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)`)
+	wordParagraphPattern         = regexp.MustCompile(`(?s)<w:p(?:\s[^>]*)?>.*?</w:p>`)
 	numericChartBlockPattern     = regexp.MustCompile(`(?s)<c:(?:numCache|numLit)>.*?</c:(?:numCache|numLit)>`)
 	chartValuePattern            = regexp.MustCompile(`<c:v>[^<]*</c:v>`)
 	wordDrawingPattern           = regexp.MustCompile(`(?s)<wp:(?:anchor|inline)\b.*?</wp:(?:anchor|inline)>`)
@@ -253,6 +254,7 @@ func buildPhase1WordTemplateData(data map[string]any) (map[string]string, map[st
 		tokens["{{"+field.Key+"}}"] = field.Resolve(payload)
 	}
 	tokens["{{__profile.requiredFields}}"] = strings.TrimSpace(payload.Meta.RequiredFields)
+	tokens["{{__validity.status}}"] = strings.TrimSpace(payload.Validity.Status)
 	charts := make(map[string][]float64, 12)
 	groupScores := make([]float64, 0, 2)
 	for _, code := range []string{"general_ability", "psychological_quality"} {
@@ -321,11 +323,21 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 					return nil, err
 				}
 			}
+			validityStatus, hasValidityStatus := tokens["{{__validity.status}}"]
+			if hasValidityStatus {
+				body, err = filterPhase1WordValidityNotice(body, validityStatus)
+				if err != nil {
+					return nil, err
+				}
+			}
 			visibleTokens := make(map[string]string, len(tokens))
 			for token, value := range tokens {
-				if token != "{{__profile.requiredFields}}" {
+				if token != "{{__profile.requiredFields}}" && token != "{{__validity.status}}" {
 					visibleTokens[token] = value
 				}
+			}
+			if hasValidityStatus && validityStatus == service.CompetencyPhase1ValidityGood {
+				delete(visibleTokens, "{{validity.notice}}")
 			}
 			if hasProfileConfig && strings.TrimSpace(requiredFields) != "" {
 				configured := make(map[string]bool, 6)
@@ -372,6 +384,29 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 		return nil, errors.New("完成一期Word报告文件失败")
 	}
 	return output.Bytes(), nil
+}
+
+func filterPhase1WordValidityNotice(document []byte, status string) ([]byte, error) {
+	status = strings.TrimSpace(status)
+	if status != service.CompetencyPhase1ValidityGood && status != service.CompetencyPhase1ValidityQuestionable {
+		return nil, errors.New("一期Word报告效度状态无效")
+	}
+	content := string(document)
+	matches := wordParagraphPattern.FindAllStringIndex(content, -1)
+	paragraphs := make([][]int, 0, 1)
+	for _, bounds := range matches {
+		if strings.Contains(content[bounds[0]:bounds[1]], `w:val="validity.notice"`) {
+			paragraphs = append(paragraphs, bounds)
+		}
+	}
+	if len(paragraphs) != 1 {
+		return nil, errors.New("一期Word报告效度提示段结构无效")
+	}
+	if status == service.CompetencyPhase1ValidityQuestionable {
+		return document, nil
+	}
+	bounds := paragraphs[0]
+	return []byte(content[:bounds[0]] + content[bounds[1]:]), nil
 }
 
 func replacePhase1EmbeddedChartWorkbook(workbook []byte, charts map[string][]float64) ([]byte, error) {

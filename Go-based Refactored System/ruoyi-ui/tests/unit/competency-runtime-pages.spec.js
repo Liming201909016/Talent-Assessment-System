@@ -197,6 +197,29 @@ describe('Competency runtime pages', () => {
     expect(wrapper.text()).toContain('正式免责声明')
   })
 
+  // TestBugFB153_GoodValidityHidesWholeNoticeParagraph
+  // 对应：docs/regression-tests.md #FB-153
+  it('shows the whole validity notice only for questionable results', async () => {
+    const dimensions = phase1Catalog.dimensions.map(item => ({ dimensionId: item.id, dimensionScore: 3.5, levelCode: 'L3' }))
+    const groups = phase1Catalog.groups.map(item => ({ groupCode: item.code, groupScore: 3.5, levelCode: 'L3' }))
+    const dimensionTexts = Object.fromEntries(phase1Catalog.dimensions.map(item => [item.id, `${item.name}诊断建议`]))
+    const wrapper = shallowMount(CompetencyReport, { mocks: { $route: { params: { paperId: 'p1' }, query: {} } } })
+    const report = status => ({
+      reportKind: 'frontline_phase1', pages: Array.from({ length: 10 }, (_, index) => ({ number: index + 1 })),
+      meta: { userTime: 18, generatedAt: '2026-08-12T10:00:00Z' },
+      result: { participantName: '测试人员', overallScore: 35, overallLevel: 'qualified', submittedAt: '2026-08-12T09:58:00Z' },
+      groups, dimensions, validity: { status },
+      reportText: { disclaimer: '正式免责声明', overallText: '总体诊断', groupTexts: {}, dimensionTexts, validityText: status === 'good' ? '本次测评作答效度良好' : '该受测者存在掩饰真实想法的可能性' }
+    })
+
+    await wrapper.setData({ data: report('good') })
+    expect(wrapper.find('.phase1-validity').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('本次测评作答效度良好')
+
+    await wrapper.setData({ data: report('questionable') })
+    expect(wrapper.find('.phase1-validity').text()).toBe('提示：该受测者存在掩饰真实想法的可能性')
+  })
+
   // TestBugFB115_Phase1ReportMatchesCustomerTemplateStructure
   // 对应：docs/regression-tests.md #FB-115
   it('uses the customer DOCX page composition instead of the generic card layout', () => {

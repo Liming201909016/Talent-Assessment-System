@@ -43,6 +43,8 @@
 | Customer template re-save | Word restores a section-adjacent page break or changes a dimension chart from inline to anchor | P0 | ✅ structural gates reject both regressions; latest template removes one break and restores only chart7 to inline |
 | Customer chart score format | visible group/dimension score labels omit explicit number format | P0 | ✅ chart1 and chart3–12 require `0.00`; real staging PDF summary and analysis both show `3.50/3.60` |
 | Customer template calibration version | template coordinates/layout change after LibreOffice offsets were measured | P0 | ✅ recalibrate against the same real long-text paper; final 180 DPI rendered-pixel gate passes 10/10 |
+| Phase-one validity notice | validity status is good | P0 | ✅ FB-153 GREEN: the whole “提示” paragraph is absent in Word/PDF and Vue reports |
+| Phase-one validity notice | validity status is questionable | P0 | ✅ FB-153 GREEN: retain the whole “提示” paragraph and approved questionable text |
 
 | Area | Branch | Status | Notes |
 |------|--------|--------|-------|

@@ -1,5 +1,17 @@
 # Project Memory
 
+## 2026-08-21 UF-027 / FB-153 效度提示条件展示staging终验
+
+- 用户确认一期报告只在效度存疑时显示“提示：”整段文字；效度良好时连同“提示：”前缀整段隐藏。
+- 根因是Word/PDF主路径和Vue/Chromium兜底路径都直接渲染`validityText`，未读取冻结结果中的`validity.status`决定段落可见性。
+- FB-153先取得双RED：Word渲染因缺条件状态协议失败，Vue实测good时提示节点仍存在。修复后Word渲染携带内部效度状态，good时删除包含`validity.notice`控件的唯一完整段落，questionable时保留并替换正式文案；Vue仅在`questionable`时渲染节点。正式文案快照和模板Tag继续保留，不改数据库、评分或客户Word模板。
+- Word专项36/36、前端全量26文件161项、Go全量、Go build和production前端build均通过；新增编辑器错误0。
+- [staging部署阻塞 - 2026-08-21] 用户明确要求部署staging。最终Linux后端48,358,202 bytes/SHA=`6a97abb2c0c587373727c7a2f7efefdbc9cc24005e8a6031a8c701e07b1d01ee`，前端index SHA=`d96782252174dbdf11372bf3007d6c1abce40763a6981b3f768edd439276db60`，379文件；前端归档7,466,612 bytes/SHA=`c4250abd580ec0fe5f3f9eefe1076a2d29a1763005d2af2cc3a8bccc99235a50`，均保存在ignored `tmp/`等待恢复。
+- staging预检连续三次失败：SSH ConnectTimeout=15/20秒均超时，TCP/22、80、443均不可达，公网health也超时；同机到1.1.1.1:443正常，客户端公网IP仍为`20.239.176.250`，证明是目标主机/网络不可达而非本机断网。当前Azure CLI两个可用订阅均查不到`20.200.136.133`，无法代为启动VM或调整网络。遵守“先备份再部署”，远端备份命令未启动、应用未上传/替换、报告未重生成；production未修改。主机恢复后继续：只读预检→完整数据库/后端/dist备份→部署后端和前端→用good与questionable真实报告验证整段隐藏/保留→清理/health/log终验。
+- [staging恢复并完成 - 2026-08-21] TCP/22、80恢复后，预检确认`talent-assessment`、nginx、MySQL均active且内网health正常。部署前备份位于`/opt/talent-assessment/backups/fb153_validity_notice_20260821_212256`：数据库gzip 12,605,849 bytes/SHA=`0aa70b981a1f6a74c25787ccbefa6a85908730305bedf519d782e2f855d3eecd`，并保留旧后端、dist、模板及两份验收PDF；旧后端SHA=`228bca0060e0aae7c39f8f1a3ac5de1af8b4da1c579ac9481f6a153c1d830311`。
+- staging已部署后端SHA=`6a97abb2c0c587373727c7a2f7efefdbc9cc24005e8a6031a8c701e07b1d01ee`和前端index SHA=`d96782252174dbdf11372bf3007d6c1abce40763a6981b3f768edd439276db60`。真实good paper=`af1ebf1b-1b8a-442e-83dd-b7a64541760c`强制重生成11页PDF 514,178 bytes/SHA=`469fc4c716f240b91ea1ade60b60f8c606b0df6b5fd3bc6bab5ed6cf58fa970a`，全文无“提示/效度/掩饰/真实想法”；真实questionable paper=`5c636031-521b-4be9-a3a1-47ade0a166e2`强制重生成11页PDF 516,720 bytes/SHA=`5964e2440a169821800f65e7ef4aef3dfea76d18801b7500331c2f7143f3e90d`，包含完整“提示：该受测者存在掩饰真实想法的可能性…”段落。数据库实例状态、SHA和大小与下载结果一致。
+- 部署前端在真实Chromium的1440×900和390×844两种视口均通过：good无`.phase1-validity`节点，questionable显示精确整段文字。内外health均`{"status":"ok"}`，三服务active，部署后应用关键错误0、Nginx 5xx为0，远端临时文件清零；production未修改。
+
 ## 2026-08-18 UF-026 / FB-152 最新模板重部署与图表居中终验
 
 - 用户再次保存的客户模板原始SHA=`565c640349cccbb8a0e6a91d64f3f59c4cd85d54f498a8ac063ca151e5c65284`、538720 bytes。结构RED确认一级/二级之间的叠加显式分页再次出现；最小修复只删除该分页，保留本次标签字体和版式调整。最终模板SHA=`19c0f1d4c6474781f98d8761d72bedaaed9b51a45e2e03e8c5b582b1d6ab9b2f`、531944 bytes，Tag边界、零外链、模块流和两位小数四项门禁通过。

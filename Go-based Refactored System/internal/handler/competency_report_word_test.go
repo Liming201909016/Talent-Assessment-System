@@ -38,6 +38,7 @@ func TestBugFB116_Phase1WordTemplateMapsFrozenReportData(t *testing.T) {
 	for token, expected := range map[string]string{
 		"{{participant.name}}":                     "测试人员",
 		"{{participant.telephone}}":                "13800000000",
+		"{{__validity.status}}":                    "good",
 		"{{overall.level}}":                        "合格胜任",
 		"{{overall.diagnosis}}":                    "总体诊断",
 		"{{validity.notice}}":                      "效度良好",
@@ -57,6 +58,52 @@ func TestBugFB116_Phase1WordTemplateMapsFrozenReportData(t *testing.T) {
 	}
 	if got := charts["chart.dimension.competency-a1-01"]; len(got) != 2 || got[0] != 3.75 || got[1] != 1.25 {
 		t.Fatalf("first doughnut values=%v", got)
+	}
+}
+
+// TestBugFB153_GoodValidityHidesWholeNoticeParagraph
+// 对应：docs/regression-tests.md #FB-153
+// 复现：效度良好时，Word报告仍显示“提示：”和整段良好说明。
+// 期望：效度良好时删除整个提示段；效度存疑时保留前缀和正式存疑文案。
+func TestBugFB153_GoodValidityHidesWholeNoticeParagraph(t *testing.T) {
+	makeTemplate := func() []byte {
+		buffer := new(bytes.Buffer)
+		writer := zip.NewWriter(buffer)
+		document, err := writer.Create("word/document.xml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(document, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>提示：</w:t></w:r><w:sdt><w:sdtPr><w:tag w:val="validity.notice"/></w:sdtPr><w:sdtContent><w:r><w:t>模板效度提示</w:t></w:r></w:sdtContent></w:sdt></w:p></w:body></w:document>`); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return buffer.Bytes()
+	}
+
+	good, err := renderPhase1WordTemplate(makeTemplate(), map[string]string{
+		"{{__validity.status}}": "good",
+		"{{validity.notice}}":   "本次测评作答效度良好",
+	}, nil)
+	if err != nil {
+		t.Fatalf("render good validity report: %v", err)
+	}
+	goodDocument := string(readWordPart(t, good, "word/document.xml"))
+	if strings.Contains(goodDocument, "提示：") || strings.Contains(goodDocument, "本次测评作答效度良好") || strings.Contains(goodDocument, `w:val="validity.notice"`) {
+		t.Fatalf("good validity notice paragraph remains: %s", goodDocument)
+	}
+
+	questionable, err := renderPhase1WordTemplate(makeTemplate(), map[string]string{
+		"{{__validity.status}}": "questionable",
+		"{{validity.notice}}":   "该受测者存在掩饰真实想法的可能性",
+	}, nil)
+	if err != nil {
+		t.Fatalf("render questionable validity report: %v", err)
+	}
+	questionableDocument := string(readWordPart(t, questionable, "word/document.xml"))
+	if !strings.Contains(questionableDocument, "提示：") || !strings.Contains(questionableDocument, "该受测者存在掩饰真实想法的可能性") {
+		t.Fatalf("questionable validity notice is missing: %s", questionableDocument)
 	}
 }
 

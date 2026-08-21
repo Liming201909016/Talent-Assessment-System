@@ -20,7 +20,7 @@
       <div class="person-grid"><div v-for="field in personFields" :key="field.key"><span>{{ field.label }}：</span><strong>{{ field.value || '—' }}</strong></div><div><span>时间：</span><strong>{{ completedAt }}</strong></div><div><span>时长：</span><strong>{{ data.meta && data.meta.userTime || '—' }} 分钟</strong></div></div>
       <h2 class="phase1-arrow-title">总体评价</h2><p class="overall-lead">您的胜任力等级为 <strong>{{ overallLevelLabel(data.result.overallLevel) }}</strong></p>
       <div class="phase1-overall-orbit"><div class="orbit-center">{{ overallLevelLabel(data.result.overallLevel) }}</div><span v-for="(level, index) in phase1Catalog.overallLevels" :key="level.code" :class="'orbit-level orbit-level-' + index"><i>{{ index + 1 }}</i>{{ level.name }}</span></div>
-      <p class="phase1-diagnosis"><b>【诊断】</b>{{ reportText.overallText }}</p><p class="phase1-validity">提示：{{ reportText.validityText }}</p><footer class="phase1-page-footer">第 2 页</footer>
+      <p class="phase1-diagnosis"><b>【诊断】</b>{{ reportText.overallText }}</p><p v-if="showPhase1ValidityNotice" class="phase1-validity">提示：{{ reportText.validityText }}</p><footer class="phase1-page-footer">第 2 页</footer>
     </section>
 
     <section class="report-page phase1-groups">
@@ -206,6 +206,7 @@ export default {
     reportDate() { return this.formatDate(this.data.meta && this.data.meta.generatedAt || this.data.result.submittedAt) },
     completedAt() { return this.formatDate(this.data.result.submittedAt, true) },
     reportText() { return this.data.reportText || { overallText: '', dimensionTexts: {} } },
+    showPhase1ValidityNotice() { return this.reportKind === 'frontline_phase1' && this.data.validity && this.data.validity.status === 'questionable' },
     overallMarker() {
       const score = Number(this.data.result.evaluationAverage)
       return Math.max(0, Math.min(100, ((score - 1) / 4) * 100))
