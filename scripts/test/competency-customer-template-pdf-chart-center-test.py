@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# FB-140: docs/regression-tests.md
+# FB-140 / FB-154: docs/regression-tests.md
 # Reproduction: Word centres chart values, but LibreOffice 24.2 shifts them in PDF.
-# Expected: every rendered score centre is within 2 pixels of its doughnut-hole centre at 180 DPI.
+# Expected: every non-bold rendered score centre is within 2 pixels of its doughnut-hole centre at 180 DPI.
 import argparse
 import math
 import shutil
@@ -90,7 +90,7 @@ def dark_text_centre(width, pixels, box):
             red, green, blue = pixels[offset:offset + 3]
             if max(red, green, blue) <= 145:
                 points.append((x, y))
-    assert len(points) >= 40, f"score text not found inside doughnut {box}"
+    assert len(points) >= 20, f"non-bold score text not found inside doughnut {box}"
     text_min_x = min(point[0] for point in points)
     text_max_x = max(point[0] for point in points)
     text_min_y = min(point[1] for point in points)

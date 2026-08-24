@@ -166,14 +166,76 @@ func TestBugFB140_LibreOfficeChartLabelsUseRenderedPixelCalibration(t *testing.T
 		t.Fatalf("calibrate LibreOffice labels: %v", err)
 	}
 	chart3 := string(readWordPart(t, calibrated, "word/charts/chart3.xml"))
-	if !strings.Contains(chart3, `<c:x val="-0.122816985645933"/>`) ||
-		!strings.Contains(chart3, `<c:y val="-0.0980113636363636"/>`) {
+	if !strings.Contains(chart3, `<c:x val="-0.1243899521578947"/>`) ||
+		!strings.Contains(chart3, `<c:y val="-0.099923514"/>`) {
 		t.Fatalf("chart3 calibration mismatch: %s", chart3)
 	}
 	chart11 := string(readWordPart(t, calibrated, "word/charts/chart11.xml"))
-	if !strings.Contains(chart11, `<c:x val="-0.0934210526315789"/>`) ||
-		!strings.Contains(chart11, `<c:y val="-0.0162878787878788"/>`) {
+	if !strings.Contains(chart11, `<c:x val="-0.0949392712631579"/>`) ||
+		!strings.Contains(chart11, `<c:y val="-0.0197675911818182"/>`) {
 		t.Fatalf("chart11 calibration mismatch: %s", chart11)
+	}
+}
+
+// TestBugFB154_Phase1DoughnutLabelsAreCentredAndNotBold
+// 对应：docs/regression-tests.md #FB-154
+// 复现：一期报告环形图分值偏离圆心，且不同图表继承了不一致的粗体属性。
+// 期望：生成DOCX的十个环形图分值全部显式使用非粗体，位置继续由PDF像素门禁验证居中。
+func TestBugFB154_Phase1DoughnutLabelsAreCentredAndNotBold(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, charts, err := buildPhase1WordTemplateData(phase1WordTestData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := renderPhase1WordTemplate(template, tokens, charts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for chartIndex := 3; chartIndex <= 12; chartIndex++ {
+		chart := readWordPart(t, rendered, fmt.Sprintf("word/charts/chart%d.xml", chartIndex))
+		if phase1VisibleChartLabel.Match(chart) {
+			t.Fatalf("chart%d score-dependent native label remains", chartIndex)
+		}
+		if bytes.Contains(chart, []byte(`<c:showVal val="1"/>`)) {
+			t.Fatalf("chart%d native score labels remain enabled", chartIndex)
+		}
+		if phase1ChartLabelsBlock.Match(chart) {
+			t.Fatalf("chart%d native data-label block remains", chartIndex)
+		}
+		chartTitle := phase1ChartExistingTitle.Find(chart)
+		if chartTitle == nil || !bytes.Contains(chartTitle, []byte(`b="0"`)) || !bytes.Contains(chartTitle, []byte(`anchor="ctr"`)) || !bytes.Contains(chartTitle, []byte(`algn="ctr"`)) {
+			t.Fatalf("chart%d centred non-bold score title missing: %s", chartIndex, chartTitle)
+		}
+	}
+}
+
+// TestBugFB155_Phase1RadarShowsAllFiveGridLevels
+// 对应：docs/regression-tests.md #FB-155
+// 复现：一期报告雷达图在LibreOffice PDF中只有最外层虚线框，没有1-5分的五层同心网格。
+// 期望：运行时雷达图的每个值轴都显式冻结0-5范围、1分主单位和主网格线。
+func TestBugFB155_Phase1RadarShowsAllFiveGridLevels(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, charts, err := buildPhase1WordTemplateData(phase1WordTestData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := renderPhase1WordTemplate(template, tokens, charts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	radar := readWordPart(t, rendered, "word/charts/chart2.xml")
+	axisCount := bytes.Count(radar, []byte("<c:valAx>"))
+	if axisCount == 0 || bytes.Count(radar, []byte(`<c:min val="0"/>`)) != axisCount ||
+		bytes.Count(radar, []byte(`<c:max val="5"/>`)) != axisCount ||
+		bytes.Count(radar, []byte(`<c:majorUnit val="1"/>`)) != axisCount ||
+		bytes.Count(radar, []byte("<c:majorGridlines>")) != axisCount {
+		t.Fatalf("radar value-axis grid contract incomplete: axes=%d chart=%s", axisCount, radar)
 	}
 }
 

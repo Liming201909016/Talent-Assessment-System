@@ -42,19 +42,49 @@ var (
 	phase1VisibleChartLabel      = regexp.MustCompile(`(?s)<c:dLbl><c:idx val="0"/>.*?</c:dLbl>`)
 	phase1ChartLabelX            = regexp.MustCompile(`<c:x val="([^"]+)"/>`)
 	phase1ChartLabelY            = regexp.MustCompile(`<c:y val="([^"]+)"/>`)
+	phase1ChartLabelTextProperty = regexp.MustCompile(`<a:(?:rPr|defRPr|endParaRPr)\b[^>]*>`)
+	phase1ChartLabelBoldProperty = regexp.MustCompile(`\sb="[^"]*"`)
+	phase1ChartLabelBodyProperty = regexp.MustCompile(`<a:bodyPr\b[^>]*>`)
+	phase1ChartLabelAnchor       = regexp.MustCompile(`\sanchor="[^"]*"`)
+	phase1ChartLabelParagraph    = regexp.MustCompile(`<a:pPr\b[^>]*>`)
+	phase1ChartLabelAlignment    = regexp.MustCompile(`\salgn="[^"]*"`)
+	phase1ChartLabelShowLegend   = regexp.MustCompile(`<c:showLegendKey\b`)
+	phase1ChartAutoTitleDeleted  = regexp.MustCompile(`<c:autoTitleDeleted val="1"/>`)
+	phase1ChartExistingTitle     = regexp.MustCompile(`(?s)<c:title>.*?</c:title>`)
+	phase1ChartShowValue         = regexp.MustCompile(`<c:showVal val="[^"]*"/>`)
+	phase1ChartLabelsBlock       = regexp.MustCompile(`(?s)<c:dLbls>.*?</c:dLbls>`)
+	phase1RadarValueAxis         = regexp.MustCompile(`(?s)<c:valAx>.*?</c:valAx>`)
+	phase1RadarScaling           = regexp.MustCompile(`(?s)<c:scaling>.*?</c:scaling>`)
+	phase1RadarMinimum           = regexp.MustCompile(`<c:min val="[^"]*"/>`)
+	phase1RadarMaximum           = regexp.MustCompile(`<c:max val="[^"]*"/>`)
+	phase1RadarMajorUnit         = regexp.MustCompile(`<c:majorUnit val="[^"]*"/>`)
+	phase1RadarMajorGridlines    = regexp.MustCompile(`(?s)<c:majorGridlines(?:>.*?</c:majorGridlines>|\s*/>)`)
 )
 
+var phase1DoughnutTitlePositions = map[int][2]string{
+	3:  {"0.4086842105263158", "0.3936363636363636"},
+	4:  {"0.4073684210526316", "0.3890909090909091"},
+	5:  {"0.4073684210526316", "0.3890909090909091"},
+	6:  {"0.41", "0.3913636363636364"},
+	7:  {"0.4073684210526316", "0.3858080808080808"},
+	8:  {"0.4165789473684211", "0.4277272727272727"},
+	9:  {"0.4218421052631579", "0.4027272727272727"},
+	10: {"0.4218421052631579", "0.4027272727272727"},
+	11: {"0.4257894736842106", "0.405"},
+	12: {"0.4152631578947368", "0.405"},
+}
+
 var phase1LibreOfficeChartLabelOffsets = map[int][2]decimal.Decimal{
-	3:  {decimal.RequireFromString("8.6704545454545455"), decimal.RequireFromString("-22.4375")},
-	4:  {decimal.RequireFromString("32"), decimal.RequireFromString("-46.5")},
-	5:  {decimal.RequireFromString("-2.5"), decimal.RequireFromString("-17.5")},
+	3:  {decimal.RequireFromString("9.26818182"), decimal.RequireFromString("-22.01682692")},
+	4:  {decimal.RequireFromString("32.6"), decimal.RequireFromString("-46.53378378")},
+	5:  {decimal.RequireFromString("-2.5"), decimal.RequireFromString("-17.32692308")},
 	6:  {decimal.RequireFromString("15"), decimal.RequireFromString("-18.5")},
-	7:  {decimal.RequireFromString("2.5"), decimal.RequireFromString("-25.5")},
-	8:  {decimal.RequireFromString("6"), decimal.RequireFromString("-21")},
-	9:  {decimal.RequireFromString("35.5"), decimal.RequireFromString("-68")},
-	10: {decimal.RequireFromString("28"), decimal.RequireFromString("-51.5")},
-	11: {decimal.RequireFromString("-2.5"), decimal.RequireFromString("-40.4166666666666667")},
-	12: {decimal.RequireFromString("7"), decimal.RequireFromString("-20")},
+	7:  {decimal.RequireFromString("3"), decimal.RequireFromString("-25.88679245")},
+	8:  {decimal.RequireFromString("6"), decimal.RequireFromString("-21.84166667")},
+	9:  {decimal.RequireFromString("35.19047619"), decimal.RequireFromString("-67.97095436")},
+	10: {decimal.RequireFromString("27.34"), decimal.RequireFromString("-51")},
+	11: {decimal.RequireFromString("-1.92307692"), decimal.RequireFromString("-39.65112994")},
+	12: {decimal.RequireFromString("5.32894737"), decimal.RequireFromString("-17.51630435")},
 }
 
 type phase1DocumentConverter interface {
@@ -186,6 +216,9 @@ func calibratePhase1LibreOfficeChartLabels(docx []byte) ([]byte, error) {
 }
 
 func calibratePhase1LibreOfficeChartLabel(chart []byte, offsets [2]decimal.Decimal) ([]byte, error) {
+	if phase1ChartExistingTitle.Match(chart) {
+		return chart, nil
+	}
 	label := phase1VisibleChartLabel.Find(chart)
 	if label == nil || len(phase1ChartLabelX.FindAllSubmatch(label, -1)) != 1 || len(phase1ChartLabelY.FindAllSubmatch(label, -1)) != 1 {
 		return nil, errors.New("环形图可见标签坐标无效")
@@ -302,13 +335,28 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 		return nil, err
 	}
 	chartValuesByPart := make(map[string][]float64, len(charts))
+	doughnutChartParts := make(map[string]int, 10)
+	radarChartPart := ""
 	if len(businessChartParts) == 0 {
-		for _, chart := range phase1TemplateChartRegistry() {
+		for index, chart := range phase1TemplateChartRegistry() {
 			chartValuesByPart[chart.LegacyPart] = charts[chart.Key]
+			if chart.Key == "chart.dimension.radar" {
+				radarChartPart = chart.LegacyPart
+			}
+			if index >= 2 {
+				doughnutChartParts[chart.LegacyPart] = index + 1
+			}
 		}
 	} else {
-		for key, part := range businessChartParts {
-			chartValuesByPart[part] = charts[key]
+		for index, chart := range phase1TemplateChartRegistry() {
+			part := businessChartParts[chart.Key]
+			chartValuesByPart[part] = charts[chart.Key]
+			if chart.Key == "chart.dimension.radar" {
+				radarChartPart = part
+			}
+			if index >= 2 {
+				doughnutChartParts[part] = index + 1
+			}
 		}
 	}
 	output := new(bytes.Buffer)
@@ -367,6 +415,18 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 			if err != nil {
 				return nil, fmt.Errorf("更新一期Word报告图表失败：%s", file.Name)
 			}
+			if file.Name == radarChartPart {
+				body, err = normalizePhase1RadarGrid(body)
+				if err != nil {
+					return nil, fmt.Errorf("更新一期Word报告雷达图网格失败：%s", file.Name)
+				}
+			}
+			if chartIndex, ok := doughnutChartParts[file.Name]; ok {
+				body, err = normalizePhase1DoughnutChartLabel(body, chartIndex, values[0])
+				if err != nil {
+					return nil, fmt.Errorf("更新一期Word报告环形图格式失败：%s", file.Name)
+				}
+			}
 		}
 		method := uint16(zip.Deflate)
 		if strings.HasSuffix(file.Name, "/") || len(body) == 0 {
@@ -384,6 +444,90 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 		return nil, errors.New("完成一期Word报告文件失败")
 	}
 	return output.Bytes(), nil
+}
+
+func normalizePhase1RadarGrid(chart []byte) ([]byte, error) {
+	axes := phase1RadarValueAxis.FindAll(chart, -1)
+	if len(axes) == 0 {
+		return nil, errors.New("雷达图值轴不存在")
+	}
+	normalized := phase1RadarValueAxis.ReplaceAllFunc(chart, func(axis []byte) []byte {
+		scaling := phase1RadarScaling.Find(axis)
+		if scaling == nil || !phase1RadarMajorGridlines.Match(axis) {
+			return axis
+		}
+		scaling = phase1RadarMinimum.ReplaceAll(scaling, nil)
+		scaling = phase1RadarMaximum.ReplaceAll(scaling, nil)
+		scaling = bytes.Replace(scaling, []byte(`</c:scaling>`), []byte(`<c:max val="5"/><c:min val="0"/></c:scaling>`), 1)
+		axis = phase1RadarScaling.ReplaceAll(axis, scaling)
+		if phase1RadarMajorUnit.Match(axis) {
+			axis = phase1RadarMajorUnit.ReplaceAll(axis, []byte(`<c:majorUnit val="1"/>`))
+		} else {
+			axis = bytes.Replace(axis, []byte(`</c:valAx>`), []byte(`<c:majorUnit val="1"/></c:valAx>`), 1)
+		}
+		return axis
+	})
+	if bytes.Count(normalized, []byte(`<c:min val="0"/>`)) < len(axes) ||
+		bytes.Count(normalized, []byte(`<c:max val="5"/>`)) < len(axes) ||
+		bytes.Count(normalized, []byte(`<c:majorUnit val="1"/>`)) < len(axes) {
+		return nil, errors.New("雷达图值轴网格结构无效")
+	}
+	return normalized, nil
+}
+
+func normalizePhase1DoughnutChartLabel(chart []byte, chartIndex int, score float64) ([]byte, error) {
+	label := phase1VisibleChartLabel.Find(chart)
+	if label == nil {
+		return nil, errors.New("环形图可见标签不存在")
+	}
+	position, ok := phase1DoughnutTitlePositions[chartIndex]
+	if !ok || phase1ChartExistingTitle.Match(chart) || len(phase1ChartAutoTitleDeleted.FindAll(chart, -1)) != 1 {
+		return nil, errors.New("环形图居中标题结构无效")
+	}
+	properties := phase1ChartLabelTextProperty.FindAllIndex(label, -1)
+	bodyProperties := phase1ChartLabelBodyProperty.FindAllIndex(label, -1)
+	paragraphProperties := phase1ChartLabelParagraph.FindAllIndex(label, -1)
+	if len(properties) == 0 && len(bodyProperties) == 0 && len(paragraphProperties) == 0 {
+		if !phase1ChartLabelShowLegend.Match(label) {
+			return nil, errors.New("环形图可见标签字体格式不存在")
+		}
+		textProperties := []byte(`<c:txPr><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:pPr algn="ctr"><a:defRPr b="0"/></a:pPr><a:endParaRPr b="0"/></a:p></c:txPr>`)
+		label = phase1ChartLabelShowLegend.ReplaceAll(label, append(textProperties, []byte(`<c:showLegendKey`)...))
+	} else {
+		if len(properties) == 0 || len(bodyProperties) == 0 || len(paragraphProperties) == 0 {
+			return nil, errors.New("环形图可见标签字体格式不存在")
+		}
+		label = phase1ChartLabelTextProperty.ReplaceAllFunc(label, func(property []byte) []byte {
+			return setPhase1ChartLabelAttribute(property, phase1ChartLabelBoldProperty, `b="0"`)
+		})
+		label = phase1ChartLabelBodyProperty.ReplaceAllFunc(label, func(property []byte) []byte {
+			return setPhase1ChartLabelAttribute(property, phase1ChartLabelAnchor, `anchor="ctr"`)
+		})
+		label = phase1ChartLabelParagraph.ReplaceAllFunc(label, func(property []byte) []byte {
+			return setPhase1ChartLabelAttribute(property, phase1ChartLabelAlignment, `algn="ctr"`)
+		})
+	}
+	chart = bytes.Replace(chart, phase1VisibleChartLabel.Find(chart), nil, 1)
+	chart = phase1ChartShowValue.ReplaceAll(chart, []byte(`<c:showVal val="0"/>`))
+	chart = phase1ChartLabelsBlock.ReplaceAll(chart, nil)
+	title := fmt.Sprintf(`<c:title><c:tx><c:rich><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:pPr algn="ctr"><a:defRPr sz="1100" b="0"/></a:pPr><a:r><a:rPr sz="1100" b="0"/><a:t>%.2f</a:t></a:r><a:endParaRPr sz="1100" b="0"/></a:p></c:rich></c:tx><c:layout><c:manualLayout><c:layoutTarget val="outer"/><c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="factor"/><c:hMode val="factor"/><c:x val="%s"/><c:y val="%s"/><c:w val="0.18"/><c:h val="0.14"/></c:manualLayout></c:layout><c:overlay val="1"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr></c:title>`, score, position[0], position[1])
+	return phase1ChartAutoTitleDeleted.ReplaceAll(chart, []byte(`<c:autoTitleDeleted val="0"/>`+title)), nil
+}
+
+func setPhase1ChartLabelAttribute(property []byte, attribute *regexp.Regexp, replacement string) []byte {
+	if attribute.Match(property) {
+		return attribute.ReplaceAll(property, []byte(" "+replacement))
+	}
+	position := len(property) - 1
+	if position > 0 && property[position-1] == '/' {
+		position--
+	}
+	result := make([]byte, 0, len(property)+len(replacement)+1)
+	result = append(result, property[:position]...)
+	result = append(result, ' ')
+	result = append(result, replacement...)
+	result = append(result, property[position:]...)
+	return result
 }
 
 func filterPhase1WordValidityNotice(document []byte, status string) ([]byte, error) {

@@ -1,5 +1,25 @@
 # Project Memory
 
+## 2026-08-24 UF-029 / FB-155 雷达图五层网格staging修复
+
+- 用户截图指出一期报告“各维度得分情况”雷达图仅显示最外层虚线多边形。线上模板chart2实证包含两套`radarChart + catAx + valAx`：两个值轴虽都有`majorGridlines`和max=5，但`majorUnit`均缺失，且其中一个轴没有显式min=0；真实good报告PDF按原样复现只有一个外框。
+- FB-155先取得结构RED：生成后的两个值轴未同时满足min=0、max=5、majorUnit=1和majorGridlines。修复在运行时按业务图表映射定位雷达图（兼容V1物理chart2和V2业务键），逐个值轴冻结0-5范围及1分主单位，不修改客户Word模板、十维数据、折线、标签或颜色。
+- 本轮预检确认模板又由此前`8500de32...`更新为当前SHA=`18a4e608629700eeb9ecdda24e485df07fcb2021cf1449c029bcdb0420f780c7`、577678 bytes；候选和最终部署均基于这一精确线上模板。部署前完整备份=`/opt/talent-assessment/backups/fb155_radar_grid_20260824_123500`：数据库gzip 12634797 bytes/SHA=`bbff79ea236c40ebd8cc1f1e4ebee833cdcae9dbfd5bcdc9c4629a04c9143a83`，并保存旧后端、当前模板和两份旧PDF，权限0700/0600且gzip校验通过。
+- 最终后端SHA=`fd371a2a7c655c7717ff15640c1b798eca241b2a6ab4be2b23b7b0c1a34463e2`，模板保持`18a4e608...`。real good paper=`4bb5506b-3ba5-4c43-b7e7-2a117287bc3b`重生成A4 11页、507919 bytes、SHA=`02df96a759377df71ba25e8f5190bc2ddd1b64b7c20e93250bf92e2bdb8c2e3e`；real questionable paper=`658dc083-6216-4373-93b3-a7b1d188ec44`重生成A4 11页、507290 bytes、SHA=`6ac8f284b1d2b17fd68d2329a0baacbf09752ffcac96556b23df4f749591c62d`。数据库与服务器文件大小/SHA一致。
+- 两份真实雷达页均由staging LibreOffice 24.2.7.2渲染出五层完整同心十边形，维度名、分值和蓝色折线完整；FB-154环形图180-DPI中心门禁两份均保持10/10。22个物理页接触表逐页复核无整页空白、重叠、裁切或模块错序。Word专项38/38、Go全量/build、诊断通过；三服务active、内外health正常、应用关键错误和最终窗口Nginx 5xx均0。production未修改。
+
+## 2026-08-24 UF-028 / FB-154 环形图非粗体与目标渲染器居中验证
+
+- 用户截图要求一期报告二级维度环形图内数字居中且不加粗。现网模板SHA=`41a92df65a78c4c5b76b96861d90a913b4e2900b7a67e336038f460397699ecc`中chart5/6/7/10仍含可见标签`b="1"`，十图字体属性不一致；旧坐标校准针对粗体字形，不能直接复用到统一非粗体后的字形度量。
+- FB-154先取得双RED：生成DOCX格式回归命中缺显式非粗体/混合粗体；当前本地LibreOffice PDF的180-DPI门禁无法在一个圆环孔内找到分值。修复在运行时对chart3–12统一写入`b="0"`、垂直`anchor="ctr"`和水平`algn="ctr"`，兼容V1富文本和暂停使用的V2无文本属性图表；Word原模板不改。
+- SSH恢复后读取目标环境为LibreOffice 24.2.7.2，并下载精确线上模板。候选DOCX仅上传到`/tmp`，未替换应用；经过四轮真实目标渲染反馈校准，最终候选由staging LibreOffice生成A4 10页，180-DPI十图中心偏差强制门禁10/10通过（横纵绝对偏差均不超过2px），且生成DOCX十图均无`b="1"`。
+- 本地一期Word专项37/37、Go全量、Go build和Python像素脚本语法均通过，相关文件诊断0。当前未部署后端、未重生成数据库中的正式报告、未提交；production未修改。
+- [staging部署与逐页终验 - 2026-08-24] 用户选择保留staging当前模板。预检时模板已由先前`41a92df...`更新为SHA=`8500de32b5ae07d426e8c6a3ccfd53da41cf9fd4c3561b81513dacd21113f78f`、576646 bytes，因此重新下载精确线上模板并从零执行LibreOffice 24.2.7.2门禁；没有回退到Git内旧模板。
+- 部署前完整备份=`/opt/talent-assessment/backups/fb154_chart_center_20260824_114502`，数据库gzip 12634547 bytes/SHA=`3542bb137aa3d4b72092eeda28cbb2a47fc7fd0f41df2348f4cd3578612379d2`，同时保存旧后端SHA=`6a97abb2...`、当前模板及good/questionable旧PDF，目录/文件权限0700/0600且gzip校验通过。
+- 真实长文案与两组不同分值暴露短夹具盲区：原生`dLbl`即使写delete/showVal仍被LibreOffice按分值重排，chart7还显示第二数据点标签。最终方案删除chart3–12整个原生`dLbls`，以固定位置的非粗体两位小数标题覆盖圆心；不改客户Word模板、图表数据、颜色或环宽。最终后端SHA=`e59422408c40a20867ee5ca9e18f5794f3773fa75e56af0fe68e8531ebbe23bd`，模板保持`8500de32...`。
+- real good paper=`4bb5506b-3ba5-4c43-b7e7-2a117287bc3b`重生成A4 11页、507678 bytes、SHA=`13860c30876e54fd4aa8a9ec9661420e4843b8b1b6c22597ef1a616b10dddcac`；real questionable paper=`658dc083-6216-4373-93b3-a7b1d188ec44`重生成A4 11页、507049 bytes、SHA=`6911df8efa757fc82d69699a428d2d6f36f63da9229bb57f298186bbf5a4de11`。数据库、服务器文件和API下载大小/SHA一致；good提示整段缺失，questionable完整提示保留。
+- 两份真实PDF的180-DPI十图中心偏差门禁均10/10通过，横纵绝对偏差均≤2px。22个物理页逐页均有文本且为A4；两份11页接触表逐页人工复核无额外数字标签、整页空白、重叠、裁切、模块错序或字体加粗。Word专项37/37、Go全量/build和诊断通过。三服务active、内外health正常、应用关键错误0；11:48服务重启瞬间出现1次本机health 502，最终12点发布/重生成窗口Nginx 5xx=0。production未修改。
+
 ## 2026-08-21 UF-027 / FB-153 效度提示条件展示staging终验
 
 - 用户确认一期报告只在效度存疑时显示“提示：”整段文字；效度良好时连同“提示：”前缀整段隐藏。
