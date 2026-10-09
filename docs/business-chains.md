@@ -1,8 +1,12 @@
 # 业务链定义
 
-## 2026-10-09 Chain-MT005-PRODUCTION-VISIBILITY-ACTIVATION（local GREEN / production待演练）
+## 2026-10-09 Chain-PRODUCTION-E2E（005与00401范围限定GREEN）
 
-显式`production/production`环境声明→注册005 TEST runtime→迁移包导入保留`[TEST-保留]`标签的两个测评并适配为`state=1`可见禁用→管理员经专用JWT保护的管理特质状态操作选择单个已冻结005→仅允许`1↔0`或同值幂等→事务锁定exam/profile并核唯一005 repo和005 product version→条件UPDATE state→客户决定是否开放参与。匿名/普通权限、002/非005、未冻结、2/3状态、非法/重复/额外字段均拒绝；旧通用state API继续被legacy guard保护，不新增第三个环境或功能开关。代码及sqlmock GREEN，production MySQL5.7恢复副本和真实UI仍待验。
+00501禁用→管理员受控启用→唯一candidate→开卷140题→140答→manual submit→13维/4模块→reissue PDF view/download→恢复状态→删除本轮闭包和PDF→基线逐项相等。00401固定10维90题源内容获明确production授权→完整备份→兼容归档旧48维master且冻结历史字节不变→官方API导入90题→临时exam发布2组10维90题→同卷恢复→90答→提交幂等→v1/v2结果→筛选/三Sheet导出→正式报告门禁关闭且零写→整链删除→全表基线相等。当前正式00401报告和005 formal均不在GREEN范围。
+
+## 2026-10-09 Chain-MT005-PRODUCTION-VISIBILITY-ACTIVATION（production GREEN）
+
+显式`production/production`环境声明→注册005 TEST runtime→迁移包导入保留`[TEST-保留]`标签的两个测评→管理员经专用JWT状态操作仅允许`1↔0`→客户决定是否开放。production已验证真实管理员状态往返及00501完整140答/结果/PDF/cleanup；客户当前把两个005设为state0进行中。
 
 ## 2026-10-09 Chain-MT005-QUESTION-BANK-CONTENT（staging GREEN）
 

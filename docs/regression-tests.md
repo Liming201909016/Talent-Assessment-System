@@ -1,5 +1,9 @@
 # Regression Tests
 
+## PRODUCTION-CORE-E2E-20261009 — 🟢 005 / 00401 GREEN（正式报告范围除外）
+
+00501在production以唯一marker完成candidate→paper→140次raw3→manual submit→13维/4模块→reissue生成/view/download同SHA；最终candidate/paper/run/reissue/PDF精确清理，前后15项基线一致。00401首次真实Save暴露production缺固定A/B源内容，用户明确批准staging已验收工作簿SHA=`828c4267…`。安装前全库备份；新增10维90题，并为production旧48维唯一name/order约束执行可回滚归档（order101–148、8重名加“（历史）”），旧冻结测评/结果逐表SHA不变。最终完整00401链通过2组/10维/90题、同卷恢复、90答、提交幂等、v1/v2结果、效度筛选、三Sheet导出；formal内容未发布，report-data/generate/download受控fail-closed且零写。临时exam/candidate/paper/result/report/log/Redis全部清理，27项全表基线前后一致。
+
 ## FB-219 — MySQL 5.7生产Schema门禁误拒绝已验证窄边 — 2026-10-09 🟢 PRODUCTION GREEN
 
 production真实管理员登录成功，00501/00502列表均显示为可见禁用；点击00501“启用 TEST 测评”实际POST返回409，state保持1。只读证据显示exam/profile/bundle/repo及版本全部符合合同，但后台每30秒记录`management-traits expiry scan rejected`。根因定位到`managementTraitsSchemaLegacyNarrowEdge`把两个已验证`varchar(64)→varchar(32)`旧答题边的排序规则硬编码为MySQL 8专有`utf8mb4_0900_ai_ci`；production MySQL 5.7真实父子列统一为`utf8mb4_general_ci`，因此Schema门禁缓存失败。新增`TestBugFB219_MySQL57GeneralCollationKeepsVerifiedNarrowLegacyEdges`先真实RED：`got management traits data rejected, want <nil>`。GREEN仅允许父子同为`utf8mb4`、排序规则相同且匹配安全格式时接受精确64→32旧边；类型、nullable、字符集、排序规则漂移仍拒绝。专项614、Schema相关2890及规范`go test ./... -count=1`全通过，Windows server build通过。production尚运行旧SHA，补丁部署前005运行时仍不可用。

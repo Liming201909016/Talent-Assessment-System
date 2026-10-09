@@ -15,6 +15,10 @@
 
 [补充 - 2026-10-09] 真实管理员浏览器验收发现FB-219：MySQL5.7统一`utf8mb4_general_ci`被旧代码硬编码的MySQL8 narrow-edge签名拒绝，00501启用409。新增回归先RED后GREEN，只放宽到父子相同的合法utf8mb4排序规则；全Go和build通过，提交`f6d0719`。用户明确不走CI/CD，手工补丁先备份旧binary再发布SHA=`f850575b…`，PID2355899/NRestarts0/三HTTP200。00501 state 1→0→1、模板元数据、结果列表和reissue PDF真实浏览器均通过，最终双005 state1且新PID无management schema reject。只读BCrypt比较另确认admin仍匹配仓库已知历史默认候选；未打印hash或改密码，已列为需授权轮换事项。
 
+[补充 - 2026-10-09 production完整E2E] 00501完整140答链最终单次PASS：13维/4模块、524150-byte PDF view/download同SHA、candidate/paper/run/reissue/file逐项清理，前后基线完全一致。首次清理器因合法underscore ID和production Python3.8不支持dict union两处工具假设失败，均在唯一marker下精确恢复后重跑GREEN。客户随后从外部管理员IP将00501/00502均设为state0进行中，未由测试覆盖。
+
+[补充 - 2026-10-09 00401 production内容与E2E] 首次E2E在exam Save被“所选测评维度不存在或已停用”拒绝且cleanup/baseline均0漂移，证明此前仅发布Schema而无固定A/B内容。用户明确批准仅导入10维+90题、正式报告继续关闭。工作簿SHA=`828c4267…`；完整备份=`/opt/talent-assessment/backups/phase1_content_20261009_8b17bb3f57794f2c`。为兼容production旧48维唯一name/order约束，旧主数据order精确移至101–148，8重名追加“（历史）”；9个旧测评的冻结关联/结果逐表SHA不变，migration009未执行/无marker。官方API导入90题并通过80/10、62/18/10方向、逐维9题、导出回读和重复导入失败关闭。完整E2E最终PASS：90答、同卷恢复、提交幂等、10维/2组/效度/总体、v1=`10|2|1|1`、v2=`1|1|3|10|1`、筛选、三Sheet`2/91/91`；formal报告无审批包，三接口受控关闭且零写；删除后所有表基线逐项一致。
+
 # 2026-10-09 production 005策略与迁移包（静态GREEN，MySQL5.7动态演练待批准）
 
 - 用户明确：005发布production、保留TEST标注、不新增开关、客户决定是否启用；同时要求生成并评估production迁移包、清理Git范围、完成FB-218。

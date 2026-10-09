@@ -1,5 +1,19 @@
 # Business Branches
 
+## PRODUCTION-CORE-E2E — 2026-10-09 GREEN（范围限定）
+
+| 分支 | 状态 |
+|---|---|
+| 00501管理员启用→候选登记→140答→提交→结果→reissue PDF | ✅ production真实HTTP/DB；13维/4模块；view/download同SHA |
+| 00501测试数据与PDF清理 | ✅ 唯一marker闭包清零，15项基线前后相等 |
+| 00401固定A/B源内容缺失 | ✅ 首次E2E真实拒绝并零漂移；用户随后明确批准10维90题 |
+| 旧48维唯一name/order冲突 | ✅ 主数据归档order101–148、8重名加“（历史）”；冻结测评/结果逐表SHA不变 |
+| 00401发布/恢复/90答/提交幂等 | ✅ 2组、10维、80+10题、同卷恢复、两次提交安全 |
+| 00401 v1/v2结果与筛选 | ✅ v1 10/2/1/1，v2 1/1/3/10/1，good=1/questionable=0 |
+| 00401三Sheet导出 | ✅ Sheet数3，行数2/91/91 |
+| 00401正式报告未批准 | ✅ report-data/generate/download受控失败且报告/审计零写 |
+| 00401整链cleanup | ✅ 临时资源0，27项全表基线逐项恢复 |
+
 ## STAGING-FULL-VALIDATION — 2026-10-09 GREEN
 
 | 分支 | 状态 |

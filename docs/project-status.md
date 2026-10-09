@@ -9,9 +9,11 @@
 |---|---|
 | local | Go全量、Windows/Linux backend build、前端35文件611项及production build通过；FB-219 Linux候选SHA=`f850575b1dfa6eac3f5b4533148baf715eabc8afa13ccd32c7655d0507a7d600`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`。仍有范围外未提交改动，不以整个工作树代表已部署字节 |
 | staging | `20.200.136.133 / vm-ubuntu-go-dev`；当前后端SHA `f2940fc5ea51edffc4f325df1f461f3ba4e86868df3aa0594af95764e880d61e`，前端index SHA `593d4a20d890d73bf47f9a519a22fffbdb4b539afd5e1cc1dcc2fdebff73cfde` |
-| production | 🟢 2026-10-09受控发布及FB-219手工补丁完成；后端/进程SHA=`f850575b1dfa6eac3f5b4533148baf715eabc8afa13ccd32c7655d0507a7d600`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`，真实管理员005状态往返、模板/结果/reissue读取通过 |
+| production | 🟢 后端/进程SHA=`f850575b1dfa6eac3f5b4533148baf715eabc8afa13ccd32c7655d0507a7d600`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`；005完整140答E2E、00401完整90答E2E及exact cleanup均PASS |
 
 [生产发布 - 2026-10-09] `39.106.61.48 / iZ0yosjdcen2p4Z`已部署封存release；完整备份=`/opt/talent-assessment/backups/production_release_backup_20261009_3e3692ce14634021`。真实管理员验收发现并修复FB-219，补丁提交=`f6d0719`、binary备份=`/opt/talent-assessment/backups/fb219_binary_20261009_7d5fbd1559914437`。最终MySQL 5.7主库有14张`el_mng_*`表、005 repo/exam/profile/snapshot/run/revision/reissue各2、reissue audit12；两个exam均恢复`state=1`。共享DOCX SHA=`05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c`，内容XLSX SHA=`b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c`。真实管理员状态往返、模板、结果和647985-byte reissue PDF读取均通过。
+
+[生产E2E补充 - 2026-10-09] 00501真实创建唯一候选、140答、提交、13维/4模块、reissue PDF view/download同SHA，baseline逐表恢复。用户随后由外部管理员会话将00501/00502均改为`state=0`进行中，属于客户控制状态。00401经用户明确批准导入staging已验收工作簿SHA=`828c4267e6c7ad387a73ddb0e923b461d5a336ef225bd7414216c0def814de9f`：新增A/B 10维+90题；旧48维主数据order归档至101–148，8个重名追加“（历史）”，旧冻结测评/结果字节不变；完整备份=`/opt/talent-assessment/backups/phase1_content_20261009_8b17bb3f57794f2c`。随后真实00401完成2组/10维/90题发布、90答、提交幂等、v1/v2结果、筛选、三Sheet导出；正式报告内容仍未发布并按设计fail-closed；exact cleanup恢复全部业务表基线。
 
 staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/nginx/mysql均active，内外health均200，active paper=0，应用fatal/panic/permission错误0，Nginx 5xx=0。
 
@@ -19,9 +21,9 @@ staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/ngin
 
 | 产品/链路 | 当前状态 | 已验证范围 | 尚未覆盖/限制 |
 |---|---|---|---|
-| 00401一期胜任力 | 🟢 STAGING GREEN（范围限定） | 2组、10维、90题、恢复、90答、提交幂等、结果、筛选、三Sheet导出、批准v2 DTO、A4 10页PDF、审计及exact cleanup | production内容/发布仍需独立批准；本轮未做真实参与者浏览器全链和并发/容量重跑 |
+| 00401一期胜任力 | 🟢 STAGING GREEN / 🟢 PRODUCTION运行时GREEN | production已安装10维90题并真实完成发布、恢复、90答、提交幂等、v1/v2结果、筛选、三Sheet导出及exact cleanup | production正式报告014/015及模板审批包未发布，当前按设计fail-closed；未做浏览器原生下载和并发/容量重跑 |
 | 003 MBTI | 🟢 STAGING GREEN（API+报告） | 48题保存、ESTJ计分回读、完整版/简版PDF、16+16模板、匿名模板门禁、exact cleanup | 本轮未做参与者浏览器逐步交互和16种人格逐类型报告全矩阵 |
-| 00501/00502管理特质 | 🟢 STAGING GREEN / 🟢 PRODUCTION已发布（范围限定） | 名称与V67/V96、各140/700、保留结果50/13维/4模块、共用模板；production真实管理员state往返、模板元数据、结果列表及reissue PDF通过 | formal仍不在本次范围；未新建production参与者或重跑140题交卷 |
+| 00501/00502管理特质 | 🟢 STAGING GREEN / 🟢 PRODUCTION完整TEST链GREEN | production新建唯一候选、140答、提交、13维/4模块、PDF view/download及exact cleanup通过；客户当前将两测评设为进行中 | formal仍不在本次范围 |
 | 00101传统测评 | 🟢 STAGING只读冒烟 | Detail及有效XLSX导出 | 未做本轮临时新卷完整交卷回归 |
 | 00201/00202历史管理特质 | 🟡 兼容保护有效 | Detail可读；冻结历史和002源数据保持 | 通用原始导出被管理特质legacy guard按设计403；是否需要专属导出属于产品决策，不应放宽guard绕过 |
 
@@ -48,9 +50,9 @@ staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/ngin
 
 ### P0 — 外部批准/上线门禁
 
-1. **00401 production正式内容批准**：本次只部署已批准的additive结构，没有导入00401正式内容；仍需客户/负责人确认精确内容SHA、模板SHA和适用环境。
+1. **00401 production正式报告内容**：源题10维90题已获本次明确授权并发布；formal报告014/015、正式内容和模板审批包仍未发布，继续fail-closed。
 2. **管理特质正式报告/formal assembly**：production当前只发布带TEST标注的005与reissue基线；formal registry/approval未包含，不得把TEST报告称正式报告。
-3. **生产管理员凭据轮换**：本轮只读BCrypt比对确认当前admin仍匹配仓库历史脚本中的已知默认候选；未输出hash、未修改密码。该凭据已不适合作为长期生产密码，需用户明确授权后单独轮换并验证登录/回滚。
+3. **生产管理员凭据轮换**：当前admin仍匹配仓库历史默认候选；需用户明确授权后单独轮换并验证登录/回滚。
 
 ### P1 — 可在后续独立测试中关闭
 
