@@ -2,6 +2,8 @@ package router
 
 import (
 	"context"
+	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/config"
@@ -12,7 +14,41 @@ import (
 	"gorm.io/gorm"
 )
 
-func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
+type SetupOptions struct {
+	BackgroundWorkersEnabled bool
+}
+
+func defaultSetupOptions() SetupOptions {
+	return SetupOptions{BackgroundWorkersEnabled: true}
+}
+
+func startBackgroundWorker(enabled bool, start func()) bool {
+	if !enabled {
+		return false
+	}
+	start()
+	return true
+}
+
+func Setup(cfg *config.Config, db *gorm.DB, runtimeServices ...*service.ManagementTraitsRuntimeService) (*gin.Engine, func()) {
+	return SetupWithOptions(cfg, db, defaultSetupOptions(), runtimeServices...)
+}
+
+func SetupWithOptions(cfg *config.Config, db *gorm.DB, options SetupOptions, runtimeServices ...*service.ManagementTraitsRuntimeService) (*gin.Engine, func()) {
+	managementTraitsEnabled := config.ManagementTraitsTestRuntimeEnabled()
+	managementTraitsRuntime := service.NewDisabledManagementTraitsRuntimeService()
+	if managementTraitsEnabled {
+		if len(runtimeServices) > 0 {
+			managementTraitsRuntime = runtimeServices[0]
+			if !managementTraitsRuntime.MatchesDependencies(db, cfg.Jwt.Secret, 1<<20) {
+				managementTraitsRuntime = service.NewManagementTraitsRuntimeService(nil, "", 1<<20)
+			}
+		} else {
+			managementTraitsRuntime = service.NewManagementTraitsRuntimeService(db, cfg.Jwt.Secret, 1<<20)
+		}
+		_ = managementTraitsRuntime.CheckRuntimeSchema(context.Background())
+	}
+
 	r := gin.New()
 	r.MaxMultipartMemory = 32 << 20 // 32MB upload limit
 	r.Use(gin.Recovery(), gin.Logger(), middleware.CORS(), middleware.SecurityHeaders())
@@ -27,17 +63,28 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 	repoH := handler.NewRepoHandler(db)
 	quH := handler.NewQuHandler(db)
 	examH := handler.NewExamHandler(db, cfg)
+	if !managementTraitsEnabled {
+		examH.DisableManagementTraitsTestRuntime()
+	}
 	competencyReportH := handler.NewCompetencyReportHandler(db, examH)
 	competencyDimensionH := handler.NewCompetencyDimensionHandler(db)
 	competencyImportH := handler.NewCompetencyImportHandler(db)
 	competencyRuntimeH := handler.NewCompetencyRuntimeHandler(db, cfg)
+	var managementTraitsRuntimeH *handler.ManagementTraitsRuntimeHandler
+	var managementTraitsFormalRegistryH *handler.ManagementTraitsFormalRegistryHandler
+	if managementTraitsEnabled {
+		managementTraitsRuntimeH = handler.NewManagementTraitsRuntimeHandler(db, cfg, managementTraitsRuntime)
+		managementTraitsFormalRegistryH = handler.NewManagementTraitsFormalRegistryHandler(db)
+	}
 	competencyWorker := service.NewCompetencyExpiryWorker(db, cfg, competencyRuntimeH.RuntimeService())
 	competencyWorkerContext, stopCompetencyWorker := context.WithCancel(context.Background())
-	competencyWorker.Start(competencyWorkerContext)
-	testerH := handler.NewTesterHandler(db, cfg)
+	startBackgroundWorker(options.BackgroundWorkersEnabled, func() {
+		competencyWorker.Start(competencyWorkerContext)
+	})
+	testerH := handler.NewTesterHandler(db, cfg, managementTraitsRuntime)
 	userExamH := handler.NewUserExamHandler(db)
 	paperH := handler.NewPaperHandler(db)
-	candidateH := handler.NewCandidateHandler(db, cfg)
+	candidateH := handler.NewCandidateHandler(db, cfg, managementTraitsRuntime)
 	mbtiH := handler.NewMbtiHandler(db)
 	departH := handler.NewSysDepartHandler(db)
 	sysRoleH := handler.NewSysRoleHandler(db)
@@ -47,8 +94,20 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 
 	r.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 
+	r.Use(handler.ManagementTraitsLegacyScopeGuard(db))
+	if !managementTraitsEnabled {
+		r.Use(func(c *gin.Context) {
+			if strings.HasPrefix(c.Request.URL.Path, "/exam/api/management-traits/") {
+				c.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+			c.Next()
+		})
+	}
+
 	// 应用 JWT 中间件（内部按路径豁免匿名）
 	r.Use(middleware.JWT(cfg, authSvc))
+	r.Use(handler.ManagementTraitsDraftPreparationGuard())
 
 	// ============ 认证 / 核心（RuoYi 原生风格） ============
 	r.GET("/captchaImage", authH.CaptchaImage)
@@ -215,6 +274,10 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 	}
 
 	// 胜任力维度（管理员测评配置）
+	if managementTraitsEnabled {
+		managementTraitsRuntimeH.RegisterRoutes(api.Group("/management-traits"))
+		managementTraitsFormalRegistryH.RegisterRoutes(api.Group("/management-traits/formal"))
+	}
 	competencyDimensionGrp := api.Group("/competency/dimensions")
 	{
 		competencyDimensionGrp.POST("/list", competencyDimensionH.List)
@@ -244,14 +307,19 @@ func Setup(cfg *config.Config, db *gorm.DB) (*gin.Engine, func()) {
 	{
 		competencyResultGrp.POST("/paging", competencyRuntimeH.ResultsPaging)
 		competencyResultGrp.POST("/detail", competencyRuntimeH.ResultDetail)
+		competencyResultGrp.POST("/recompute-v2", competencyRuntimeH.RecomputePhase1V2)
 	}
 	competencyReportGrp := api.Group("/competency/reports")
 	{
 		competencyReportGrp.POST("/generate", competencyReportH.Generate)
 		competencyReportGrp.GET("/download", competencyReportH.Download)
+		competencyReportGrp.POST("/batch-download", competencyReportH.BatchDownload)
 		competencyReportGrp.GET("/template", competencyReportH.Phase1TemplateInfo)
 		competencyReportGrp.GET("/template/download", competencyReportH.DownloadPhase1Template)
 		competencyReportGrp.POST("/template/upload", competencyReportH.UploadPhase1Template)
+		competencyReportGrp.GET("/template-v2", competencyReportH.Phase1V2TemplateInfo)
+		competencyReportGrp.GET("/template-v2/download", competencyReportH.DownloadPhase1V2Template)
+		competencyReportGrp.POST("/template-v2/upload", competencyReportH.UploadPhase1V2Template)
 	}
 	api.GET("/competency/admin/report-data", competencyRuntimeH.AdminReportData)
 	api.GET("/competency/internal/report-data", competencyRuntimeH.InternalReportData)

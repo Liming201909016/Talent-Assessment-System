@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/subtle"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -159,7 +160,7 @@ func (h *CompetencyRuntimeHandler) FillAnswer(c *gin.Context) {
 	if errors.Is(err, service.ErrCompetencyPaperExpired) {
 		summary, submitErr := h.svc.Submit(claims, service.CompetencySubmitTimeout)
 		if submitErr != nil {
-			response.RestErr(c, submitErr.Error())
+			response.RestErr(c, competencyRuntimeErrorMessage(submitErr))
 			return
 		}
 		response.Rest(c, gin.H{"expired": true, "submittedAt": summary.SubmittedAt})
@@ -192,7 +193,7 @@ func (h *CompetencyRuntimeHandler) Submit(c *gin.Context) {
 	}
 	summary, err := h.svc.Submit(claims, service.CompetencySubmitManual)
 	if err != nil {
-		response.RestErr(c, err.Error())
+		response.RestErr(c, competencyRuntimeErrorMessage(err))
 		return
 	}
 	response.Rest(c, summary)
@@ -210,6 +211,14 @@ func requireCompetencyResultAccess(c *gin.Context) bool {
 		return false
 	}
 	return true
+}
+
+func competencyRuntimeErrorMessage(err error) string {
+	if errors.Is(err, service.ErrPhase1V2ResultRunUnavailable) {
+		slog.Error("phase-1 v2 result-run operation failed", "error", err)
+		return service.ErrPhase1V2ResultRunUnavailable.Error()
+	}
+	return err.Error()
 }
 
 func (h *CompetencyRuntimeHandler) ResultsPaging(c *gin.Context) {
@@ -271,6 +280,33 @@ func (h *CompetencyRuntimeHandler) ResultDetail(c *gin.Context) {
 	}
 	response.Rest(c, data)
 }
+
+func (h *CompetencyRuntimeHandler) RecomputePhase1V2(c *gin.Context) {
+	value, ok := c.Get("loginUser")
+	if !ok {
+		response.AjaxUnauthorized(c, "")
+		return
+	}
+	login, valid := value.(*model.LoginUser)
+	if !valid || !canPublishCompetencyExam(login) {
+		response.AjaxForbidden(c, "仅管理员可重算胜任力v2结果")
+		return
+	}
+	var body struct {
+		PaperID string `json:"paperId"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.PaperID == "" {
+		response.RestErr(c, "paperId 为空")
+		return
+	}
+	run, reused, err := h.svc.RecomputePhase1V2ResultRun(body.PaperID, login.UserID)
+	if err != nil {
+		response.RestErr(c, competencyRuntimeErrorMessage(err))
+		return
+	}
+	response.Rest(c, gin.H{"resultRunId": run.ID, "reused": reused})
+}
+
 func (h *CompetencyRuntimeHandler) AdminReportData(c *gin.Context) {
 	if !requireCompetencyResultAccess(c) {
 		return

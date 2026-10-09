@@ -1,10 +1,11 @@
 {
   "name": "test",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Talent Assessment browser, contract, and staging verification scripts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:contracts",
+    "test:contracts": "node competency-phase1-converter-contract-test.js && node competency-phase1-identity-test.js",
+    "test:participant": "node competency-mobile-ui-test.js && node competency-answer-flow-e2e.js && node competency-submit-guard-e2e.js"
   },
   "keywords": [],
   "author": "",

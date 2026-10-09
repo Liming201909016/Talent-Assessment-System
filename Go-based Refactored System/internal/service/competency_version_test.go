@@ -195,3 +195,68 @@ func TestValidatePhase1QuestionInventory(t *testing.T) {
 		})
 	}
 }
+
+// TestBugFB174_V2SemanticDimensionsMapEveryV1AnswerIdentity
+// Corresponds to docs/regression-tests.md FB-174.
+func TestBugFB174_V2SemanticDimensionsMapEveryV1AnswerIdentity(t *testing.T) {
+	want := []struct {
+		legacyID, stableID, key, code, name, module string
+		order                                       int
+	}{
+		{"competency-a1-01", "competency-logical-reasoning", "logical_reasoning", "A1-01", "逻辑思维", "task_management", 1},
+		{"competency-a1-03", "competency-plan-execution", "plan_execution", "A1-02", "计划执行", "task_management", 2},
+		{"competency-a1-02", "competency-digital-application", "digital_application", "A1-03", "数字应用", "task_management", 3},
+		{"competency-b1-04", "competency-achievement-orientation", "achievement_orientation", "A1-04", "成就导向", "task_management", 4},
+		{"competency-a1-04", "competency-continuous-learning", "continuous_learning", "A1-05", "持续学习", "task_management", 5},
+		{"competency-a1-05", "competency-communication", "communication", "B1-01", "沟通表达", "interpersonal_management", 6},
+		{"competency-b1-05", "competency-cooperation", "cooperation", "B1-02", "合作意识", "interpersonal_management", 7},
+		{"competency-b1-02", "competency-truth-pragmatism", "truth_pragmatism", "C1-01", "求真务实", "self_management", 8},
+		{"competency-b1-03", "competency-self-discipline", "self_discipline", "C1-02", "自律性", "self_management", 9},
+		{"competency-b1-01", "competency-dedication", "dedication", "C1-03", "敬业奉献", "self_management", 10},
+	}
+
+	dimensions := Phase1V2Dimensions()
+	if len(dimensions) != len(want) {
+		t.Fatalf("v2 dimensions=%d want=%d", len(dimensions), len(want))
+	}
+	for index, expected := range want {
+		actual := dimensions[index]
+		if actual.ID != expected.stableID || actual.StableKey != expected.key || actual.DisplayCode != expected.code ||
+			actual.Name != expected.name || actual.ModuleCode != expected.module || actual.DisplayOrder != expected.order {
+			t.Errorf("dimension[%d]=%+v want=%+v", index, actual, expected)
+		}
+		mapped, err := MapPhase1V1DimensionToV2(expected.legacyID)
+		if err != nil {
+			t.Fatalf("map %s: %v", expected.legacyID, err)
+		}
+		if mapped != actual {
+			t.Errorf("map %s=%+v want=%+v", expected.legacyID, mapped, actual)
+		}
+	}
+	if _, err := MapPhase1V1DimensionToV2(""); err == nil {
+		t.Error("blank legacy dimension must be rejected")
+	}
+	if _, err := MapPhase1V1DimensionToV2("competency-unknown"); err == nil {
+		t.Error("unknown legacy dimension must be rejected")
+	}
+
+	dimensions[0].Name = "mutated"
+	if Phase1V2Dimensions()[0].Name != "逻辑思维" {
+		t.Error("v2 dimension definitions must be returned as an independent slice")
+	}
+}
+
+func TestBugFB174_V2VersionSetIsDefinedButNotActivated(t *testing.T) {
+	want := CompetencyVersionSet{
+		ProductVersion:        "competency-frontline-phase1-v2",
+		ScoringVersion:        "competency-phase1-scoring-v2",
+		ContentVersion:        "competency-phase1-content-v2",
+		ReportTemplateVersion: "competency-phase1-report-v2",
+	}
+	if got := Phase1V2VersionSet(); got != want {
+		t.Fatalf("v2 versions=%+v want=%+v", got, want)
+	}
+	if err := ValidateExecutableCompetencyVersions(want); err == nil {
+		t.Fatal("v2 must remain inactive until scoring and report paths are implemented")
+	}
+}

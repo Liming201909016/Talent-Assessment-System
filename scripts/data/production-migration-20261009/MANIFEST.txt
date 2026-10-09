@@ -1,0 +1,17 @@
+schema=talent-assessment-production-migration-v1
+created=2026-10-09
+source_policy=preserve-production-data-plus-additive-schema-and-explicit-005-test-baseline
+management_runtime_environment=production/production
+customer_activation=existing-el_exam-state; imported-005-exams-visible-disabled-state-1
+formal_registry_included=false
+competency_009_identity_reset_included=false
+competency_014_content_draft_included=false
+competency_015_staging_approval_included=false
+fonts=reuse-installed-Noto-Sans-CJK-and-WenQuanYi; no-font-binaries
+fb218=sync-and-async-fail-closed; full-go-green; production-not-deployed
+production_write_status=not-started
+rehearsal_status=mysql-5.7.44-restored-copy-green
+rehearsal_receipt=/opt/talent-assessment/backups/production_migration_rehearsal_20261009_a8b4cbb5e6cf45ad
+rehearsal_cleanup=owned-schema-remaining-0; main-runtime-unchanged
+linux_server_sha256=753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc
+frontend_index_sha256=abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4

@@ -1,0 +1,135 @@
+package main
+
+import (
+ "context"
+ "crypto/sha256"
+ "encoding/hex"
+ "encoding/json"
+ "fmt"
+ "io"
+ "log"
+ "net/http"
+ "os"
+ "path/filepath"
+ "regexp"
+ "strings"
+ "time"
+ driver "github.com/go-sql-driver/mysql"
+ "github.com/talent-assessment/refactored/internal/config"
+ "github.com/talent-assessment/refactored/internal/service"
+ "gorm.io/driver/mysql"
+ "gorm.io/gorm"
+ "gorm.io/gorm/logger"
+)
+
+type observer struct { logger.Interface; rows []int64 }
+func (o *observer) Trace(ctx context.Context, begin time.Time, fc func() (string,int64), err error) {
+ sql,rows:=fc(); if strings.Contains(sql,"information_schema.") { o.rows=append(o.rows,rows) }
+}
+func require(ok bool,stage string) { if !ok { fmt.Println("DEPLOY_CHECK_BLOCKED_STAGE="+stage); os.Exit(1) } }
+func main() {
+ require(len(os.Args)==3,"arguments")
+ mode,pid:=os.Args[1],os.Args[2]
+ require(mode=="pre"||mode=="gate"||mode=="post","mode")
+ if pid!="-" {
+  require(regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(pid),"pid")
+  raw,err:=os.ReadFile("/proc/"+pid+"/environ"); require(err==nil,"process-environment")
+  for _,item:=range strings.Split(string(raw),"\x00") { if k,v,ok:=strings.Cut(item,"=");ok { require(os.Setenv(k,v)==nil,"inherit-environment") } }
+ }
+ require(os.Getenv("REPORT_EFFECTIVE_ENV")=="staging","staging")
+ require(os.Chdir("/opt/talent-assessment")==nil,"working-directory")
+ log.SetOutput(io.Discard)
+ cfg:=config.Load()
+ dsn,err:=driver.ParseDSN(cfg.Mysql.DSN)
+ require(err==nil&&dsn.DBName=="element"&&dsn.Net=="tcp"&&(dsn.Addr=="127.0.0.1:3306"||dsn.Addr=="localhost:3306")&&cfg.Jwt.Secret!="","effective-config")
+ dsn.Timeout,dsn.ReadTimeout,dsn.WriteTimeout=10*time.Second,15*time.Second,15*time.Second
+ dsn.MultiStatements,dsn.InterpolateParams=false,false
+ o:=&observer{Interface:logger.Default.LogMode(logger.Silent),rows:make([]int64,0)}
+ db,err:=gorm.Open(mysql.Open(dsn.FormatDSN()),&gorm.Config{Logger:o});require(err==nil,"application-db-account")
+ pool,err:=db.DB();require(err==nil,"pool");defer pool.Close()
+ var count int64
+ require(db.Raw("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND LEFT(table_name,7)='el_mng_'").Scan(&count).Error==nil,"metadata-access")
+ fmt.Printf("EFFECTIVE_APP_ENV=%s REPORT_EFFECTIVE_ENV=staging SERVER_PORT=%d APP_DB_USER=%s MNG_TABLES=%d\n",os.Getenv("APP_ENV"),cfg.Server.Port,dsn.User,count)
+ if mode=="pre" {
+    require(count==0||count==11,"pre-installed-schema")
+  for _,k:=range []string{"MNG_TEST_REPORT_ENV","MNG_TEST_REPORT_DIR","MNG_TEST_CONTENT_PATH","MNG_TEST_TEMPLATE_PATH"} { require(os.Getenv(k)=="","pre-test-disabled") }
+    if count==0 {fmt.Println("PRE_APPLICATION_ACCOUNT_CONFIG_PASS");return}
+ }
+ require(count==11,"eleven-tables")
+ o.rows=make([]int64,0)
+ svc:=service.NewManagementTraitsRuntimeService(db,cfg.Jwt.Secret,1<<20)
+ require(svc.CheckRuntimeSchema(context.Background())==nil,"full-runtime-schema-first")
+ require(svc.CheckRuntimeSchema(context.Background())==nil,"full-runtime-schema-cached")
+ require(fmt.Sprint(o.rows)=="[11 159 67 21]","actual-metadata-rows")
+ fmt.Println("APP_ACCOUNT_FULL_GATE=PASS METADATA_ROWS=11/159/67/21 CACHED_QUERIES=4")
+ protected,err:=service.CheckManagementTraitsLegacyScope(context.Background(),db,service.ManagementTraitsLegacyScopeRequest{AllLegacy:true})
+ require(err==nil&&!protected,"empty-canonical-legacy-guard")
+ fmt.Println("EMPTY_FULL_CANONICAL_LEGACY_SCOPE=PASS")
+ var grants []string
+ require(db.Raw("SHOW GRANTS FOR CURRENT_USER()").Scan(&grants).Error==nil,"application-grants")
+ priv:=make(map[string]bool)
+ for _,grant:=range grants { upper:=strings.ToUpper(grant);if strings.Contains(upper," ON `ELEMENT`.* TO ")||strings.Contains(upper," ON *.* TO ") { for _,p:=range []string{"SELECT","INSERT","UPDATE","DELETE"} {priv[p]=priv[p]||strings.Contains(upper,p)||strings.Contains(upper,"ALL PRIVILEGES")} } }
+ for _,p:=range []string{"SELECT","INSERT","UPDATE","DELETE"} {require(priv[p],"application-privilege-"+p)}
+ fmt.Println("APP_ACCOUNT_SELECT_INSERT_UPDATE_DELETE=PASS NO_GRANTS_CHANGED")
+ for _,code:=range []string{"00201","00202"} {
+  var row struct{Questions,Options,Bad int64}
+  err=db.Raw("SELECT COUNT(DISTINCT q.id) AS questions,COUNT(DISTINCT qa.id) AS options,SUM(OCTET_LENGTH(q.id)>32 OR OCTET_LENGTH(qa.id)>32 OR q.id REGEXP '[^ -~]' OR qa.id REGEXP '[^ -~]') AS bad FROM el_repo r JOIN el_qu_repo qr ON qr.repo_id=r.id JOIN el_qu q ON q.id=qr.qu_id JOIN el_qu_answer qa ON qa.qu_id=q.id WHERE r.code=?",code).Scan(&row).Error
+  require(err==nil&&row.Questions==140&&row.Options==700&&row.Bad==0,"source-ascii-"+code)
+  fmt.Println("APP_SOURCE_ASCII="+code+" QUESTIONS=140 OPTIONS=700 BAD=0 READ_ONLY")
+ }
+ if mode=="pre" {fmt.Println("PRE_APPLICATION_ACCOUNT_CONFIG_PASS INSTALLED_FULL_GATE=PASS");return}
+ if mode=="gate" {fmt.Println("DEPLOY_GATE_PASS");return}
+ require(os.Geteuid()!=0,"post-application-user")
+ require(os.Getenv("MNG_TEST_REPORT_ENV")=="staging","test-only-env")
+ root:=os.Getenv("MNG_TEST_REPORT_DIR")
+ require(root=="/opt/talent-assessment/private/management-traits-test-reports","private-root")
+ info,err:=os.Stat(root);require(err==nil&&info.IsDir()&&info.Mode().Perm()==0700,"private-root-permissions")
+ for _,asset:=range []struct{Key,Name,SHA string}{
+  {"MNG_TEST_TEMPLATE_PATH","management-traits-002-test-only-v2.docx","05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c"},
+  {"MNG_TEST_CONTENT_PATH","management-traits-002-test-content-v1.xlsx","b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c"},
+ } {
+  p:=os.Getenv(asset.Key);require(p==filepath.Join("/opt/talent-assessment/configs/export-templates",asset.Name),"asset-absolute-path")
+  b,err:=os.ReadFile(p);require(err==nil,"app-asset-read");h:=sha256.Sum256(b);require(hex.EncodeToString(h[:])==asset.SHA,"asset-sha")
+  if asset.Key=="MNG_TEST_CONTENT_PATH" {content,err:=service.LoadManagementTraitsTestContent(b);require(err==nil&&content.RuleCount()==205,"exact-content-rules")}
+  fmt.Println("APP_ASSET="+p+" SHA256="+asset.SHA)
+ }
+ f,err:=os.CreateTemp(root,".deployment-write-probe-*");require(err==nil,"private-app-write")
+ name:=f.Name();_,writeErr:=f.Write([]byte("owned-staging-deployment-probe\n"));closeErr:=f.Close();removeErr:=os.Remove(name)
+ require(writeErr==nil&&closeErr==nil&&removeErr==nil,"private-probe-cleanup")
+ entries,err:=os.ReadDir(root);require(err==nil&&len(entries)==0,"private-remaining-zero")
+ fmt.Println("PRIVATE_APP_WRITE_PROBE=PASS FILES_REMAINING=0")
+ client:=&http.Client{Timeout:15*time.Second};base:=fmt.Sprintf("http://127.0.0.1:%d",cfg.Server.Port)
+ for _,probe:=range []struct{Label,Method,Path,Body string;Status int}{
+  {"health","GET","/health","",200},
+  {"admin-results","POST","/exam/api/management-traits/results/list",`{"examId":"deployment-invalid"}`,401},
+  {"admin-freeze","POST","/exam/api/management-traits/profile/freeze",`{"examId":"deployment-invalid"}`,401},
+  {"admin-download","GET","/exam/api/management-traits/reports/download?reportId=deployment-invalid","",401},
+  {"participant-create-auth","POST","/exam/api/management-traits/participant/create-paper",`{"examId":"deployment-invalid"}`,401},
+  {"participant-detail-auth","POST","/exam/api/management-traits/participant/paper-detail",`{"paperId":"deployment-invalid"}`,401},
+  {"participant-fill-auth","POST","/exam/api/management-traits/participant/fill-answer",`{"paperId":"deployment-invalid","paperQuestionId":"deployment-invalid","optionId":"deployment-invalid"}`,401},
+  {"participant-submit-auth","POST","/exam/api/management-traits/participant/submit",`{"paperId":"deployment-invalid","submitType":"manual"}`,401},
+  {"participant-empty-body","POST","/exam/api/management-traits/participant/paper-detail",`{}`,400},
+ } {
+  req,err:=http.NewRequest(probe.Method,base+probe.Path,strings.NewReader(probe.Body));require(err==nil,"http-request");req.Header.Set("Content-Type","application/json")
+  res,err:=client.Do(req);require(err==nil,"http-connect");_,readErr:=io.Copy(io.Discard,io.LimitReader(res.Body,1<<20));res.Body.Close()
+    require(readErr==nil&&res.StatusCode==probe.Status,"http-contract-"+probe.Label);fmt.Printf("HTTP_CONTRACT=%s %s STATUS=%d LABEL=%s\n",probe.Method,probe.Path,res.StatusCode,probe.Label)
+ }
+ res,err:=client.Post(base+"/exam/api/exam/exam/online-paging","application/json",strings.NewReader(`{"pageNum":1,"pageSize":10}`));require(err==nil,"legacy-online-http")
+ var response map[string]any;err=json.NewDecoder(io.LimitReader(res.Body,4<<20)).Decode(&response);res.Body.Close()
+ require(err==nil&&res.StatusCode==200&&(response["code"]==float64(0)||response["code"]==float64(200)),"legacy-online-response")
+ fmt.Println("LEGACY_GENERAL_READ_HTTP=200 BUSINESS_SUCCESS NO_BODY_OUTPUT")
+ for _,code:=range []string{"00101","00201","00301","00401"} {
+  var id,endpoint,body string
+  if code=="00401" {require(db.Raw("SELECT id FROM el_exam WHERE assessment_type='competency' ORDER BY id LIMIT 1").Scan(&id).Error==nil&&id!="","existing-competency-exam");endpoint,body="/exam/api/exam/exam/detail",`{"id":"`+id+`"}`
+  } else {
+   require(db.Raw("SELECT p.id FROM el_paper p JOIN el_exam_repo er ON er.exam_id=p.exam_id JOIN el_repo r ON r.id=er.repo_id WHERE r.code=? AND p.state=2 ORDER BY p.id LIMIT 1",code).Scan(&id).Error==nil&&id!="","existing-legacy-paper-"+code)
+   endpoint,body="/exam/api/paper/paper/paper-detail",`{"id":"`+id+`"}`
+   if code=="00301" {endpoint,body="/exam/api/mbti/paper-detail",`{"paperId":"`+id+`"}`}
+  }
+  res,err:=client.Post(base+endpoint,"application/json",strings.NewReader(body));require(err==nil,"legacy-http-"+code)
+  var result map[string]any;err=json.NewDecoder(io.LimitReader(res.Body,8<<20)).Decode(&result);res.Body.Close()
+  require(err==nil&&res.StatusCode==200&&(result["code"]==float64(0)||result["code"]==float64(200)),"legacy-response-"+code)
+  fmt.Println("EXISTING_READ_ONLY="+code+" HTTP=200 BUSINESS_SUCCESS NO_IDS_OR_BODY_OUTPUT")
+ }
+ fmt.Println("DEPLOY_POSTCHECK_PASS")
+}

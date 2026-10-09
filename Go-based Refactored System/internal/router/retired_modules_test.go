@@ -45,7 +45,9 @@ func readRetirementFile(t *testing.T, path string) string {
 // 复现：无真实能力的 monitor/tool/user-repo/wrong-book 路由仍返回成功占位响应。
 // 期望：生产路由中不存在这些端点，保留的审计只读列表和服务监控仍存在。
 func TestBugFB098_UnsupportedRoutesAreRetired(t *testing.T) {
-	sqlDB, _, err := sqlmock.New()
+	t.Setenv("REPORT_EFFECTIVE_ENV", "local")
+	t.Setenv("MNG_TEST_REPORT_ENV", "local")
+	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +63,7 @@ func TestBugFB098_UnsupportedRoutesAreRetired(t *testing.T) {
 	cfg.Jwt.LoginUserKey = "login_user_key"
 	cfg.Competency.ExpiryScanSeconds = 3600
 	cfg.Competency.ExpiryBatchSize = 1
+	mock.ExpectQuery("SELECT table_name AS table_name, engine AS engine FROM information_schema.tables").WillReturnRows(sqlmock.NewRows([]string{"table_name", "engine"}))
 	engine, shutdown := Setup(cfg, db)
 	shutdown()
 

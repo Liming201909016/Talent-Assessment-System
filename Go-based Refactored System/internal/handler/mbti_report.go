@@ -3,6 +3,7 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,10 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"github.com/talent-assessment/refactored/pkg/libreofficepdf"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"gorm.io/gorm"
 )
@@ -31,6 +31,7 @@ type MbtiReportHandler struct {
 	templateDir string // 完整版 16 个 docx 模板所在目录
 	simpleDir   string // 简版 16 个 docx 模板所在目录
 	outputDir   string // 生成的报告存放目录
+	convertPDF  mbtiPDFConversion
 }
 
 func NewMbtiReportHandler(db *gorm.DB, templateDir, simpleDir, outputDir string) *MbtiReportHandler {
@@ -249,13 +250,15 @@ func (h *MbtiReportHandler) GenerateReport(c *gin.Context) {
 	}
 
 	// 8. docx → PDF（通过 LibreOffice 转换，全局锁顺序化）
-	finalPath := docxPath // 默认返回 docx
-	if pdfRet, convErr := convertDocxToPdf(docxPath, outDir); convErr == nil {
-		finalPath = pdfRet
-		// FB-040 调试：临时保留 docx 便于检查 XML 结构（生产/上线前需删除此 ENV 检查）
-		if os.Getenv("MBTI_KEEP_DOCX") != "1" {
-			_ = os.Remove(docxPath)
-		}
+	finalPath, convErr := h.convertDocxToPDF(docxPath, outDir)
+	if convErr != nil {
+		_ = os.Remove(docxPath)
+		response.RestErr(c, "生成PDF报告失败")
+		return
+	}
+	// FB-040 调试：临时保留 docx 便于检查 XML 结构（生产/上线前需删除此 ENV 检查）
+	if os.Getenv("MBTI_KEEP_DOCX") != "1" {
+		_ = os.Remove(docxPath)
 	}
 
 	// 9. 更新 pdfPath + pdfFlag（简版不覆盖 pdf_path，完整版才更新）
@@ -370,12 +373,10 @@ func (h *MbtiReportHandler) GenerateReportByPaperID(paperID string) {
 		return
 	}
 
-	finalPath := docxPath
-	if pdfRet, convErr := convertDocxToPdf(docxPath, outDir); convErr == nil {
-		finalPath = pdfRet
-		_ = os.Remove(docxPath)
-	} else {
+	finalPath, convErr := finalizeMbtiPDFConversion(docxPath, outDir, h.convertDocxToPDF)
+	if convErr != nil {
 		slog.Error("report-async: libreoffice failed", "paperId", paperID, "error", convErr)
+		return
 	}
 
 	updates := map[string]interface{}{"pdf_path": finalPath, "pdf_flag": 1, "update_time": &now}
@@ -425,13 +426,29 @@ func (h *MbtiReportHandler) generateSimpleAsync(paperID string, tester mbtiTeste
 	}
 
 	// 转 PDF（全局锁，避免并发冲突）
-	if pdfRet, convErr := convertDocxToPdf(docxPath, outDir); convErr == nil {
-		_ = os.Remove(docxPath)
-		_ = pdfRet
-	} else {
+	if _, convErr := finalizeMbtiPDFConversion(docxPath, outDir, h.convertDocxToPDF); convErr != nil {
 		slog.Error("report-async-simple: libreoffice failed", "paperId", paperID, "error", convErr)
+		return
 	}
 	slog.Info("report-async-simple: generated", "paperId", paperID, "type", mbtiType)
+}
+
+type mbtiPDFConversion func(docxPath, outDir string) (string, error)
+
+func (h *MbtiReportHandler) convertDocxToPDF(docxPath, outDir string) (string, error) {
+	if h != nil && h.convertPDF != nil {
+		return h.convertPDF(docxPath, outDir)
+	}
+	return convertDocxToPdf(docxPath, outDir)
+}
+
+func finalizeMbtiPDFConversion(docxPath, outDir string, convert mbtiPDFConversion) (string, error) {
+	pdfPath, err := convert(docxPath, outDir)
+	_ = os.Remove(docxPath)
+	if err != nil {
+		return "", err
+	}
+	return pdfPath, nil
 }
 
 // POST /exam/api/mbti/download-report {paperId, type: "full"|"simple"}
@@ -1306,6 +1323,8 @@ func (h *MbtiReportHandler) UploadTemplate(c *gin.Context) {
 // ���� docx��pdf ת���Ŷ�ִ�С�
 var loMutex sync.Mutex
 
+var mbtiLibreOfficeTimeout = 90 * time.Second
+
 // convertDocxToPdf �� LibreOffice �� docx ת pdf�����������ļ�·����
 // ת��ʧ��ʱ����ԭ docx ·�������ף���
 //
@@ -1314,28 +1333,22 @@ var loMutex sync.Mutex
 func convertDocxToPdf(docxPath, outDir string) (string, error) {
 	loMutex.Lock()
 	defer loMutex.Unlock()
-
-	loCmd := "libreoffice"
-	if runtime.GOOS == "windows" {
-		loCmd = `C:\Program Files\LibreOffice\program\soffice.exe`
-	}
-	absDocx, _ := filepath.Abs(docxPath)
-	absOutDir, _ := filepath.Abs(outDir)
-	// 创建 profile，每次清空目录，转换完不删（让 fontconfig cache 复用减少重启开销）
-	profile := filepath.Join(os.TempDir(), "lo-profile-"+filepath.Base(docxPath))
-	envArg := "-env:UserInstallation=file://" + profile
-	cmd := exec.Command(loCmd, envArg, "--headless", "--convert-to", "pdf", "--outdir", absOutDir, absDocx)
-	out, err := cmd.CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), mbtiLibreOfficeTimeout)
+	defer cancel()
+	docx, err := os.ReadFile(docxPath)
 	if err != nil {
-		slog.Error("libreoffice: convert failed", "docx", docxPath, "error", err, "output", string(out))
+		return docxPath, err
+	}
+	pdf, err := libreofficepdf.NewClient("").Convert(ctx, filepath.Base(docxPath), docx)
+	if err != nil {
+		slog.Error("libreoffice: convert failed", "docx", docxPath, "error", err)
 		return docxPath, err
 	}
 	base := filepath.Base(docxPath)
 	pdfName := base[:len(base)-len(filepath.Ext(base))] + ".pdf"
 	pdfPath := filepath.Join(outDir, pdfName)
-	if _, statErr := os.Stat(pdfPath); statErr != nil {
-		slog.Info("libreoffice: PDF not found after convert", "path", pdfPath)
-		return docxPath, statErr
+	if err := os.WriteFile(pdfPath, pdf, 0o644); err != nil {
+		return docxPath, err
 	}
 	return pdfPath, nil
 }

@@ -47,7 +47,7 @@ description: "UI/UX 专家：审查前端代码的用户体验、无障碍性、
 - 表格在小屏幕上应可横向滚动
 - 表单在移动端应单列排列
 - 操作按钮在小屏幕上应用图标替代文字
-- 本项目有移动端截屏测试（screenshot-chain-test.js Chain F）
+- 本项目有移动端响应式测试（`scripts/test/competency-mobile-ui-test.js`）
 
 ### 断点
 - el-col 应设置 xs/sm/md/lg 响应式属性

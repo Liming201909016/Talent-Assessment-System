@@ -48,6 +48,7 @@ type competencyExportAnswer struct {
 	QuestionCode     string `gorm:"column:question_code"`
 	QuestionType     string `gorm:"column:question_type"`
 	QuestionContent  string `gorm:"column:question_content"`
+	DimensionID      string `gorm:"column:dimension_id"`
 	DimensionCode    string `gorm:"column:dimension_code"`
 	DimensionName    string `gorm:"column:dimension_name"`
 	ObservationPoint string `gorm:"column:observation_point"`
@@ -152,7 +153,7 @@ func loadCompetencyExportData(db *gorm.DB, examID string) (competencyExportData,
 		COALESCE(c.name, t.name, '') AS participant_name,
 		COALESCE(c.telephone, t.telephone, '') AS participant_telephone,
 		pq.sort, q.question_code, q.competency_question_type AS question_type, q.question_content,
-		d.dimension_code, d.dimension_name, q.observation_point, q.scoring_direction, q.options_snapshot,
+		d.dimension_id, d.dimension_code, d.dimension_name, q.observation_point, q.scoring_direction, q.options_snapshot,
 		pq.raw_answer, pq.final_score, pq.answered`
 	if err := db.Table("el_paper_qu pq").Select(answerSelect).
 		Joins("INNER JOIN el_paper p ON p.id = pq.paper_id").
@@ -289,6 +290,22 @@ func buildCompetencyExportWorkbook(exam model.Exam, data competencyExportData, i
 }
 
 func (h *ExamHandler) exportCompetencyWorkbook(c *gin.Context, lu *model.LoginUser, isAdmin bool, exam model.Exam) {
+	if isPhase1V2ExportExam(exam) {
+		data, err := loadPhase1V2CompetencyExportData(h.db, exam.ID)
+		if err != nil {
+			slog.Error("phase-1 v2 competency export query failed", "examId", exam.ID, "error", err)
+			response.RestErr(c, "查询新版胜任力导出数据失败")
+			return
+		}
+		file, err := buildPhase1V2CompetencyExportWorkbook(exam, data, isAdmin)
+		if err != nil {
+			response.RestErr(c, "生成新版胜任力导出文件失败")
+			return
+		}
+		defer file.Close()
+		writeCompetencyExportResponse(c, lu, h, exam, file, len(data.Runs))
+		return
+	}
 	data, err := loadCompetencyExportData(h.db, exam.ID)
 	if err != nil {
 		slog.Error("competency export query failed", "examId", exam.ID, "error", err)
@@ -301,6 +318,10 @@ func (h *ExamHandler) exportCompetencyWorkbook(c *gin.Context, lu *model.LoginUs
 		return
 	}
 	defer file.Close()
+	writeCompetencyExportResponse(c, lu, h, exam, file, len(data.Persons))
+}
+
+func writeCompetencyExportResponse(c *gin.Context, lu *model.LoginUser, h *ExamHandler, exam model.Exam, file *excelize.File, resultCount int) {
 	var buffer bytes.Buffer
 	if err := file.Write(&buffer); err != nil {
 		response.RestErr(c, "生成胜任力导出文件失败")
@@ -316,7 +337,7 @@ func (h *ExamHandler) exportCompetencyWorkbook(c *gin.Context, lu *model.LoginUs
 		return
 	}
 	if lu != nil {
-		_ = h.recordOperLog(c, lu, exam, len(data.Persons), 0, "")
+		_ = h.recordOperLog(c, lu, exam, resultCount, 0, "")
 	}
 }
 

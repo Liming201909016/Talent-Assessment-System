@@ -1,0 +1,8 @@
+schema=mng005-production-test-export-v1
+source_host=vm-ubuntu-go-dev
+source_database=element
+ownership_marker=MNG005BASE_20261008_c51130cb775ba019
+identity_class=synthetic-test-only
+labels_must_retain=[TEST-保留]
+formal_registry_included=false
+draft_rows_included=false

@@ -11,7 +11,9 @@ import (
 )
 
 type ServerCfg struct {
-	Port int `mapstructure:"port"`
+	Host                     string `mapstructure:"host"`
+	Port                     int    `mapstructure:"port"`
+	DisableBackgroundWorkers bool   `mapstructure:"disableBackgroundWorkers"`
 }
 
 type MysqlCfg struct {
@@ -69,6 +71,7 @@ type CompetencyCfg struct {
 type Phase1WordReportCfg struct {
 	Enabled             bool   `mapstructure:"enabled"`
 	TemplatePath        string `mapstructure:"templatePath"`
+	V2TemplatePath      string `mapstructure:"v2TemplatePath"`
 	FallbackChromium    bool   `mapstructure:"fallbackChromium"`
 	Converter           string `mapstructure:"converter"`
 	LibreOfficePath     string `mapstructure:"libreOfficePath"`
@@ -95,6 +98,14 @@ type Config struct {
 
 var Global *Config
 
+// ManagementTraitsTestRuntimeEnabled requires two independent, process-level
+// declarations to agree. HTTP input and APP_ENV are deliberately excluded.
+func ManagementTraitsTestRuntimeEnabled() bool {
+	reportEnvironment := strings.ToLower(strings.TrimSpace(os.Getenv("REPORT_EFFECTIVE_ENV")))
+	testEnvironment := strings.ToLower(strings.TrimSpace(os.Getenv("MNG_TEST_REPORT_ENV")))
+	return reportEnvironment == testEnvironment && (reportEnvironment == "local" || reportEnvironment == "staging" || reportEnvironment == "production")
+}
+
 func Load() *Config {
 	v := viper.New()
 	v.SetConfigType("yaml")
@@ -118,11 +129,13 @@ func Load() *Config {
 		log.Printf("[config] env overlay 'application-%s' not loaded: %v", env, err)
 	}
 
-	// 环境变量覆盖（SERVER_PORT, MYSQL_DSN, REDIS_ADDR, REDIS_DB, REDIS_PASSWORD, JWT_SECRET, JWT_EXPIRE_MINUTES, CAPTCHA_ENABLED, UPLOAD_PATH）
+	// 环境变量覆盖（SERVER_HOST, SERVER_PORT, LOCAL_DISABLE_BACKGROUND_WORKERS, MYSQL_DSN, REDIS_ADDR, REDIS_DB, REDIS_PASSWORD, JWT_SECRET, JWT_EXPIRE_MINUTES, CAPTCHA_ENABLED, UPLOAD_PATH）
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
+	bindEnv(v, "server.host", "SERVER_HOST")
 	bindEnv(v, "server.port", "SERVER_PORT")
+	bindEnv(v, "server.disableBackgroundWorkers", "LOCAL_DISABLE_BACKGROUND_WORKERS")
 	bindEnv(v, "mysql.dsn", "MYSQL_DSN")
 	bindEnv(v, "redis.addr", "REDIS_ADDR")
 	bindEnv(v, "redis.db", "REDIS_DB")
@@ -140,6 +153,7 @@ func Load() *Config {
 	bindEnv(v, "competency.expiryBatchSize", "COMPETENCY_EXPIRY_BATCH_SIZE")
 	bindEnv(v, "phase1WordReport.enabled", "PHASE1_WORD_REPORT_ENABLED")
 	bindEnv(v, "phase1WordReport.templatePath", "PHASE1_WORD_REPORT_TEMPLATE_PATH")
+	bindEnv(v, "phase1WordReport.v2TemplatePath", "PHASE1_V2_WORD_REPORT_TEMPLATE_PATH")
 	bindEnv(v, "phase1WordReport.fallbackChromium", "PHASE1_WORD_REPORT_FALLBACK_CHROMIUM")
 	bindEnv(v, "phase1WordReport.converter", "PHASE1_WORD_REPORT_CONVERTER")
 	bindEnv(v, "phase1WordReport.libreOfficePath", "LIBREOFFICE_PATH")
@@ -198,6 +212,9 @@ func Load() *Config {
 	}
 	if c.Phase1WordReport.TemplatePath == "" {
 		c.Phase1WordReport.TemplatePath = "./configs/export-templates/competency-phase1-report.docx"
+	}
+	if c.Phase1WordReport.V2TemplatePath == "" {
+		c.Phase1WordReport.V2TemplatePath = "./configs/export-templates/competency-phase1-report-v2.docx"
 	}
 	if c.Phase1WordReport.Converter == "" {
 		c.Phase1WordReport.Converter = "libreoffice"

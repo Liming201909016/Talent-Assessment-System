@@ -26,7 +26,23 @@ go build -o bin/server.exe ./cmd/server
 ./bin/server.exe
 ```
 
-监听端口默认 `8092`（与 Java 8091 并行，方便对比）。
+监听端口默认 `8092`（与 Java 8091 并行，方便对比）。`server.host`/`SERVER_HOST`为空或`0.0.0.0`时保持原有`:8092`全接口监听；本地隔离测试可显式设置为`127.0.0.1`、`::1`或`localhost`。
+
+### 安全的本地隔离测试
+
+`LOCAL_DISABLE_BACKGROUND_WORKERS=true`会同时禁止胜任力和管理特质到期Worker，但只在`APP_ENV`精确等于`local`且后端绑定loopback时允许；其他环境或非loopback绑定会在数据库、Redis和HTTP启动前失败关闭。该开关只来自进程环境/配置，HTTP请求不能控制。
+
+需要保留本地候选HTTP、关闭Worker并确保管理特质TEST路由不注册时，使用：
+
+```text
+APP_ENV=local
+SERVER_HOST=127.0.0.1
+LOCAL_DISABLE_BACKGROUND_WORKERS=true
+REPORT_EFFECTIVE_ENV=local
+MNG_TEST_REPORT_ENV=disabled
+```
+
+管理特质TEST运行时只在`REPORT_EFFECTIVE_ENV`和`MNG_TEST_REPORT_ENV`归一化后同时为`local`、`staging`或`production`时注册；空值、不一致和其他值继续失败关闭。生产使用`production/production`时仍保留TEST标注，客户通过测评自身状态/开放状态决定是否使用，不增加第三个功能开关。不设置新配置时，监听方式和两个后台Worker的默认启动行为均保持不变。
 
 ## 兼容性约定（关键）
 
@@ -70,7 +86,8 @@ deploy/                   Dockerfile / nginx.conf / compose
 | `make coverage` | 生成 HTML 覆盖率报告 |
 | `make lint` | golangci-lint 静态分析 |
 | `cd ruoyi-ui && npm test` | 前端 Vitest 单元测试 |
-| `node scripts/test/chain-batch.js` | API 集成测试（需本地环境） |
+| `node scripts/test/competency-mobile-ui-test.js` | 胜任力参与者响应式E2E（需前端环境） |
+| `go test ./internal/handler -run 'TestBugFB1(54|55|60|61|62)'` | 一期报告图表与模板专项回归 |
 | `node scripts/test/ux-chain-runner.js D` | 业务链 + 多专家点评（需浏览器环境） |
 
 VS Code 中：`Ctrl+Shift+P` → `Tasks: Run Task` → 选择测试任务。

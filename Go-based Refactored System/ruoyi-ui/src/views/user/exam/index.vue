@@ -1,5 +1,9 @@
 <template>
   <div class="app-container">
+    <el-alert v-if="entryError" :title="entryError" type="error" :closable="false" show-icon />
+    <el-button v-if="entryError" size="small" :loading="entryLoading" @click="retryEntry">重试入口探测</el-button>
+    <div v-if="!entryReady" v-loading="entryLoading" style="min-height:80px">正在确认测评类型；确认前不加载旧参与者或报告入口。</div>
+    <template v-if="entryReady">
     <el-form :model="queryParams" ref="queryForm" size="small" :inline="true" v-show="showSearch" label-width="68px">
       <el-form-item label="姓名" prop="name">
         <el-input
@@ -156,6 +160,7 @@
       </div>
     </el-dialog>
 
+    </template>
   </div>
 </template>
 
@@ -182,6 +187,8 @@ import {
 } from "@/api/candidate/candidate";
 import team from "@/views/user/exam/team.vue";
 import {fetchDetail} from '@/api/exam/exam'
+import { fetchManagementTraitsAdminAccess, fetchManagementTraitsProfile } from '@/api/managementTraits'
+import { classifyManagementTraitsExam, isManagementTraitsProduct } from '@/utils/managementTraitsProduct'
 import {pdfTeamDownload} from "@/api/exam/exam";
 import {Loading, Message} from "element-ui";
 import request from '@/utils/request';
@@ -192,6 +199,11 @@ export default {
   dicts: ['user_pdf_flag'],
   data() {
     return {
+      entryReady: false,
+      entryLoading: true,
+      entryError: '',
+      entrySequence: 0,
+      listSequence: 0,
       // singlePdfFinished: false,
       disPdfDownload: false,
       dialogVisible: false,
@@ -245,12 +257,32 @@ export default {
     };
   },
   async created() {
+    const entryExamId = this.$route.params.examId
     this.queryParams.examId = this.$route.params.examId
     this.stuFlag = this.$route.params.stuFlag
     this.isOpen = this.$route.params.isOpen
     this.testTitle = this.$route.params.title
     if (await this.redirectCompetencyDetail()) return
+    if (entryExamId !== this.$route.params.examId) return
+    this.entryReady = true
     this.getList(this.$route.params.isOpen);
+  },
+  beforeDestroy() { this.entrySequence++; this.listSequence++ },
+  watch: {
+    async '$route.params.examId'() {
+      this.entrySequence++
+      this.listSequence++
+      this.queryParams.examId = this.$route.params.examId
+      this.queryParams.pageNum = 1
+      this.isOpen = this.$route.params.isOpen
+      this.entryReady = false
+      this.testerList = []
+      this.total = 0
+      this.entryLoading = false
+      await this.$nextTick()
+      if (this._isDestroyed || this._isBeingDestroyed || this._inactive) return
+      this.retryEntry()
+    }
   },
   computed:{
     singlePdfFinished :{
@@ -270,14 +302,69 @@ export default {
   },
   methods: {
     async redirectCompetencyDetail() {
-      const response = await fetchDetail(this.$route.params.examId)
-      const exam = response.data || response
-      if (exam.assessmentType !== 'competency') return false
-      await this.$router.replace({
-        name: 'CompetencyResults',
-        params: { examId: this.$route.params.examId }
-      })
-      return true
+      const sequence = ++this.entrySequence
+      this.listSequence++
+      const examId = this.$route.params.examId
+      const current = () => sequence === this.entrySequence && examId === this.$route.params.examId
+      this.entryLoading = true
+      this.entryReady = false
+      this.entryError = ''
+      try {
+        const response = await fetchDetail(this.$route.params.examId)
+        if (!current()) return true
+        const exam = response.data || response
+        if (!exam || !(typeof exam.id === 'string' && exam.id.trim() === exam.id && exam.id.length > 0 || Number.isSafeInteger(exam.id) && exam.id > 0) || String(exam.id) !== String(examId) || !examId) throw new Error('服务器未确认当前测评身份。')
+        const frozen = exam.managementTraitsProfileFrozen, lifecycle = exam.managementTraitsLifecycle, newMode = exam.isManagementTraits
+        if ((frozen !== undefined && typeof frozen !== 'boolean') || (Object.prototype.hasOwnProperty.call(exam, 'isManagementTraits') && typeof newMode !== 'boolean') || (Object.prototype.hasOwnProperty.call(exam, 'managementTraitsLifecycle') && !['legacy', 'draft', 'frozen'].includes(lifecycle))) throw new Error('测评生命周期元数据无效。')
+        if (exam.assessmentType === 'competency') {
+          if (exam.scoringMode !== 'competency_average' || frozen === true || newMode === true || (lifecycle !== undefined && lifecycle !== 'legacy')) throw new Error('测评类型与生命周期不一致。')
+          await this.$router.replace({ name: 'CompetencyResults', params: { examId } })
+          return true
+        }
+        if (exam.assessmentType !== 'legacy' || exam.scoringMode !== 'legacy') throw new Error('服务器未确认完整测评类型。')
+        const codes = [exam.repoCode, ...(Array.isArray(exam.repoList) ? exam.repoList.map(r => r && (r.repoCode || r.code)) : [])].filter(c => c !== undefined && c !== '')
+        const code = codes[0]
+        if (!code || codes.some(c => !['00101', '00102', '00201', '00202', '00301', '00302', '00501', '00502'].includes(c) || c.slice(0, 3) !== code.slice(0, 3))) throw new Error('服务器题库类型未知或不一致。')
+        if (!isManagementTraitsProduct(code)) {
+          if (frozen === true || newMode === true || (lifecycle !== undefined && lifecycle !== 'legacy')) throw new Error('非002测评生命周期不一致。')
+          return false
+        }
+        const classification = classifyManagementTraitsExam(exam, examId)
+        if (classification === 'UNKNOWN') throw new Error('服务器未确认当前产品的冻结或草稿状态。')
+        if (classification === 'LEGACY002') return false
+        if (frozen === false && (lifecycle !== 'draft' || newMode !== true)) throw new Error('新版配置状态不一致。')
+        if (frozen === true && ((lifecycle !== undefined && lifecycle !== 'frozen') || newMode === false)) throw new Error('冻结状态与新版生命周期不一致。')
+        const auth = await fetchManagementTraitsAdminAccess()
+        if (!current()) return true
+        const userId = auth && auth.user && auth.user.userId
+        if (!Number.isSafeInteger(userId) || userId <= 0 || !(userId === 1 || (Array.isArray(auth.permissions) && auth.permissions.includes('*:*:*')))) throw new Error('当前账号没有管理特质管理员权限。')
+        if (exam.managementTraitsProfileFrozen === false) {
+          if (exam.isManagementTraits !== true || exam.managementTraitsLifecycle !== 'draft') throw new Error('新版配置状态不一致。')
+          this.$message.warning('新版草稿尚未冻结，请先编辑配置；不会加载旧结果。')
+          await this.$router.replace({ name: 'UpdateExam', params: { id: examId } })
+          return true
+        }
+        const fields = typeof exam.requiredFields === 'string' ? exam.requiredFields.split(',') : []
+        if (!fields.length || fields.some(f => !['name', 'gender', 'telephone', 'affiliation', 'post', 'age', 'degree', 'major', 'stuFlag'].includes(f)) || new Set(fields).size !== fields.length) throw new Error('冻结身份字段配置无效。')
+        const profile = await fetchManagementTraitsProfile(examId)
+        if (!current()) return true
+        if (!profile || !profile.data || profile.data.examId !== examId || !profile.data.frozenAt) throw new Error('profile身份或冻结状态无效。')
+        await this.$router.replace({ name: 'ManagementTraitsResults', params: { examId } })
+        return true
+      } catch (err) {
+        if (!current()) return true
+        this.entryError = `测评入口读取失败：${err.message || err}；已停止加载旧结果，请重试。`
+        this.$message.error(this.entryError)
+        return true
+      } finally { if (current()) { this.entryLoading = false; this.loading = false } }
+    },
+    async retryEntry() {
+      if (this.entryLoading) return
+      const examId = this.$route.params.examId
+      if (await this.redirectCompetencyDetail()) return
+      if (examId !== this.$route.params.examId) return
+      this.entryReady = true
+      this.getList(this.isOpen)
     },
     handleDinpmalogClose(){
 
@@ -303,37 +390,20 @@ export default {
     },
     /** 查询岗位列表 */
     getList(isOpen) {
-
-      console.log("isOpen", isOpen)
-      this.loading = true;
-
-      // listTester(this.queryParams).then(response => {
-      //   // this.testerList = response.rows.filter(tester => tester.delFlag === 0);
-      //   this.testerList = response.rows;
-      //   // this.total = this.testerList.length;
-      //   this.total = response.total;
-      //   this.loading = false;
-      //   console.log(this.testerList)
-      // });
-
-      // 1--开放  2--封闭， 这里貌似没什么区别
-      if (isOpen === 1 || isOpen === "1") {
-        listTester(this.queryParams).then(response => {
-          // this.testerList = response.rows.filter(tester => tester.delFlag === 0);
-          this.testerList = response.rows;
-          this.total = response.total;
-          this.loading = false;
-          console.log(this.testerList)
-        });
-      } else if (isOpen === 2 || isOpen === "2") {
-        getListTester(this.queryParams).then(response => {
-          // this.testerList = response.rows.filter(tester => tester.delFlag === 0);
-          this.testerList = response.rows;
-          this.total = response.total;
-          this.loading = false;
-          console.log(response)
-        });
-      }
+      if (!this.entryReady) return
+      const sequence = ++this.listSequence, entry = this.entrySequence, examId = this.$route.params.examId
+      const query = Object.freeze({ ...this.queryParams, examId })
+      const current = () => sequence === this.listSequence && entry === this.entrySequence && examId === this.$route.params.examId && this.entryReady
+      const fetch = String(isOpen) === '1' ? listTester : String(isOpen) === '2' ? getListTester : null
+      if (!fetch) return
+      this.loading = true
+      return fetch(query).then(response => {
+        if (!current()) return
+        this.testerList = response.rows
+        this.total = response.total
+      }).catch(() => {
+        if (current()) this.$message.error('人员列表读取失败，请重新查询。')
+      }).finally(() => { if (current()) this.loading = false })
     },
 
     //删除报告

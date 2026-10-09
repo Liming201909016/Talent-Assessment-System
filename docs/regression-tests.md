@@ -1,5 +1,498 @@
 # Regression Tests
 
+## FB-218 — MBTI LibreOffice转换必须有截止时间 — 2026-10-09 🟢 STAGING GREEN
+
+staging真实MBTI 48题完成、计分回读后，强制生成完整版报告超过180秒未响应；服务端旧`convertDocxToPdf`使用无context的`exec.Command`，可能无限等待LibreOffice。新增`TestBugFB218_MBtiLibreOfficeConversionHasDeadline`要求MBTI使用有界共享转换客户端；修改产品代码前测试因转换能力符号缺失而编译RED。修复后复用已由胜任力验证的`libreofficepdf.Client`，90秒context、隔离0700 workspace/0600 DOCX及finally清理，并禁止转换失败时把DOCX冒充PDF成功返回。focused MBTI与共享客户端测试、Go全量及Linux build通过；部署SHA=`f2940fc5ea51edffc4f325df1f461f3ba4e86868df3aa0594af95764e880d61e`。真实staging复测48题/48答案、ESTJ计分回读、完整版/简版PDF、16+16模板和匿名门禁全部PASS，exact cleanup0且基线前后同为`73|1491|1352|2653`。
+
+[补充GREEN - 2026-10-09] 生产评估复审发现同步接口已失败关闭，但`GenerateReportByPaperID`异步链仍在转换失败时把DOCX写入`pdf_path`并设置`pdf_flag=1`。新增行为回归先因`finalizeMbtiPDFConversion`缺失编译RED；GREEN后完整版异步转换失败立即返回、不写`pdf_path/pdf_flag`，简版失败也不冒成功日志，临时DOCX无论成功失败均删除。两项FB-218回归和共享LibreOffice客户端测试通过；Go全量与生产环境复测仍作为发布门禁，不沿此前staging SHA自动宣称该补丁已上线。
+
+## STAGING-PHASE1-POPULATED-BASELINE — 2026-10-09 🟢 GREEN
+
+现有一期staging运行时已有10个competency测评及24份结果，旧验收脚本硬编码要求四项运行时计数均为0，导致任何业务步骤前即RED退出。修复后脚本接受格式正确的非空基线，并在finally精确比较测试前后`competency exam/result/group/validity`四项计数；同时改为结构核验当前三Sheet XLSX、读取实际content package数，并由产品整链删除API清理v2 result-run/current/report/file，避免旧手写清理漏FK。最终真实staging完成发布2组/10维/90题、90答、提交幂等、结果/筛选/导出、10页PDF和审计，cleanup=`0|0|0|0`，四项基线前后同为`10|24|48|24`。该修复只改测试工具，不改变产品代码或业务数据。
+
+## MT-005-QUESTION-BANK-CONTENT — 2026-10-09 🟢 STAGING GREEN
+
+当前00501/00502题库显示内部fixture名称，且00502逐字复制00202，导致管理版V67/V96仍为基层版措辞。新增[合同测试](../scripts/test/management-traits-005-question-bank-contract-test.js)要求使用已确认的两个新版名称；00501保持140题源文不覆盖；00502只覆盖用户确认的V67修订文案和客户管理版V96，其余138题保持来源一致；安装后置条件必须同时验证名称、140/700数量及两题精确文本。修改前两次实际RED分别锁定fixture SQL和另一条opt-in baseline writer；修改后合同exit 0、受影响Go package编译/测试通过、全Go测试和server build均exit 0。staging现有005原位更新后名称与V67/V96精确匹配，各140题/700答案；002源数据receipt SHA前后同为`13ddd0eef9e9278d2f5b221ca327a5ebdaa1491f086ab91d4edd0e4029c80e5e`，管理特质历史表receipt SHA前后同为`9e700cd9e953c7a256bbe42a21c2a4377303fcdc013fe8c28a58a306d5236c0d`，冻结题420、结果3、报告3未变。production未访问。
+
+## MT-005-SHARED-TEMPLATE-MANAGEMENT — 2026-10-09 🟢 STAGING GREEN
+
+RED阶段：Go因模板管理handler、SHA-aware TEST/reissue方法缺失而编译失败；前端共用卡片、下载和上传4项失败。GREEN阶段新增管理员/全局权限与401/403、元数据、DOCX响应头、无效上传不改文件、外部关系拒绝、兼容上传备份/替换、当前与历史SHA allowlist、动态SHA持久化/复用/读取及production路由省略测试；前端验证单卡片、SHA文件名、确认上传/刷新和失败保留文件。最终`go test ./... -count=1`、`go build ./...`、`go vet ./...`均exit0；Vitest 35文件602项通过；`npm run build:prod`成功。仓库通用lint脚本因`.eslintignore`的`*.js/*.vue`规则无法扫描`src`，直接lint仍报告目标文件既有格式债务，未冒充lint GREEN。staging真实管理员浏览器元数据、下载、同文件上传和刷新均200；530193-byte DOCX SHA=`05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c`、90控件/6图表/5数字标签/0外链且valid=true，自动备份已生成，`#/qu/template`真实页面卡片显示正确；匿名接口401。production未访问。
+
+## MT-005-STAGING-BROWSER-ACCEPTANCE — 2026-10-09 🟡 STAGING PARTIAL（native event only）
+
+真实管理员页清routes后getInfo200；两个005旧URL→新版页，各1completed/140/140/50.00/13维/4模块，legacy list 403=0；普通002旧URL仍旧页/list200，冻结兼容002旧URL→新版58.64。两产品UI首次生成200、重复生成200且同ID/同file，view/download200；旧TEST报告2＋独立reissue2均保留，审计generate/reuse/view/download=`2/3/2/3`。无认证独立context view/download均401且PDF bytes=false。两新PDF与hardened retained baseline逐页文本、144-DPI像素、drawing signature精确相同；canonical 140/100/40/13/4、identity-v2、递归object privacy均PASS。当前PyMuPDF绝对坐标提取对旧baseline同样漂移，原坐标子断言失败按工具层限制记录；集成浏览器native download event亦超时，但真实download HTTP200字节已从同一UI响应安全留证。SSH只读DB/private/API SHA、0600权限、旧保护SHA、58.642639、health/logs全部PASS；无代码/部署/答案/production操作。[证据](../scripts/test/results/mng005-staging-browser-acceptance-20261009/acceptance-verdict.json)。
+
+## MT-ROLLBACK-ADDITIVE-SCHEMA-SIGNATURE — 2026-10-09 🟢 STAGING GREEN
+
+Reviewer阻断为原rollback只断言三张新增表行数0，没有证明schema结构在before/old/after一致。新[合同测试](../scripts/test/management-traits-rollback-schema-signature-contract-test.js)修改前RED，列出缺失的table/column/index/FK canonical字段和PRE/OLD/POST采集；修改后GREEN且shell syntax0。实际attempt 3在active paper0下执行，PID`14293→15461→15554`、restart2；三份6328-byte receipt逐字节相同，SHA均`1a9f16e82a3facd55d418d87bf85771c4d6d23eb5edc88c531b8d96c30ddbe27`并匹配迁移预期。旧rehearsal receipt缺第三表和关键metadata，明确不可exact比较而不伪造通过。最终当前版本health/invariants/residue全GREEN。
+
+## MT-CURRENT-STAGING-RELEASE — 2026-10-09 🟡 STAGING PARTIAL
+
+当前工作树全Go与前端598项通过，Linux双构建一致。恢复库真实执行draft/reissue迁移各两次，并以两个应用连接关闭MT-REISSUE-1062：一次create、一次reuse、精确input unique 1062、report1/audit4/files1/orphans0/source unchanged；临时Schema最终0。主库新增三张空表并发布新后端/393文件前端，后端仅重启一次；旧00501/00502各1run/13dim/4module、冻结002 run1、普通002 repo2保持。匿名旧接口及新接口401门禁通过。真实已登录浏览器会话不可用，因此HTTP报告生成/查看/下载、并发同run复用、临时005 draft/person清理未执行；不得把本条标为完整E2E GREEN，production仍NO-GO。
+
+## FB-216 — 2026-10-09 🟢 LOCAL GREEN
+
+正式服务器原无管理特质TEST运行时总门禁：`router.Setup`无条件初始化sidecar Schema并注册participant/admin/report/reissue/formal路由，`main`无条件构造runtime并启动expiry worker。有效RED为新环境helper/server factory符号缺失及实际production route list仍含18条目标、伪造query/header请求返回400而非404。GREEN后`REPORT_EFFECTIVE_ENV`与`MNG_TEST_REPORT_ENV`经trim+lower必须同为精确`local`或同为精确`staging`；空值、单边值、不一致、`prod/production`和畸形值全部关闭。关闭时实际router route list不含TEST/formal路由、runtime Schema precheck=0、带query/header伪环境仍404；旧002 paper/report路由保持注册及legacy guard保持装配。server factory/worker注入证明关闭路径零构造、零启动；本地/测试注入路径保持启用。focused三包、affected四包、全Go6501pass/0fail/14skip、server build、全仓vet及诊断均GREEN；无服务重启、DB/远端/部署。
+
+[策略纠正 - 2026-10-09] 用户明确批准production显示保留TEST标注的005，并要求不新增开关。新RED锁定`production/production`必须注册运行时/routes/report loader；GREEN仅扩展现有双环境声明允许精确production，空值、不一致、`prod`和畸形值继续关闭，HTTP仍不可覆盖。客户启用使用现有测评`state`，生产包把两个005测评由staging的进行中状态适配为`state=1`可见禁用。focused config/router/handler、Go全量、Windows/Linux build通过；未部署。
+
+## PRODUCTION-MIGRATION-PACKAGE-20261009 — 🟢 MYSQL57 RESTORED-COPY GREEN / DEPLOYMENT PENDING
+
+staging只读盘点锁定005 closure：repo2、question280、answer1400、relation280、exam/paper/candidate各2、paper question280、paper answer1400、bundle/profile/snapshot/run/receipt各2、dimension26、module8、report revision/current/audit各2、reissue2/audit12、draft0及4份PDF。受控exporter生成完整INSERT、源SHA、资产和TEST/synthetic声明；顶层包加入00401 `007/008/010/011/012/013`及管理特质`001/003/004`，明确排除formal 002、competency 009/014/015。`001`父列门禁先RED后改为三个`varchar(64) NOT NULL`精确签名。Node合同核精确row cardinality、TEST标签、排除项、rollback无DROP/TRUNCATE及22文件SHA；shell syntax通过。MySQL5.7恢复副本脚本已生成但未执行，因为会在production服务器创建并删除临时Schema，须单独确认后才可运行。
+
+[动态GREEN - 2026-10-09] 用户单独授权后在production服务器创建全量受限备份和临时恢复Schema，未写`element`。复审先发现00502源V67/V96已改但冻结profile仍旧，新增当前question v2并保留冻结v1兼容；package 015按staging真实140/700生成canonical mapping/bundle。最终MySQL5.7.44恢复副本：9迁移首跑/重跑、data重复失败关闭、激活前/后两次rollback、reapply、00502有序唯一140 question/700 option逐项ID/题干/raw/选项文本SHA、历史v1完整表字节、4 PDF及模板SHA/bytes、资产cleanup全部PASS。首轮所有业务门禁通过但runner过早删client导致自动DROP失败；精确手工cleanup后临时Schema0、主库0 MNG/0 005、服务active/health200/hash不变。修复runner后第二轮`RUN_EXIT=0/CLEANUP_EXIT=0/OWNED_SCHEMA_REMAINING=0`，receipt=`/opt/talent-assessment/backups/production_migration_rehearsal_20261009_a8b4cbb5e6cf45ad`。
+
+## MNG005-CUSTOMER-ACTIVATION — 2026-10-09 🟢 LOCAL GREEN
+
+CodeReviewer发现导入`state=1`虽可见禁用，但legacy guard会拦截旧state API，客户无法启用。新增branch矩阵和RED：service方法/handler route缺失、前端API与列表动作缺失。GREEN后专用JWT管理员路由仅允许单个已冻结005在state0/1间切换或幂等；锁定exam/profile，核唯一005 repo/current product version，条件UPDATE只改state，002/非005/未冻结/2或3/畸形JSON/普通权限全部拒绝。管理列表只对管理员005显示启用/禁用，二次确认、成功刷新、失败保留并提示。Go affected/full及前端focused152、全量611通过。
+
+## MNG005-HARNESS-LEGACY-MARKER-RECEIPT — 2026-10-09 🟢 LOCAL GREEN
+
+现有[harness合同](../scripts/test/management-traits-005-harness-contract-test.js)在修改前真实RED exit1：producer返回7个字段并包含`legacyMarkerRejected=true`，测试只期望6个字段。产品决定与实际语义一致：旧固定marker缺generation/evidence，必须fail closed；producer不可删除该字段。仅补精确期望后GREEN exit0；完整键集合逐字段deep equality通过，无其他遗漏。相关005前端208/208、全前端598/598通过；Go/Vue产品源码未改，旧RED verdict保持不可变，新rerun单独保存。
+
+## FB-215 — 2026-10-09 🟢 LOCAL GREEN / ACTUAL READ-ONLY COMMAND UNAVAILABLE
+
+`TestBugFB215_ResetHeadRequiresCanonicalBytesForLegacyAndCurrentFilenames`先真实RED：legacy outcome-prefix head会接受额外空白和同语义字段重排。GREEN后两种合法文件名均只接受writer精确的两空格indent+末尾newline字节；空白、字段重排及内容变更拒绝，文件不改写/不移动。focused FB-212～215、完整helper package、reset helper与server build通过；未创建新sequence。
+
+## FB-212～FB-214 — 2026-10-09 🟢 LOCAL GREEN / ACTUAL FINAL RESET待核
+
+`TestBugFB212_ResetJournalRejectsMalformedContracts`先锁定错误schema、filename sequence和`deleted != pre-post`；`TestBugFB213_PendingRecoveryUsesExactPrivateFileMultiset`锁定“同数量但文件名/内容已替换”不能恢复；`TestBugFB214_OrphanOutcomeRepairsMissingImmutableHead`注入outcome成功、head写失败，下一scan只允许唯一最高next outcome补写immutable head。scanner现精确解析v2 JSON并拒unknown/trailing、校验零填充sequence/hashprefix/schema/mode/generation/status、非负计数、retained=2/2、previous links、duplicate/gap/orphan；新intent保存排序后的pre/post `{nameHash,contentSHA,bytes}` multiset，不保存raw UUID文件名。现存sequence1～3旧head只读兼容其历史outcome-prefix命名，新head使用head内容SHA前缀。
+
+## FB-208～FB-211 — 2026-10-09 🟢 CODE GREEN / ACTUAL EVIDENCE PENDING
+
+旧reset helper在DB/file mutation后才写receipt，并覆盖`reset-chain.json`；outcome写失败时没有预先持久的意图，且无法自动区分未执行、已完成和混合未知状态。新增回归先因重复旧test package及v2 journal符号缺失RED；GREEN实现schema v2 intent的`O_EXCL`/fsync先落盘，包含sequence/mode/generation/previousOutcomeSHA/legacyHeadSHA/random operationNonce/预状态/预期post状态/保留run-product计数及文件名hash；outcome不可变引用intentSHA并写immutable chain-head。启动前扫描全链并拒绝gap/duplicate/rewrite；pending intent仅在状态精确匹配已知pre/post时追加`recovered-no-mutation`/`recovered` outcome，混合状态拒绝。强制outcome落盘失败保留pending intent。report-only v4只写examIdHash并绑定pre/post intent/outcome。focused Go tests已GREEN；actual report-only/standalone/recovery evidence仍待本轮执行结果。
+
+## FB-207 — 2026-10-09 🟢 LOCAL GREEN / ACTUAL CHAIN PROOF IN PROGRESS
+
+`TestBugFB207_ResetReceiptIsCompleteAppendOnlyAndHashChained`与`TestBugFB207_ResetReceiptRejectsIncompleteEvidence`先因receipt类型与append函数缺失编译RED；GREEN后每次reset持久化sequence/mode/baselineGeneration、实际deleted reports/audits/files、retained runs/products、manifest/evidence/helper binary/source SHA与timestamp，形成append-only indexed receipt及master hash chain并拒绝缺字段。E2E解析实际stdout，删除`cleanStart:true`，report-only v3绑定pre/post reset receipt SHA；收据禁止raw ID/UUID/secret。focused Go、helper build、Node/PowerShell syntax已通过；一次actual预跑发现map JSON字段顺序导致launcher过滤stdout，已改为ordered struct，失败链节保留不覆盖。
+
+## FB-206 — 2026-10-09 🟢 LOCAL GREEN
+
+`TestBugFB206_RetainedBaselineRequiresUniqueActiveGeneration`先以缺少generation marker helper/private generation字段编译RED；GREEN要求`MNG005LOCALBASE_<stamp>-<13位generation>`且拒绝旧固定marker。prepare/request-counter/reset/oracle合同已用active generation `1791483691965`真实执行：两产品各140 UI、创建报告0；report-only两轮participant写请求全0；PDF oracle双轮identity-v2 COMPLETE/findings0；最终双reset幂等且reports0。前两次失败generation按exact title/primary-key closure清理1/2条链，旧invalid baseline保留不可复用。
+
+## FB-205 — 2026-10-09 🟢 CODE GREEN / CURRENT BASELINE NOT REUSABLE
+
+`TestBugFB205_RetainedCaptureRequiresIndependentBaselineEvidence`使用手写、与sqlmock DB行独立的hash-only receipt；matching通过，name hash drift、无report evidence但DB report count非0、receipt缺失全部拒绝。v3 private manifest绑定LocalAppData SID-only evidence副本SHA，不再绑定未解析的后续report receipt。现存retained baseline无创建时独立receipt和受保护原始SHA，故actual inspect按设计fail closed；记录保留且无DB写/删除。
+
+## FB-204 — 2026-10-09 🟡 SUPERSEDED BY FB-205
+
+Retained baseline inspector原先没有raw candidate/paper/snapshot/run/receipt ownership、immutable version/hash或全局orphan闭包。`TestBugFB204_RetainedBaselineInspectorExecutesGlobalOrphanQueries`、`...RejectsIdentityAndHashDrift`、`...RejectsUnexpectedReportRows`、`...AcceptsExactRows`通过真实sqlmock query builder/validation path：20条LEFT JOIN中任一orphan拒绝；wrong candidate/identity hash、mapping/input drift、unexpected report row拒绝；exact rows通过。actual local-copy 20 orphan counts全0、两链计数与hash精确匹配、五类report链明确空。raw IDs只在DPAPI private manifest，workspace receipt hash-only；无DB写。
+
+## MNG005-BASELINE-IDENTITY-LENGTH — 2026-10-09 🔴 RED
+
+Hardened report-only PDF oracle实测两产品gender/phone hash匹配，但name hash均不匹配：基线manifest记录了超长预期姓名，数据库入口按真实字段长度截断为19字符，导致identity-v2承诺绑定了未持久化值。新增harness回归要求synthetic姓名在写入前通过长度门禁、超长值拒绝；修复前因`validateSyntheticIdentity`未定义编译/运行RED。现有已完成基线不重答280题，须将manifest纠正为PDF/数据库已冻结的synthetic值后以`report-only`重新生成两轮证据。
+
+## MNG005-PARTIAL-CLEANUP-OWNERSHIP — 2026-10-09 🔴 RED
+
+本地副本同时存在已完成00502基线和唯一待删00501未完成链时，`InspectPartialBaseline`/`CleanupPartialBaseline`使用覆盖A/B的标题正则，错误命中两条并在cardinality门禁失败。新增回归要求只按已授权00501的精确exam主键、完整title、code和bundle主键查询，禁止`LIKE`/`REGEXP`；保留00502、fixture、冻结002和报告文件。修复前测试因`partialBaselineOwnershipQuery`未定义编译RED。
+
+## MT-005-IDENTITY-V2-FRESH / PDF-OBJECT-BUDGET — 2026-10-08 🟢 TOOLING GREEN / 🔴 E2E BLOCKED
+
+有效RED：合同入口缺`--commitment-contract`而落入Playwright加载失败/native1；实现后12个identity-v2绑定分量逐项mutation全部改变commitment。PDF scanner默认16MiB单object/128MiB总量，10,688,445-byte合法流正例、16MiB+1和总量+1负例均GREEN。fresh harness已规定core receipt→commitment→cleanup顺序并包含runIdHash，但三次实际运行均停在新外部Chromium正常登录后的admin检测；无新PDF/完整commitment。三条前置00501链已按严格shape/report0精确清理，最终copy-only VerifyRuntime/DB counts/四listener恢复。历史blocked receipt不覆盖、不伪造GREEN。
+
+## MT-005-STRUCTURE-IDENTITY-PDF-DEEP-SCAN — 2026-10-08 🟡 2 GREEN / 1 EVIDENCE BLOCKED
+
+[RED receipt](../scripts/test/results/mng005-report-e2e-20261008/code-review-three-blockers-red.json)先证旧产物缺三类字段。AST exporter的decoy identifier、partial alternate mapping、模块顺序漂移均RED，benign unrelated strings GREEN；真实双源码/四AST node/hash及3-4-3-3聚合GREEN。PDF oracle拒加密/口令、逐xref object/raw+decoded stream/trailer/catalog/metadata/attachment，多编码扫描在16MiB单对象/64MiB总量下两PDFfindings0；默认8MiB真实拒绝10.7MiB合法decoded font stream的失败保留。identity v2 existing模式因旧receipt缺两份`runIdHash`输出BLOCKED、records空，不伪造final commitment；未来正常E2E已写run hash。PDF SHA不变，不含UI/DB/report/service/remote。
+
+## MT-005-PDF-ORACLE-FOUR-BLOCKERS — 2026-10-08 🟢 LOCAL GREEN
+
+修改前[RED receipt](../scripts/test/results/mng005-report-e2e-20261008/code-review-blocking-red.json)精确缺4字段。新增[Go AST contract test](../scripts/test/mng005-oracle-contract-test.js)执行真实catalog exporter并核13维/140题/100正40反/模块3-4-3-3、当前source SHA及两PDF绑定；E2E hash-only identity模式核当前source/receipt/PDF/report hash且stdout无姓名手机号明文。增强[Python oracle](../scripts/test/management-traits-005-report-pdf-oracle.py)核身份3 field hashes、总commitment、每份手机号精确1，并递归扫描三JSON与两PDF metadata/xref/attachment；Node/Python均exit0、findings0。未重跑UI/DB/report generation/services，PDF SHA保持。
+
+## MT-REISSUE-PURPOSE-CONTRACT — 2026-10-08 🟢 LOCAL E2E GREEN
+
+本地00501真实管理UI资格接口返回后端固定purpose“仅供系统测试，不可作为人才决策依据”，但管理页硬要求字符串包含英文`TEST`，因此HTTP200/eligible=true仍错误阻止生成。实际浏览器RED，永久SFC回归改用后端精确常量后相关管理UI/API 171pass；00501/00502真实UI均生成/复用/查看/原生下载成功。eligible/kind及旧报告禁止fallback保持。
+
+## MT-DEBUG-RUNTIME-BINDING / FB-202 — 2026-10-08 🟢 LOCAL GREEN
+
+[PowerShell合同](../scripts/test/mng005-runtime-binding-contract-test.ps1)有效RED为原子写helper缺失；GREEN：commit前注入失败保持旧target SHA、只清本次temp、DPAPI解密和当前SID ACL通过、same binding通过、stale/partial拒绝且不重写、全缺失首次绑定、显式rebind仅改变五项绑定并保持三个秘密。首个合成Replace IOException保留，后独立探针、跟踪及普通合同均PASS。[FB-202](../Go-based%20Refactored%20System/bin/mng005-runtime/main_test.go)默认skip；显式Windows本机由launcher传非秘密PID/path/SHA/port并验证实际inspector，PASS。Go package/vet、VerifyRuntime均0，真实runtime密文SHA不变，服务PID20036/12324及health/NOAUTH保持；不含280 UI、远端、DB写或部署。
+
+## MT-DEBUG-CREDENTIAL-ARGV — 2026-10-08 🟢 GREEN／历史风险保留
+
+[真实Bash合成账号片段回归](../scripts/test/mng005-mysql-stdin-contract-test.js)：修复前native1、secretInArgv=true/stdin0；修复后native0、secretInArgv=false/stdin2，双host与原八项copy-only GRANT保持。mock q/openssl不连接数据库、不使用真实密码；不能把此测试称真实mysql子进程捕获。实际专属账号已轮换，旧密文连接BLOCKED1、新及活动DPAPI连接0、源1142拒绝；源码/业务数据/原账号范围见[完整记录](management-traits-005-local-debug-20261008.md)。初始门禁格式拒绝、本地字符串SyntaxError和DPAPI替换失败保留；没有全598重跑或声称历史没有暴露。
+
+## MT-TESTER-METADATA — 2026-10-08 RED待执行
+
+当前封闭登录SFC的URL/session提前return跳过metadata；新增真实SFC回归：普通002/非002仍旧登录，005未冻结关闭、跨exam/非法ID关闭、pending/failure不调用任何登录API、已有冻结002结束后仅交后端续答资格判断。只修改该登录组件及对应单测，不撤后端strict身份名单，不部署。结果随后追加。
+
+[完成补充] 🟢 LOCAL GREEN：有效420pass/13fail/native1→433pass/0fail/native0；全前端34files598/0/0/build0，后端聚焦440/0/0与server/allbuild/vet0。12新回归+原冻结resume夹具按真实metadata更新；原RED不覆盖。真实副本连接native0但后台未启动、真实登录/全E2E及独立review未验。[本轮完整证据](management-traits-005-local-debug-20261008.md)。
+
+## MT-005-ISOLATION — 2026-10-08 最新产品政策回归
+
+【最终收口】追加跨005真实Save与005未知配置SFC均通过：Go最终35/0/0/native0、前端34files586/0/0/build0；真实编译UI28/28/pageErrors0/forbidden0/closedtrue。下方“须最终复跑/待收口”为之前进度，已由本条限定完成；realMySQL/注册005/独立review/部署仍未验。两browser失败保留并仅修null DOM predicate，不修产品迁就工具。[完整限定结果](management-traits-005-isolation-local-20261008.md)。
+
+有效RED：005两来源builder拒绝（native1）、真实Save普通002四场景失败/005五场景失败（native1）、实际candidate SFC两005未冻结错误允许旧身份（2fail/2pass/native1）；新分类模块缺失是编译RED，非业务执行证据。普通002恢复旧新建，005独立draft/source版本，既有002draft/frozen继续兼容。冲突“新建002默认/必选新版”测试迁至005、保留负向与历史冻结用例，不删旧失败账本。
+
+已验证管理特质专项Go3230/0/6skip、前端8文件418/0/0；默认全Go6400 PASS事件/0fail/11原环境skip/native0，server/allbuild0。最后新增旧draft跨005拒绝与普通多002客户端分类须独立最终复跑；完整frontend/build/browser结果待本轮收口，不沿历史560或真实SQL冒PASS。[新来源与黄金SHA回归](../Go-based%20Refactored%20System/internal/service/management_traits_005_test.go)、[当前实际Save回归](../Go-based%20Refactored%20System/internal/handler/exam_management_traits_draft_test.go)、[本地验证器](../scripts/test/management-traits-005-local-validation.js)。
+
+## MT-ADMIN-ENTRY-ISOLATED — 2026-10-08 单入口候选本地GREEN／编译闭包未完成
+
+从已上线52eec精确candidate-ui建立新scope，不拿当前167/full560当此候选证据。实际入口SFC有效RED13pass73fail/native1→首次GREEN85pass1跨realm数组比较工具失败→最终86pass0fail0skip/native0；新[入口专项](../scripts/test/mng-admin-entry-isolated-20261008.js)。仅隔离单SFC变化、模板/style/旧TEST结果API保持；build0/393资源。完整AST/context/依赖闭包及独立review❌，未部署，线上永久旧URL仍🔥开放。[可复审工件与失败](management-traits-entry-candidate-prepared-20261008.md)。
+
+## MT-ADMIN-DIRECT — 2026-10-08T08:15Z 已有回归fresh GREEN／远端永久入口仍欠
+
+不重复改产品或新造RED：此前有效RED与实际bool-only SFC回归已存在，当前入口SHA09790e74…保持。此次fresh管理入口SFC/API两个文件原生167pass/0fail/0pending/exit0，覆盖stricttrue直达、strictfalse历史、未知/矛盾/跨exam/role-only与迟到响应；不是新整包build/全560/实库1062验收。
+
+真实旧URL仍tester-list403；手动专属导航后list200/code0/1completed140140及detail200/13dim4mod，只证明当前可读恢复，不当自动redirect测试PASS。reportaction0，永久staging分流待独立最小包review及发布。[证据与后续边界](management-traits-reissue-staging-release-20261008.md#L3)。
+
+## MT-REISSUE-1062 — 2026-10-08 🔴 真实双连接 RED，修复前
+
+真实恢复库两 pool 一成功/一1062、reports1/audits1，失败及清库收据保留。新增实际 GenerateReportReissue sqlmock 回放 stale lookup→typed report-input INSERT 1062→ROLLBACK→fresh transaction winner；同时拒绝其他唯一键、audit1062、1213、字符串伪错误、跨run/paper/exam、字节/模板/内容漂移、缺失或损坏文件、缺生成审计、来源失效和取消。仅本bug服务/回归及隔离候选同步，主DDL/DML/发布禁止；结果随后追加。
+
+[完成补充] 🟢 LOCAL GREEN／❌ REAL PENDING：[永久23分支](../Go-based%20Refactored%20System/internal/service/management_traits_reissue_api_test.go#L516-L693)，有效5pass19fail/native1→专项111pass0fail2LOskip/native0；全部discover测试6383pass0fail11skip/build-vet0。真实SSH两次连接前timeout，具体实库key及修复后双连接未验、不回填旧FAIL；[全量](../scripts/test/results/mng-reissue-stage-20261008/bug1062-full-green-1791445927090.json)、[发布门禁和失败](management-traits-reissue-staging-release-20261008.md#L3)。
+
+## MT-ADMIN-STAGING-BOOL — 本轮本地兼容 RED 待执行
+
+仅既有实际SFC单测增加脱敏线上布尔合同、可选一致标记、存在但未知/畸形标记、合法ID类型、跨exam及迟到矩阵；旧39回归完整保留。原“strictfalse无新标记拒绝”案例保留并纠正为“明确unknown lifecycle拒绝”，不继续把已证旧协议当未知。产品代码尚未改，运行证据随后追加；无远端操作。
+
+[完成补充] 🟢 LOCAL GREEN：有效114项109pass/5fail/native1→专项两文件167pass/native0→全前端33files560pass/0fail/0skip/native0（+35）、prodmode build0/两diagnostics0；[永久回归](../Go-based%20Refactored%20System/ruoyi-ui/tests/unit/management-traits-admin-ui.spec.js#L232-L285)。第一收据路径ENOENT单列工具失败，不当RED。严格false无新标记兼容不是unknown默认false；两个实际DTO旧list1/新版replace1分开，所有已存在unknown/矛盾仍拒绝。独立review/真实browser/DB与部署未完成，[全部证据及保护范围](management-traits-reissue-staging-release-20261008.md#L3-L15)。
+
+## MT-ADMIN-STAGING-BOOL — 2026-10-08 🔴 真实DTO/SFC RED，尚未修复
+
+统一staging发布前，实际历史Detail HTTP200/code0/sameexam/legacy两轴/strictfalse，但没有lifecycle/newflag；当前SFC created错误拒绝旧列表。当前[失败收据](../scripts/test/results/mng-reissue-stage-20261008/frontend-compatibility.json)native1/历史passfalse，新冻结分流passtrue仅本地admin/profile adapter。需将真实布尔-only合同加入持久SFC回归，保留unknown/矛盾/迟到及原39矩阵。未修改业务或测试源码、不虚报GREEN；发布批准保留，统一发行未执行。[范围与责任人](management-traits-reissue-staging-release-20261008.md)。
+
+## MT-ADMIN-REVIEW-3 — 2026-10-08 🔴 本地RED待执行
+
+CodeReviewer三项confirmed仅当前管理UI：未知/跨exam/矛盾类型生命周期误回旧入口、生成后报告刷新被旧在途metadata丢弃、旧人员列表迟到覆盖新query/exam。先新增实际编译SFC延迟Promise回归，保留原40项及全部API合同；不部署、不改Go/DB/API。修复与验证结果追加到同日管理页报告，不把本地通过冒独立review。
+
+[完成补充] 🟢 源码/单测LOCAL GREEN：真实RED27fail100pass/native1→首五相关199pass/native0→最终全前端33files525pass0fail/native0（新增39，原40保留）；fresh build0/diagnostics0。三个矩阵见[SFC回归](../Go-based%20Refactored%20System/ruoyi-ui/tests/unit/management-traits-admin-ui.spec.js#L193-L322)。🔴 最终browser120000ms/null/SIGTERM/parent1/no-summary，driver三编辑后停止，独立review/390与完整当前bundle验收未完成；[本轮报告](management-traits-admin-ui-local-20261008.md)、[停止收据](../scripts/test/results/mng-admin-ui-local-7e74014c951c/bounded-stop.json)。旧RED登记保留，不把历史两case当本轮通过。
+
+## MT-ADMIN-DIRECT — 2026-10-08 🟢 LOCAL GREEN（remote开放）
+
+实际新SFC/API31fail50pass/exit1先RED；迁移后聚焦185pass0fail，保留原配置/旧TEST transport/续答测试。全量发现resume独立可见性1fail，恢复fresh授权后原入口；真实bundle再发现两组件只读POST重复提交拦截，用户额外1轮仅复用已有隔离配置wrapper后GREEN。最终33文件486pass0fail/buildexit0，实际本地mock桌面手机两casePASS，非真实报告/DB/远端。
+
+回归：[实际SFC管理页40项](../Go-based%20Refactored%20System/ruoyi-ui/tests/unit/management-traits-admin-ui.spec.js#L1)、[API合同53项](../Go-based%20Refactored%20System/ruoyi-ui/tests/unit/management-traits-api.spec.js#L1)、[实际bundle浏览器](../scripts/test/management-traits-admin-ui-local-20261008.js#L1)。初始31fail、warning断言失败、resume失败及两browserTimeout均保留，[限定报告](management-traits-admin-ui-local-20261008.md)。不称指定线上URL已切或原姓名报告已出。
+
+## MT-ADMIN-DIRECT — 2026-10-08 🔴 RED待执行
+
+冻结002管理旧直达URL没有query/session意图时落到旧列表403，已完成结果被误显示为空。实际SFC先复现可信strict true必须分流，再覆盖false/unknown/权限/跨exam迟到；仅本地修复，不关闭远端反馈。行报告新增独立reissue合同测试，旧TEST传输契约保留。
+
+## MT-REISSUE-API — 2026-10-08 本地后端测试索引
+
+新增服务/Gin测试先缺方法编译RED及真实路由404≠401；新容量guard专项18pass/9fail→操作局部容量复制后GREEN。实际HTTP夹具EOF及Take绑定LIMIT1错误保留，只修测试、不弱化身份/字节/权限/路径断言。最终专项49pass/0fail/1显式LO skip；真实匿名分值1pass和实际LO1pass另opt-in均native0。[服务事务/归档测试](../Go-based%20Refactored%20System/internal/service/management_traits_reissue_api_test.go#L86)、[实际HTTP查看下载](../Go-based%20Refactored%20System/internal/handler/management_traits_reissue_api_test.go#L73)、[全部失败和未验](management-traits-reissue-api-local-20261008.md#L63)。不把新增能力称已修线上旧报告；无UI/部署/DDL或真实身份报告。
+
+## MT-CANDIDATE-MINIMAL — 2026-10-08 ✅ STAGING 身份保存与精确清理通过
+
+沿已有24Gin/106SFC及最终独立source/artifact PASS，不重跑编译/proof或放宽strict decoder。仅已批准隔离4179backend＋393前端发布，真实普通用户新页server-frozen true/当前ID/三字段DOM，原真人页面不保存；单独正常admin UI创建00201开放TEST并冻结name/gender/telephone，普通考生UI真实save HTTP200/code0，body只有examId＋三字段/extra0。独立SQLcandidate1/字段值合成匹配/未选字段空/profile合同一致，未开卷/无paper snapshot/PDF。
+
+新增[C区单一E2E](../scripts/test/management-traits-identity-save-staging-20261008.js)，语法/diagnostics0，原terminal native exit0；FK开启/SafeUpdate1/exactPKfinally owned0，已有共享bundle保留，原主计数恢复及旧465/source/config/Schema/cache/userprofile SHA保持。[真实HTTP](../scripts/test/results/mng-identity-publish-20261008/synthetic-http.json)、[SQL](../scripts/test/results/mng-identity-publish-20261008/synthetic-sql-verdict.json)、[清理](../scripts/test/results/mng-identity-publish-20261008/synthetic-summary.json)、[最终验收](../scripts/test/results/mng-identity-publish-20261008/acceptance-verdict.json)。旧13键故障条件的本staging切片关闭；未知/null/legacy明确false/source500或generationrevoked负向沿已有本地证据，未远端重新触发，不冒全新负向验收。完整草稿、formal、reissue或production不包含。
+
+## MT-CANDIDATE-MINIMAL — 2026-10-07T15:07Z 资源数量归因完成／编译包门禁失败保留
+
+本轮不改业务两源或身份断言，不复跑24Gin/106SFC/全仓。七项public缺口按旧manifest和fresh线上SHA证明、两真实npm生产build0且各393；完整旧包等价FAIL347新/不同＋345旧缺。重复模块原断言失败保留，改为保留全部实例不删除比较门禁；第三轮原上下文构建native null/SIGTERM/ETIMEDOUT/manifest0/原源SHA保持，达到三编辑后停止。用户转交两源review PASS不是本worker独立执行，真实staging保存200与清理NOT_EXECUTED。[完整证据](management-traits-candidate-identity-local-20261007.md#L3)、[新收据](../scripts/test/results/mng-identity-minimal-20261007/artifact-bounded-verdict.json)。
+
+## MT-CANDIDATE-MINIMAL — 2026-10-07T14:50Z 精确旧基准 RED→GREEN（未发布）
+
+用户已批准最小staging范围。215Go逐SHA恢复后Linux基准binary完整匹配在线8baa…；在该旧源回放严格身份回归，Gin8fail/16pass、SFC/API35fail/71pass，真实断言RED/native1，strict decoder本来正确的拒绝不改。仅隔离Detail冻结投影及草稿改造前candidate后，Gin24pass/0fail/0skip、SFC/API106pass/0fail/0pending/native0，build/vet/Linux0。原工作树/原测试不改，不删草稿回归；本轮只测明确旧bool合同。
+
+独立复审未执行；隔离前端386资源基准index不等线上393资源index，编译归因未完成，不能发布此dist/标远端GREEN。远端仅只读、PID2006/8baa/353c/active0/draft表0保持，真实身份保存200与SQL清理未验，反馈仍开放。已有授权继续有效。[完整影响/源码切片/RED与GREEN索引](management-traits-candidate-identity-local-20261007.md#L3)。
+
+## MT-CANDIDATE-FIELDS — 2026-10-07T14:30Z fresh本地GREEN / 线上部署差异仍阻断
+
+- 本轮业务代码不改，不伪造新RED；已有真实RED与修复保留。fresh原生实际SFC/API109pass、全前端435pass、Gin合同16＋配置注册9pass事件，全0fail/0skip/exit0；前端production build0/原2体积warning。旧全前端exit1本轮未复现，原因未知。
+- 实际线上普通/my路径modefalse、公开Detail缺三标记，合成输入handleSave+确认拦截13键/extra8/emptyextra7，全部abort未送服务器；未知键/null正是严格decoder错误合同，配置gender合法，不删除其必填。线上未发布/反馈不关闭。
+- frontend-only合同不足、draft表0、无source map/整dist差异未归因；等待主确认仅后端Detail冻结投影＋对应candidate切片与维护窗口，禁止draft/formal/DDL/restart夹带。[完整限定证据](management-traits-candidate-identity-local-20261007.md#L3)。
+
+## MT-NEW-DRAFT — 2026-10-07 🟢 LOCAL GREEN（remote未关闭）
+
+有效真实Save7fail事件/SFC3fail及精确GET列表2fail事件先RED；最终6272Go/0fail/9原skip、435frontend/0fail、build/vet0。新版草稿持久化与exam同TX，取消freeze不回旧链，历史不回填；公开三态/当前ID和strict白名单保留。[回归索引/全部失败记录](management-traits-new-draft-local-20261007.md)。独立review、MySQL、DDL和staging未执行；下方RED登记保留为历史。
+
+## MT-NEW-DRAFT — 2026-10-07 RED（本地实施中）
+
+保存002后取消冻结没有持久化新版身份，profile0误回旧链。先执行实际Save/Gin与实际SFC RED，再接独立草稿生命周期；旧历史不自动转换。新表SQL仅生成，不执行。
+
+## MT-CANDIDATE-FROZEN — 2026-10-07 本地GREEN，独立复审欠
+
+- 原生磁盘实际SFC冻结标记/响应ID12fail82pass/exit1；新增未知标记8项有效RED，URL伪造/false跨测评4fail/60未选择/exit1。新版必须服务器当前ID+严格true；旧链必须当前ID+明确false，未知不得回退。
+- 最终身份SFC/API106pass/native0，全前端32files430pass/0fail，最终前端build native0/原2warning，诊断0。旧14项磁盘回归曾被陈旧编辑器覆盖，已完整恢复；夹具缺ID等工具失败保留记录，不降低断言。
+- 无后端白名单/权限/环境门禁变更，无SSH/部署/历史写入；独立CodeReviewer因模式边界未执行。[实际修改与证据](management-traits-candidate-identity-local-20261007.md)。
+
+## MT-CANDIDATE-FIELDS — 2026-10-07 GREEN（仅本地）
+
+- 修改前真实SFC7fail2pass、Gin7pass6fail事件native1；新增lateidentity1fail及repo分类错误2fail事件均先有效RED再最小源修复，未改旧期望。最终SFC/API80pass native0、前端全量32files404pass、Go6247pass0fail9skip/675顶层/parse0/native0、build/vet0。
+- 真实DOM/rules+API精确payload覆盖两字段无gender及三字段gender必填、pending/error/畸形/路由旧配置与身份迟到/旧002。真实Gin完整Schema/profile投影、无profile/全缺结构保持旧链、错误关闭、strict unknown/null/sex/mobile拒绝及未配置gender ROLLBACK零INSERT；选gender空值拒绝、两字段和三字段正常成功。
+- 生产源只Detail与candidate组件；decoder/service/gate/formal/旧harness不改。远端未部署/未修复验证，独立复审欠；不抓取真实PII。[完整测试链接和证据](management-traits-candidate-identity-local-20261007.md)。下条RED登记保留。
+
+## MT-CANDIDATE-FIELDS — 2026-10-07 RED待执行
+
+- 普通入口无mngTest/token时必须按服务器冻结字段显示、校验、白名单提交；name+telephone不强制gender，三字段则必须校验gender。配置pending/failure禁止提交，迟到响应不能跨exam污染，旧002保持原路径。
+- 真实Candidate.Save继续拒绝null、未知键、sex/mobile别名与未配置非空gender，零INSERT；不修改strict decoder。真实Detail必须只投影服务端验证后的字段名/布尔，不返回profile资产/人员数据。
+- [修改前影响清单与真实数据差异](management-traits-candidate-identity-local-20261007.md)。
+
+## 2026-10-06 MT-FREEZE-CONFIRM-RACE：测试驱动局部GREEN／单stagingPASS
+
+- 有效RED：[当前编译driver＋真实构建SFC延迟save250ms](../scripts/test/results/mng-freeze-local-9dd3d91995e6/verdict.json)exit1，两次confirm都点“提示”，真正“确认冻结 TEST”留在页面；不是业务freeze APIbug或所有旧timeout唯一根因。
+- 三轮后停止并取得用户另批仅1次driver修正：同exam保存response屏障＋精确冻结title，不改业务/guard/超时、不POSTfallback/复制脚本；[最小变更](../scripts/test/management-traits-default-staging-20261006.js#L136-L147)。原延迟测试GREEN0，[标题与HTTP证据](../scripts/test/results/mng-freeze-local-b582a14691d0/verdict.json)；首次插入replace $&语法失败单独保留，不混为行为RED。
+- ✅ 单cc784正常独立auth/UI冻结HTTP200、独立SQLfrozen25/paper0/hash有效，finally/final0/旧465/PID同；[远端限定PASS](../scripts/test/results/uf054-ui-cc784023556d/summary.json)。本地四SFC202pass/exit0、641/Go215同。完整四UI/自然/四native/Python仍❌，正式生产能力仍P0，[生产清单](management-traits-production-readiness-20261006.md)仅准备。
+
+## 2026-10-06 MT-DEFAULT-ASYNC/FREEZE：LOCAL GREEN，最终远端仍BLOCKED
+
+- 🟢 第2实际编译异步错误归属RED exit1→GREEN0：natural/resume失败绑定自身safeStage，固定class/status/category，不把共享active最后report-download当原因；fullf12三报告五阶段全部passed，原Error具体底层cause仍⚠️未采。
+- 🟢 第3同实际freeze函数已选草稿RED1/checkedfalse→GREEN0/checkedtrue，只未选才点击及精确配置加载屏障；原Save/独立freeze确认不改。两个C区文件各3次修改停止，最后syntax0/3合同组0/原Node启动合同0/diagnostics0，相关202pass。
+- 🔴 最终9b真实freeze-00202-candidate Timeout/HTTP未采/未开卷，远端GREEN未取得；四组合native3/4、自然三例/续答自然5min/expired409/Python仍未验。单b274报告native1不替full第四份。所有失败保留，四批finally0/14:06fresh7roots0/旧465/PID同，active0。[完整限定收口](management-traits-default-staging-result-20261006.md)、[最后安全阶段](../scripts/test/results/uf054-ui-9b8a1bc9b70d/safe-failure.json)。
+
+## 2026-10-06 MT-DEFAULT-STAGE-AUTH：本地GREEN／单报告STAGING PASS
+
+- 🟢 两既有C区测试第1轮有界修正：[编译后真实驱动合同](../scripts/test/management-traits-full-ui-harness-contract-test.js#L38-L100)RED exit1→3合同GREEN exit0：自有context真实getInfo选择、401拒绝、不900000首页glob；固定stage/class/status409且不存rawerror；第二目标paper精确选run而非首行。相关SFC/API202pass/exit0、syntax/diagnostics0，不是业务bug修复或主竞态PASS。
+- ✅ 单b274c34b667c只新00202candidate真实140UI/manualcompleted、五报告阶段passed/native1/DB-private-dataSHA匹配，finally0/旧465/runtime/PID保持。[本轮记录](management-traits-default-staging-result-20261006.md)。旧b254第二Error细cause仍UNVERIFIED；旧9d23首页等待原因未追溯，不覆盖其fail。
+- ❌ 完整新批f12bb9277e40尚待结束，自然三例/四native/Python未通过；不删除原测试、不复制driver绕三次限制，不变期望。
+
+## 2026-10-06 MT-DEFAULT-STAGING-HARNESS：发布PASS／完整验收BLOCKED
+
+- 新C区复用入口鲜活build/原子frontend-only发布/393公网SHA/final各native0，不业务修复、后端替换或restart，Go215不改。首入口CRLF精确匹配失败→规范内存LF；增强String.raw正则`${}`syntax1→Playwrightexact文本匹配syntax0，失败均保留，不虚构行为RED/GREEN。达到三次错误修正后停止。
+- 首真实UI批report第二阶段Error缺细cause，未登记产品bug已修；readonly归档仅report1/固定failure0不当全业务无错。后续独立文档/阶段/clear-reselect/resume/expired409仅待真验，最终首页15min认证等待timeout，**没有复验GREEN**。不再试改、不降断言或增加等待上限。
+- 首批四正常default配置/人员/freeze/三140UI及两manual/一native仅局部证据；exact4PKfinally0/旧基线同。自然三例/native4/Pythonoracle未完成；旧回归fail保留。[本轮完整结果](management-traits-default-staging-result-20261006.md)、[最终安全失败](../scripts/test/results/uf054-ui-9d23f20f068b/safe-failure.json)。
+
+## 2026-10-06 MT-UI-INSPECT-NODE-CLI GREEN（仅测试启动器）
+
+- 🟢 原生合成baseline0/inspectnull RED→仅--仍失败→固定 `mng-evidence` 首位置参数、loader剥离后baseline/inspect均0、四ID不丢，整体exit0。旧240秒诊断与中间沙盒依赖失败保留，不改超时预算/SQL/守卫/清理器。
+- 🟢 实际修正evidence只对旧已清理四PK做read-only inspect，09:16:06首次SSH0/父0/1407ms/FK1/0行；原收据未写，不冒本批四完整UI/PDF/native GREEN。
+- 新默认属已确认政策变更，实际SFC有效RED75/6→81pass，六本地构建浏览器case通过；全前端32/385，不是远端数据库验收。[完整记录](management-traits-new-default-local-20261006.md)。
+
+## 2026-10-06 MT-UI-INSPECT-NODE-CLI：取证启动模式进入调试器（RED登记）
+
+- 原fullUI取证模式以 `node -e <loader> inspect <mark> ...` 启动；本轮原生Node16合成输入两次均进入Debugger attached并等待，exit null/SIGTERM/ETIMEDOUT。不是SQL锁、maxBuffer或第四人员新增失败，不增加240/120秒预算。
+- [原批次失败](../scripts/test/results/uf054-ui-37f80e5d48fd/evidence-inspect-1791276695848.json)保持不变；新只读诊断同240008ms终止，原目录无inspect子收据，后续纯本地复现确认Node CLI模式问题。只读诊断并未执行SQL。
+- 新[C区原生启动合同](../scripts/test/management-traits-full-ui-harness-contract-test.js)提取真实evidence启动函数，仅将子payload替换为合成argv回显，禁止SSH；要求baseline/inspect都numeric0、精确四ID不丢及CLI `--` 分隔，先RED后修改。
+
+## 2026-10-06 UF053 / MT-RACE-OBSERVATION：本地观测回归，不是产品 bug 修复
+
+- 主 race/staging 新观测 **UNPROVEN**，无部署/restart/远端数据/SET；新独立 agent review未执行。用户仅批准 A 的本地最小观测。
+- 有效入口 compile RED exit1→首批18pass/3fail（新夹具 metadata/SQL匹配）→修夹具23pass；新增未完成 attempt 误报 commit **有效行为 RED0pass1fail/exit1**→仅 emitter 正常终态条件收紧→最终 service25pass/0fail0skip/exit0。一次新增括号编译失败是无效行为RED，不混计，全部旧收据保留。
+- Gin实际服务器签发token/现有route/service/sqlmock7pass/0fail0skip；关闭同409无日志/认证与manual/unknowncaller拒绝保持。真实 ScanExpiry/SubmitParticipant并行 attempt隔离、创建/零写复用/BEGIN锁写COMMIT错误、unknownstage/容量/隐私及事务外sink均已覆盖，不是实际MySQL锁竞争或 race-detector通过。
+- [service回归](../Go-based%20Refactored%20System/internal/service/management_traits_race_observation_test.go)、[Gin回归](../Go-based%20Refactored%20System/internal/handler/management_traits_race_observation_test.go)、[完整证据及批准边界](management-traits-four-real-verification-20261003.md#L3)。默认全量/build/vet/范围收口追加于完整报告，不沿旧数目冒新验证。
+
+## 2026-10-06T04:52Z UF-050 STAGING VERIFIED；四功能UI/自然到期/finally闭环
+
+- ✅ 正常手工UI新增status字符串0→SQL4nonNULL0→四正确密码登录200code200五键，仅front strict8delta/393公网发布、server/PID2002不变；UF050限定stagingGREEN，ImportData未覆盖。旧RED/local8-184-264/build不覆盖、不重复全量。
+- ✅ 四功能UI真实按钮键盘563保存/同卷原期限恢复/四结果13维4模块/四TESTgenerate-view200；真自然1500sec的140completed50、0/3incomplete正式NULL/noPDF/三20min提示/三自动HTTP200，后期三genuine原凭据save409、实际四incompletegenerate409。六各唯一1/13/4/1真实SQL，不能作主Worker竞态证明。
+- ❌ native四份各双20sec事件timeout/saveAs0，raceUNPROVEN，一140细响应缺失保留；SCP非native，整体PARTIAL。finally首次cleanup0＋独立final0/所有ownPK0/11逐0/private0/旧465-source-config-schema-cache-PID同，原admin200/ownedpages0/pending空。[完整限定结论](management-traits-four-real-verification-20261003.md#L3)、[机器summary](../scripts/test/results/uf050-ui-f61006041501/summary.json)。
+
+## 2026-10-06T04:33Z UF-050 staging正常新增合同已真实GREEN；suite仍PARTIAL
+
+- ✅ strict八资产归因exit0后仅front发布，原fail不覆盖；正常UI exact draft四新增/刷新HTTP200/code200、payload字符串0，独立SQL四status0/nonNULL，四正确密码登录200/code200/五键。仅手工新增关闭UF-050，不扩大到ImportData/所有入口；原本地8/184/264/build证据复用。
+- ⚠️ 四完整UI3/4；563正常按钮键盘保存/三个manual completed13-4/报告200，自然140/0/3尚未到期，原1500秒deadline未改。native三份各两次eventtimeout/saveAs0，SCP副本非native；owned资源尚存、finally pending，不标完整通过。[实时准确范围](management-traits-four-real-verification-20261003.md#L3)、[安全进度](../scripts/test/results/uf050-ui-f61006041501/browser-progress-0432.json)。
+
+## 2026-10-06 UF-050发布门禁BLOCKED（远端GREEN未取得）
+
+- 🔴 新[C区发布差异测试](../scripts/test/uf050-frontend-release-test.js#L1)本轮exit1/SSH read-only comparison failed；初版未留传输细节，原因UNVERIFIED，未重跑连接。385/393资源逐SHA及app/index部分对照通过不是完整provenance PASS；后续安全传输receipt已补，不回填旧失败。
+- 原actual SFC8/184及backend264/buildexit0仅沿已核local证据，不重复全量；本轮617项只SFC变化/212Go/旧11receipt不变。真实UI新增字符串0/SQL非NULL0/正常tester登录五键均未执行，原页getInfo401；无上传/切换/新业务资源/restart/production，UF-050仍待staging真实验收。
+- [失败收据](../scripts/test/results/uf050-staging-20261006/blocked.json)、[范围与下一最小复验](management-traits-four-real-verification-20261003.md#L3)。不放宽guard/修ImportData或改变原RED/summary，不把cleanup_required0称清理PASS。
+
+## 2026-10-06 UF-050 / MT-UI-TESTER-NULL-STATUS（LOCAL GREEN，远端未关闭）
+
+- 🟢 [真实SFC回归](../Go-based%20Refactored%20System/ruoyi-ui/tests/unit/management-traits-personnel-preflight.spec.js#L41-L78)：新建payload显式字符串0；编辑0/1/NULL/2整体回填/保存不覆盖，编辑后再次新增0。原RED期望不改，fresh1fail/exit1及扩展3pass5fail/exit1保留；一行reset默认修复后8pass，相关5文件184pass/exit0。
+- 🟢 原sqlmock/Gin/router后端状态/guard专项264pass事件/38顶层/0fail0skip/exit0；NULL/停用/未知仍拒绝，未修改Go。当前frontend buildexit0/原两体积warning及Browserslist通知保持，diagnostics0。[安全收据](../scripts/test/results/uf050-local-20261006/verdict.json)。
+- 🔴 staging尚未发布/真实DB与登录GREEN未验，完整UI0/4、natural/race/native不关闭；旧summary及所有原失败/cleanup0证据不变。独立Excel导入未赋状态为本轮未覆盖入口，不扩张修复范围。[完整影响](management-traits-four-real-verification-20261003.md#L3)。
+
+## 2026-10-06 UF-050 / MT-UI-TESTER-NULL-STATUS（新真实RED，未修）
+
+- 🔴 本轮正常UI精确draft查询/新增/刷新200，全部tester准备后freeze；正常tester登录HTTP200/code500/身份拒绝。独立SQL4新statusNULL/del0/passwordPresent/owner正确/paper-endNULL。当前UI reset未写status、Create持久化请求Status、strict identity要求0；不改guard/密码/状态绕过，不夸远端唯一内部cause已观测。
+- 🔴 [actual SFC新增单项](../Go-based%20Refactored%20System/ruoyi-ui/tests/unit/management-traits-personnel-preflight.spec.js#L39-L54)：原方法完整add请求statusundefined，而期望显式'0'；唯一-t UF-050 **1fail/0pass/3未选择/exit1**。不修改期望使GREEN，不重跑179/250/build；[SFC RED](../scripts/test/results/mng-premature-timeout-a61006021801/sfc-status-red.json)。真实UI/SQL合同另RED0pass1fail/exit1，不冒称后端单测。
+- UF-049 scope仅远端限定通过；完整UI0/4、natural/native未验。新4exactroots/finally0及独立旧基线/SHA/会话终验0，不覆盖新RED；没有业务fix/deploy。[完整记录](management-traits-four-real-verification-20261003.md#L3)、[本批summary](../scripts/test/results/mng-premature-timeout-a61006021801/summary.json)。
+
+## 2026-10-06 UF-049重新归因／仅测试路径GREEN
+
+- **远端完整UI/natural/native未验；旧summary/RED原样保留，不标远端BUGresolved。** [纠正 - 2026-10-06] 下条将本403归为必须业务专用列表闭环过宽：实际新增tester profile0，另一candidate profile1使无examId旧全库列表正确拒绝；弹窗examId不是queryParams.examId。
+- 🟢 [实际SFC回放](../Go-based%20Refactored%20System/ruoyi-ui/tests/unit/management-traits-personnel-preflight.spec.js#L38-L71)：原步骤0pass2fail/exit1；唯一测试路径纠正先query选owned draft→原handleQuery→新增，3pass。期望作用域断言保持；原全库路径仍保留负向观察，不模拟解除403。
+- 🟢 [真实browser步骤](../scripts/test/management-traits-personnel-preflight-test.js#L5-L29)只exact-owned/未冻结查询，403及跨exam stop；Nodecheck/4非法输入合同0，未远端执行。相关前端179pass/5文件/exit0，原Go守卫/handler/router/service250事件/0fail0skip/exit0，buildall/vet0；不是E2E或覆盖率。
+- 四UI stage2仍blocked、3/4未开始、5原cleanupPASS；无业务源码/权限/Schema/部署变化。全部tester准备须先于任何owned freeze，冻结后旧列表仍禁止。[完整证据和消费者](management-traits-four-real-verification-20261003.md#L3)、[新RED](../scripts/test/results/mng-personnel-local-20261006/red.json)、[本地verdict](../scripts/test/results/mng-personnel-local-20261006/verdict.json)。
+
+## 2026-10-06 MT-ADMIN-PERSONNEL-LIST-403 / UF-049（真实UI RED，未修）
+
+- 🔴 正常admin getInfo200/新00201candidate frozen存在，正常UI新增closed tester后getList刷新真实403；相同Bearer只读重核403/code1/固定旧接口拒绝。最小UI旅程断言对captured实际response要求安全可用列表，**0pass1fail/exit1**，不是新Go单元测试或mock，不用“无错消息”冒充GREEN。
+- 当前guard collection AllLegacy拒绝按设计保护新实体，人员管理UI新增后仍调用旧列表且无catch；修复应提供不泄露凭据的安全管理闭环，不能删除或放宽guard断言。本轮仅记录/分析，无业务修复/部署，状态保持RED。[真实RED](../scripts/test/results/mng-ui-natural-native-20261006/ui-business-red.json)。
+- 140candidate真实click/save200/刷新同卷通过只是子链，四完整UI0/4、natural/native未验；finally exact2roots及11sidecar/private全0、current12/source/465/runtime/Schema/cache/PID/三健康保持，原管理员首页保留。[详细证据](management-traits-four-real-verification-20261003.md#L3)。
+
+## 2026-10-05T14:14:25Z MT-LIFECYCLE-OBSERVATION-REGISTRY：新有界1轮实际GREEN
+
+- 未测先列：主HTTP/主systemd/fullUI/coverage/formal-prod保留；产品PARTIAL。新fixture1/3、runner0/3，210/240/child30不变。旧[37.33秒RED](../scripts/test/results/mng-lifecycle-remaining-51fba58578d2f855/safe-failure-evidence.json)0pass1fail0skip保留，不回写旧receipt或删除errno/NULL负向门禁。
+- 🟢 [测试Trace观察](../scripts/test/fixtures/management-traits-lifecycle-staging_test.go.txt#L31-L57)走构造显式保留Logger而非外层callback，context/schema/精确table过滤、无参数、typed1644/45000恰1次，watcher defer清空；atomic完整事实回滚/NULL读取/正常同卷140retry1/13/4/1/duplicate零增量实际通过，原标量sql_null_to_time仍负向通过。
+- 🟢 Worker child28610实际未到期首扫后有意Kill/Wait，28616自然跨原deadline后RunExpiry立即1023ms、0/3incomplete正式NULL/no-render、full140completed及双pool Worker/manual unique timeout1/13/4/1。exact Worker PK锁观察＋事务结束屏障后cancel/join，无deadline重置/主服务重启。
+- 父1pass0fail0skip/125.76秒/exit0、五case标记PASS，secondchild1pass/1.03秒（firstchild被杀不计PASS）；Node/contract/两build/两vet各0/editor0。当前finally0/库trigger-grants-upload-child0/主11逐0/private0/旧465/currentsource/runtime/PID/cache不变。仅fixture业务源码0，限定todo2闭环，不产品DONE。[实际GREEN](../scripts/test/results/mng-lifecycle-remaining-bf05132543452c00/transport-6-execute.json)、[新终验](../scripts/test/results/mng-observer-scope-20261005-140715/final-readonly.json)、[完整影响与边界](management-traits-four-real-verification-20261003.md#L3)。
+
+## 2026-10-05T13:58:26Z MT-LIFECYCLE-NULL-SCAN／OBSERVATION-REGISTRY（未GREEN）
+
+- 🔴 原fixture NULL扫描本轮真实RED：sql.NullTime独立读取NULL，原Scan(**time.Time)为*fmt.wrapError/白名单sql_null_to_time，4.01s/exit1、0pass1fail0skip，非身份service。nullable结构修正保留EndTime=nil断言及原标量负向回归，但最终执行未到修正处，**不能登记GREEN**。[RED](../scripts/test/results/mng-lifecycle-remaining-e5e7a1c701a3340a/safe-failure-evidence.json)。
+- 🔴 最终140题save34411ms后drivererrno1644观察门禁FAIL，37.33s/exit1、0pass1fail0skip；s.db独立GORM registry，外层db callback观测不生效，同缺口影响新增Worker Row latch。实际事务errno/完整rollback/retry/Worker未证，非businessbug已确证。fixture3/3、runner1/3停止，不移除assert或第四轮修正。[最终FAIL](../scripts/test/results/mng-lifecycle-remaining-51fba58578d2f855/safe-failure-evidence.json)。
+- 本地Node/contract/fresh两build两vet均0/editor0，仅编译证据；两owned库/trigger/grant/payload0、final13:58:26exit0/主11逐0/private0/旧465/currentbaseline/PID/cache不变，不覆盖测试FAIL。既有HTTPzero/DataSHA已PASS不重开。下一真实driver/registry观察回归须新有界scope，旧历史保留。[完整限定状态](management-traits-four-real-verification-20261003.md#L3)。
+
+## 2026-10-05T13:32:39Z MT-LIFECYCLE接续：未新执行RED/GREEN
+
+- ⚠️ 新有界3轮授权已接，fixture/runner修改0、轮次使用0；fresh只读SSH两次连接前timeout/255后停止，未恢复库或上传，不能做真实诊断/RED/GREEN。context210/外限240保持。
+- 原unknown确在fixture直接读取candidate.end_time Scan(**time.Time)，不是service身份API；GORM1.25.12源码仅读，NULL/driver/锁等cause仍未实证，不注册为已定位或已修测试bug。旧零写部分、owner未验/retry未验、Worker未执行与三轮历史原样保留。
+- 本轮资源创建0/cleanup_required0，当前远端归零/备份/旧指纹未复核；不把08:31历史HTTPzero及DataSHA欠项重开，也不以历史终验假称本轮PASS。[失败receipt](../scripts/test/results/mng-atomic-worker-20261005-133239/ssh-readonly.json)、[完整接续记录](management-traits-four-real-verification-20261003.md#L3)。
+
+## 2026-10-05 MT-LIFECYCLE-OBSERVATION／恢复库真实失败收口
+
+- 🟢 仅测试观测合同：修改前Node断言固定stage/class/context缺失exit1→修改后GREEN；真实未知Error不格式化。原210秒context/240秒外限保持，旧210.08秒失败原因仍UNVERIFIED，不登记为timeout已修。
+- ✅ 首恢复库真实positive_app服务七case PASS：到期140与可信Submit双池唯一1/13/4/1、0/3incompleteNULL/no-render、resume安全子集、end、retired、revoked；整体exit1止于trigger mysql1419/ctxnone/50.42秒。建夹具条件不足，不改业务/全局权限，原失败保留。
+- 🔴 最后有界轮仅atomic/Worker：root独立trigger DDL成功，实际失败提交及run/dim/module/receipt零增量、paperstate1、submitted0通过；`rollback participant`实际unknown/ctxnone/3.90秒exit1。**原因未证，不能称业务bug/atomic全GREEN**；人员end NULL、正常retry、Worker/restart均未执行。fixture三次编辑上限达，停止、不复制绕限。
+- 两轮fresh focused test/bootstrap build/vet均0；两库/DROP/临时GRANT/上传0、终验exit0/主11表0/private0/465与当前基线/权限不变，不覆盖测试FAIL。HTTP401/zeroUI及DataSHA欠项保留。
+- [最终夹具](../scripts/test/fixtures/management-traits-lifecycle-staging_test.go.txt#L175-L202)、[首轮失败](../scripts/test/results/mng-lifecycle-remaining-1ac0b50628a4d637/safe-failure-evidence.json)、[末轮失败](../scripts/test/results/mng-lifecycle-remaining-0ca26bf185d9b25f/safe-failure-evidence.json)、[完整状态](management-traits-four-real-verification-20261003.md#L3)。
+
+## 2026-10-05 MT-ORACLE-DECIMAL-ZERO：仅测试验证器，唯一修正GREEN
+
+- 🔴 本轮未修改综合脚本真实exit1；精确TestBugMTOracleDecimalFixedZero原期望0E-12、DOCX0.000000000000数值相等/词法断言FAIL。旧三轮及本轮[RED](../scripts/test/results/mng-bounded-20261005-aa67b4600284/restored-oracle.json)保持。
+- 🟢 唯一patch只[十二位期望格式](../scripts/test/management-traits-staging-zero-restored-oracle.py#L110-L124)改format(decimal,'.12f')，未动Fraction/数值比较/等级/门禁；原脚本实际四文件4case/0error/exit0。144/144客户文案、Fraction/OPC/六图，零五灰环360/360/whitehole1.0/blue0；[GREEN](../scripts/test/results/mng-bounded-20261005-aa67b4600284/restored-oracle-attempt2.json)。独立DataSHA仍未验，scope是旧恢复库文件离线重放，不是新HTTP。
+- AST0/editor0；Pylance MCP启动FAIL如实保留。真实getInfo401/两SSH连接timeout各255，本轮HTTPzero及生命周期SKIP，未改210秒fixture/业务/部署/权限，无资源创建→cleanup_required0，不称当前远端cleanup0。原actualsave210.08秒失败无cause/phase，不能确定timeout。[完整限定报告](management-traits-four-real-verification-20261003.md#L3)。
+
+## 2026-10-04 MT-REPORT-DIAG-01：本地失败阶段日志回归
+
+- 🔴 有效RED1pass/14fail/0skip/parse0/exit1：真实GenerateTestReport/sqlmock十三failure无stage日志，正常成功PASS。初次语法及schema夹具错误不算有效RED；历史staging409业务错误保持未修。
+- 🟢 最终三包77pass/0fail0skip/parse0/exit0：固定stage/class-only、wrapped/nested/unknown syntheticsecret不泄漏、不调用未知Error、成功无日志、原409/503/200、ROLLBACK/新file cleanup/旧PDF保留。原两个write分类失败批次保留，按真实Windows PathError优先分类收口，未改业务流程/响应。
+- 测试：[阶段](../Go-based%20Refactored%20System/internal/service/management_traits_report_diagnostic_test.go#L36)、[safe分类/真实OS](../Go-based%20Refactored%20System/internal/service/management_traits_report_diagnostic_class_test.go#L24)、[LOcause](../Go-based%20Refactored%20System/pkg/libreofficepdf/client_test.go#L143)、[renderer/HTTP](../Go-based%20Refactored%20System/internal/handler/management_traits_report_routes_test.go#L54)。仅LOCALONLY，无SSH/DB/deploy；全Go6144pass/652顶层/0fail/9原skip/parse0/exit0，Windowsbuild/vet各0/零error，独立reviewPASS/限定diff-check0。
+- 更深层schema/load sentinel只可记validation，不能推断原409根因；未新增marshal/所有OS故障及竞争cause矩阵。[完整影响/日志合同/发布交接](management-traits-four-real-verification-20261003.md#L3)，历史oracle/210秒fixture未改。
+
+## 2026-10-04 HTTP-GENERATE-409：真实失败登记，未修
+
+- 🔴 正常原admingetInfo200/admin1/wildcard；正常四身份与140/140 completed、4run52dim16mod4receipt/独立Fraction均PASS后，首份00201candidate50的管理员generate-test **HTTP409/610.78905ms**，报告/私有PDF0。日志只有状态，无底层错误；不能称是超时、零分问题或已定位业务bug。
+- 按真实错误停止，不重试、不改业务/配置/模板、不部署重启。其余三份generate/认证view/download/PDF量化及生命周期SKIP；历史综合oracle三轮FAIL/210秒夹具FAIL未修未改未重跑。不能拿隔离服务PDF旧PASS覆盖本轮HTTP失败。
+- exact-owned主键事务finally0，当前旧12表/465逐SHA/runtime不变，原管理员会话首页/getInfo200保留。后续须独立有界诊断授权→真实底层证据→如需业务修改再RED/GREEN，不在本轮自行修复。
+- [HTTP收据](../scripts/test/results/MTHafc22a7e8edf/http-receipt.json)、[真实四卷SQL](../scripts/test/results/MTHafc22a7e8edf/owned-sql.json)、[详细验收](management-traits-four-real-verification-20261003.md#L3)。
+
+## 2026-10-04 MT-ZERO-RING-01 staging发布限定补充
+
+- 已真实backend-only发布534f0abb7f5e90a9eb8da5606763afa0bf15e1fd2994a0418f82cb503e4bf6d5，不改客户模板/评分/前端。目标LO24.2隔离恢复服务全零PDF660827bytes/SHA53a6993bc642ac9ebb9befd59f3f22b1d0116e25678e0b1161b7a9a6fb8c5bb8、9页，五E7E6E6完整灰环各360/360/whitehole1.0/blue0，0.00原12/10pt，限定视觉bug门禁PASS。
+- 当前产品验收仍PARTIAL：正常admin401、authenticatedHTTP/UI未测，恢复库后续actualsave210.08秒FAIL/exit1。新综合oracle达到三轮仍FAIL（已实证零期望Decimal0E-12与Go0.000000000000词法差异），不冒称业务回归或把原localGREEN变RED，也不删新工具失败。下一主代理新有界授权修验证器/预算后重验；本worker没有再次业务修复。
+- [完整状态/证据](management-traits-four-real-verification-20261003.md#L3)，[限定灰环receipt](../scripts/test/results/mng-zero-staging-8a88d9d20f42d4f7/output/standalone-zero-gray.json)。原历史RED与各失败产物长期保留。
+
+## 2026-10-03 MT-ZERO-RING-01（仅本地精确零分TEST环图）
+
+- [完成补充] 🟢 有效原生GoRED5pass/4fail/0skip/exit1→专项11pass/0fail0skip/exit0；原四冻结DTO离线Go重放13事件PASS。旧真实全零PDF独立graygate仍RED5missing/exit1，新真实Go→LO26.2.5.2八代表及四客户全文PDF GREEN。五灰环216DPI、360/360桶、白洞100%、五0.00 font/bbox/字号保持；非零含.004→0.00及比较图非值OPC原样。原source10/compat17（117子）不改断言隔离输出通过，独立review两轮PASS。
+- 主代理全Go6090pass/646顶层/0fail/9原skip/parse0/exit0，build/vet0/零输出，非coverage。四客户全文9页/六图/144完整可提取段，原资产11297SHA不变；[本地全文receipt](../scripts/test/results/management-traits-zero-ring-frozen-pdf/1cb36f/contract.json)及[详细影响/失败保留](management-traits-four-real-verification-20261003.md#L3)。仅local，不SSH/DB/deploy/userbrowser；stagingFOURBLOCKED及生命周期未验保留。
+- 🔴 RED 登记：五个语义环图精确零分时余量点透明，数值0/100正确但无可见环。新增原生Go回归覆盖all-zero、near-zero(.004→0.00)、25/50/75/100、mixed及等值零；必须实际渲染原SHA锁定模板，失败不能是缺符号。
+- 唯一授权有限渲染样式例外：已解析ChartScore的big.Rat.Sign()==0时，仅将对应c:dPt idx1/spPr的直接DrawingML noFill替换为E7E6E6实填；线noFill、数值、五数字标签字体/坐标、非零及比较图非值XML、其余OPC字节保持。模板字节/SHA及template-v2、评分/报告版本轴不改。
+- 测试：[零分环图回归](../Go-based%20Refactored%20System/internal/handler/management_traits_test_word_zero_test.go)。显式MNG_ZERO_RING_OUTPUT_DIR可输出八份实际DOCX（拒覆盖）；本worker仅登记RED，主代理后续追加GREEN/LO-PDF及完整门禁证据。
+
+## 2026-10-03 MT-REAL-TESTER-SCOPE：解析器收口补充RED
+
+- [完成补充] 🟢 有效补充RED10pass/5fail（14子＋顶层）、exit1→最终专项42pass/7顶层/0fail0skip；新增mixedcandidate36/tester4两顺序及各自overflow零driver。独立初审/补充终审PASS；四包5369/0fail4skip，全Go6081/645顶层/0fail9原skip/parse0/exit0，Build任务0/vet0。只改共享parser，不改guard/权限/预算/Schema/DDL。完整影响及fresh复验：[本地交接](management-traits-four-real-verification-20261003.md#L3)。测试格式差异如实保留，未远端解除失败。
+- 当前接管磁盘已含SELECT词法scope实现；本轮先复跑真实LoginForm隔离链PASS（audit驱动1/五键/旧写0），不能称本轮新RED。现有顶部登录RED历史保留。
+- 🔴 新增canonical列二次别名解析、相关父scope类型预算、ID在type前的失败测试；合法边界误拒与非法值到达驱动已观察。负例提供合法driver响应，失败必须是未取得domain拒绝而非mock unexpected query。
+- 仅补共享解析器同逻辑安全门禁；不修改登录/guard SQL/权限/Schema/预算/DDL，不SSH/browser/deploy。完成后追加GREEN及独立审阅证据。
+
+## 2026-10-03 MT-REAL-TESTER-SCOPE：本地隔离 RED
+
+- 🔴 完整11表预热真实 RuntimeService，注入真实 TesterHandler，Gin POST LoginForm：正确口令后 HTTP200/business500，auditDriverHits0/preDriverDomainRejects1/otherErrors0/legacyWrites0；不是 sqlmock expectation 导致的失败。
+- 错误口令零scope/零写入、精确 audit→revision→run 复合孤儿查询返回1行失败关闭，两负例PASS。新增 service nested scope/typed parent/500与501绑定回归，生产修复尚未执行。
+- 历史远端FAIL保留，本地测试不替代staging复验。
+
+## 2026-10-03 MT-REAL-TESTER-SCOPE（实际runtime guarded DB路径，未修）
+
+- 🔴 实际staging RED：新isOpen2/state0/25分钟/name合法配置，正常新增status0/del0人员后freeze，正确密码tester/login返回HTTP200身份失败；journal13:51:25Z guard249在audit→revision→run nested participant scope查询报management traits data rejected。真实密码分支已通过，不是错误口令。没有业务修改或GREEN。
+- ⚠️ SQL参数checker无前缀列解析外层table的嵌套作用域风险；需backend新增完整11表＋实际guarded RuntimeService装配的隔离RED及恶意/超长参数反例，不能普通DB成功代替本路径。详见 [真实报告](management-traits-four-real-verification-20261003.md#L32)。
+- [无凭据browser probe](../scripts/test/management-traits-real-tester-login-probe.js#L6)保存，仅syntax验；实际失败前已发HTTP，失败后不重试/不改断言。finally全部own数据清理0，旧指纹/465PDF不变；不能据clean PASS登记bug已修。
+
+## 2026-10-03 MT-DEPLOY-PROBE（仅部署核验工具）
+
+- 🔴 待执行RED：participant空body错误期待401；已有11空表仍按pre零表检查；server证据副本chmod0600后不能用其mode/硬编码liming还原原root0755元数据。
+- 新测试：[部署工具合同](../scripts/test/management-traits-deployment-contract-test.js)；仅工具协议/状态恢复检查，不修改handler、JWT、DDL或API。真实路由合法字符串JSON缺凭据必须401，空body单独400。
+- [完成补充] 🟢 有效RED三失败/exit1→GREEN三通过/exit0；[真实路由夹具](../scripts/test/fixtures/management-traits-deployment-http_test.go.txt)7子＋1顶层PASS，build/vet0；独立真实文件恢复内容/uid/gid/mode/mtimePASS，bash-n0。staging内部＋公网四合法JSON缺token401、空body400，五旧链读取业务成功；只修工具，不修改业务认证/返回。
+- DEPLOYEDYES限定最小验收；11表每表0/DDL重放0/465PDF不变。四组合及真实认证正向报告尚未执行，详见[当前部署证据与安全交接](management-traits-staging-deployment-20261003.md#L3)。
+
+## 2026-10-03 MT-GUARD-AUDIT（真实11表审计关联）
+
+- 🔴 有效RED：先读取未改001 SQL，audit保持id/report_id/actor_id/action/created_at五列及report_id→revision.id真实FK；新行为测试10pass/35fail/1环境skip、exit1，完整合法安装/capture/public identity被拒，后才改生产守卫。初始CRLF夹具解析错误不作为有效RED。
+- 🟢 本地GREEN：[新增回归](../Go-based%20Refactored%20System/internal/service/management_traits_runtime_guard_audit_test.go#L145)62pass/10顶层/0fail/1skip、解析错误0、exit0。canonical audit→revision→run闭包；empty/AllLegacy/capture/身份；paper/exam/owner/question/PDF/恶意值绑定；兄弟卷精度；孤儿/复合错配/查询扫描错误；部分安装/完整gate漂移/未知report-only/injected metadata；1000绑定批次。
+- 四包5327pass/0fail/3skip，独立review PASS。主代理最终全量**6039pass/638通过顶层/0fail/8skip、解析错误0/exit0**；比5977基线新增62pass/10顶层和1外部环境skip。fresh Windows build/全仓vet及Linux server/test编译均exit0、无error输出。真实数据库专用环境不存在，新增TestManagementTraitsGuardAuditMySQLExternal明确skip；已有7环境skip未删除或转PASS，八项完整名称见报告。
+- 仅守卫与新测试，签名/API/11表15FK/模型/旧历史数据不改。报告：[本轮完整影响及fresh恢复库指引](management-traits-local-implementation-20261003.md#L3)。非staging验收；测试三处格式/EOF差异达到三轮保留。
+
+## 2026-10-03 MT-SCHEMA-ALIASES（真实元数据扫描兼容）
+
+- [初始登记，RED前历史] 🔴 待RED执行：实际MySQL TABLE_NAME/ENGINE大写标签与小写GORM tags不匹配，11行扫描成零值；列/索引/FK及capture结构体投影同类风险。新测试按执行SQL的AS生成驱动标签，并校验完整查询仅别名变化；先测试后修代码，不改validation/DDL，不SSH或写真实DB。
+- 测试：[驱动标签与完整门禁回归](../Go-based%20Refactored%20System/internal/service/management_traits_schema_alias_test.go)。其他大写字段是本地模拟风险，不冒称远端已逐项查证。
+- [RED证据 - 2026-10-03] 3pass/12fail/0skip、exit1；真实GORM无alias零值对照PASS，合法gate/capture拒绝。不是缺符号或只改mock标签。
+- [本地GREEN - 2026-10-03] 15pass/3顶层/0fail/0skip、exit0；七SQL显式AS、四metadata精确alias/完整SQL保持、合法/旧兼容通过、type/NULL/collation/indexprefix/FK动作序号仍拒绝、cache两调用无重查/capacity失败不发布/capture保护命中。首次GREEN4/11夹具错误保留并已按实际纠正。14既有testfiles仅65prefix同步；review PASS；全量5977pass/628顶层/0fail/7skip、解析错误0/exit0，build/vet0。仅本地，不SSH/DB/部署验收。
+- 四包聚焦5265pass/258顶层/0fail/2skip、解析错误0/exit0；scoped diffcheck/diagnostics0；DDL SHA不变，新测试EOF-only按上限不再改。
+
+## 2026-10-03 MT-SCHEMA-LEGACY-002（本地兼容切片）
+
+- 🔴 待RED执行：真实旧metadata的32/64源引用及repo utf8mb3→utf8mb4被全等守卫拒绝。新增独立legacy兼容测试，覆盖31/32/33、ASCII编码、writer零INSERT前置、读/selected/JSON预算、新11表15FK及UUID短父键保持拒绝。不改共享旧表、DDL或查询策略。
+- [完成补充 - 2026-10-03] 🟢 原生RED45fail→GREEN新增613pass事件/10顶层、0fail/0skip；实际metadata、Raw source700行/两code稳定140冻结、repo64ASCII/Unicode拒绝、writer零INSERT前置及140/700正常批量写、公开完整run只读、loaded/mapping/options/selected/checked CASE31/32/33及Unicode均验证。新11表逐列/NULL/type/collation、索引/FK漂移及70短UUID反例保持拒绝。
+- baseline5349/0/7→最终Go5962/0/7，聚焦5250/0/2，解析错误0、build/vet/diffcheck0；7环境skip原样，sqlmock非MySQL。本地代码切片完成，无SSH/DDL/DB写/部署，不声称环境闭合。见[本轮报告](management-traits-local-implementation-20261003.md#L3)。
+
+## 2026-10-03 最新回归 receipt（代码闭合，环境未验）
+
+| 项目 | 当前本地证据 | 仍未验 |
+|---|---|---|
+| MT-SOURCE-REVOKE-RACE | 🟢 sourcebundle事务锁／统一锁序及报告前后复核unit PASS | 真实MySQL撤销／写提交竞争 |
+| 锁等待后write credential expiry | 🟢 paper／source锁后到期HTTP401、ROLLBACK、零写／不复用结果 | 真实MySQL并发与远端HTTP |
+| expiry keyset iterator | 🟢 有界10batch、失败项不阻断后续，本地unit PASS | 真重启／离线结算 |
+| MT-IDENTITY-CACHE／MT-SCHEMA-REFERENCES | 🟢 singleton DI／实际引用capacity本地PASS | 11表15FK实际安装与DDL first-repeat |
+| MT-ADMIN-RESUME | 🟢 5min上限、冻结deadline不改、本地unit／前端355项／续答mock47PASS | 真实签发／消费／SQL联合E2E |
+| MT-LABEL-02／原模板视觉 | 🟢 显式enabled真实local PDF用途PASS；主代理source10及LO-compatible17／68.156秒／exit0 | 默认全量仍skip用途测试，目标LO未验 |
+
+最新独立BuildValidator交接Go5349pass／0fail／7环境skip、Windows／Linux build和vet GREEN；mock四组合560save／4download／8submit GREEN（bundle SHA前缀98547b68…），不计real DB／签名／报告生成。七skip完整名称见[最新receipt](management-traits-local-implementation-20261003.md#L3)。
+
+[纠正 - 2026-10-03] 下方“未修／未实现”和旧失败报告保留历史，不删除RED或覆盖失败产物；当前上述代码blocker已本地闭合，但全功能仍PARTIAL。SSH三次timeout各255、远端命令未启动，publichealth200 ok；无远端备份／DDL／部署／清理。按已授权顺序恢复SSH后续作，不称完整验收DONE。
+
+## 2026-10-03 两安全项新授权最终GREEN（主代理）
+
+| ID | RED／根因 | 当前状态／行为证据 |
+|---|---|---|
+| MT-IDENTITY-CACHE | 每request新实例，两次完整预检／配置复活 | 🟢 两真实Gin请求、三入口六请求querycount=1；shared实际pool/config、fresh刷新、错误粘滞、错库/密钥/预算/nil拒绝；[DI测试](../Go-based%20Refactored%20System/internal/handler/management_traits_di_test.go#L110) |
+| MT-SCHEMA-REFERENCES | 只查父id，没有真实引用容量和字节门禁 | 🟢 [实际引用矩阵](../Go-based%20Refactored%20System/internal/service/management_traits_schema_references_test.go)／[运行回归](../Go-based%20Refactored%20System/internal/service/management_traits_schema_behavior_test.go#L350)：exam/profile、participant、source、JOIN/读/写/JSON/Raw超预算拒绝；原11表15FK严格保留 |
+| MT-SCHEMA-REQUEST-ISOLATION | Row拒绝nilpanic、冷初始化替换DB、Set clone0污染下一request、NewDB clone1丢Settings | 🟢 immutable私有DB＋atomic容量＋Session{}；非法请求拒绝后合法sentinel成功，原DB无callback污染，public loader失败缓存不绕过 |
+
+最终focus2546/0/0；全Go5290/0/7、JSON解析错误0、build/vet0；独立review PASS。计数含子项，非真实DB；前端/部署未执行。下方“缓存未修／引用未接”保留为历史，由本条限定纠正，不替并行来源锁/resume登记GREEN。
+
+## 2026-10-03 新授权容量receipt
+
+| ID | 当前状态 | 证据／未关闭边界 |
+|---|---|---|
+| MT-SCHEMA-CAPACITY | 🟢 仅paper/pq元数据容量GREEN，一轮修复 | 原70短容量子项RED保留，36..64允许；全量4642/0/6，build/vet0；actual exam/profile引用ID对缓存容量校验未接 |
+| MT-SOURCE-REVOKE-RACE | 🔥 未修 | 非锁定bundle读取及撤销提交竞争仍存在；未新增并发事务行为RED，不claimGREEN |
+| MT-IDENTITY-CACHE | ⚠️ 未修 | 尚未共享实例DI，跨请求缓存未关闭 |
+| MT-ADMIN-RESUME | ❌ 新授权独立功能未实现 | 不按手机号匿名恢复；到期只状态/完成不续答、不reset；endpoint字段及P0 case已登记最新本地报告，无假路径 |
+
+此前71fail历史保留，此轮仅明确容量测试转GREEN，不代表完整后端安全链。无skip/delete，未前端/DB/SSH/部署。
+
+## 2026-10-03 MT-IDENTITY-002／MT-SCHEMA续作
+
+| ID | 问题 | 状态 | 证据 |
+|---|---|---|---|
+| MT-IDENTITY-002 | 配置身份字段缺失、end后冻结接续、未配置身份披露/覆盖 | 🟢 限定Gin/sqlmock RED→GREEN | service与实际Save/LoginForm链测试；candidate无凭据恢复未实现 |
+| MT-SCHEMA-METADATA | metadata列/索引/FK/错误与畸形类型、collation门禁 | 🟢 聚焦1858pass/0fail exit0 | 真实Raw扫描/缓存测试；不等于真实MySQL |
+| MT-SCHEMA-CAPACITY | paper/pq父键不足UUID36仍接受 | 🔴 未修，按三轮停止 | TestBugMTSchemaGeneratedParentCapacity：70短容量子项＋顶层失败，全量71fail |
+| MT-SOURCE-REVOKE-RACE | 非锁定bundle读允许撤销在写提交前竞争 | 🔥 review blocking，RED尚未新增 | 停止追加修复，需新有界授权 |
+| MT-IDENTITY-CACHE | HTTP每请求新service，不复用完整门禁缓存 | ⚠️ 未完成 | 生命周期需handler-owned持有；不以七表scope替代完整签名 |
+
+最终全量4571pass/71fail/6skip exit1；build/vet0，不能标GREEN或部署。见[本轮完整报告](management-traits-local-implementation-20261003.md#L3)。保留此前历史，不删除失败测试。
+
+## 2026-10-03 MT-LABEL-02
+
+| ID | 问题 | 状态 | 证据 |
+|---|---|---|---|
+| MT-LABEL-02 | 原渲染器给不被LO渲染的绘图Choice文字追加测试标记，PDF没有可见用途标记 | 🟢 本地RED→GREEN，不代表完整E2E | TestBugManagementTraitsPDFVisibleTestLabel：初始真实PDF缺TEST exit1；最终v2专用浮动SDT，三用途实际可见、原封面大标题恢复；原件字节保护、六图、客户全文真实LO通过；v1失败副本保留 |
+
+新增续作负向门禁：环境unset/production/prod/STAGING实际4项RED→仅local/staging真205包GREEN；Schema5非唯一读取索引缺失RED→完整签名GREEN；合法139/140管理员审计详情completed-only拒绝RED→严格incomplete只读GREEN，报告仍completed-only。见[完整续作](management-traits-local-implementation-20261003.md)。PDF全文layout假失败由raw读序逐字证明并纠正测试提取，不改源词或删除固定标签。
+
+## 2026-10-03 MT-WORD-RUNTIME-01重新授权独立修复
+
+| ID | 根因 / 修复 | 状态 | 测试与限制 |
+|---|---|---|---|
+| MT-WORD-RUNTIME-01 | 数字标签错误要求恰3节点，实际总体/任务另含尾随空白；只允许3/4且核第4为空白，仍只替第2值，业务键/OPC不变 | 🟢 限定图表本地GREEN，一轮修复；历史RED保留下方 | [原真实函数契约增强](../Go-based%20Refactored%20System/internal/handler/management_traits_test_word_test.go#L34)：混合分值六图/五槽、非值XML与其他OPC字节一致；RED charts exit1→GREEN；全量2525/0/5，build0；实际LO六图/占位符0。见[本轮详细证据](management-traits-local-implementation-20261003.md#L3) |
+
+范围外限制：PDF文本没有既有DOCX“测试报告”标记，本轮不改定位逻辑；运行链/正式内容/目标环境仍未验，不由本项GREEN代表可交付。原17项候选实际PDF及10项source合同本轮全部GREEN，未改模板或客户原件、未部署。
+
+## 2026-10-03 MT-HTTP-01 实际路由旧写保护
+
+| ID | 问题 | 状态 | 测试 |
+|---|---|---|---|
+| MT-HTTP-01 | 002作用域守卫仅在隔离测试装配，实际Setup的旧paper/save、candidate/update、tester PUT仍可到达旧handler | 🟢 本地GREEN，三403及两401；未部署 | [真实装配测试](../Go-based%20Refactored%20System/internal/router/management_traits_routes_test.go) |
+| MT-WORD-RUNTIME-01 | 独立002运行渲染器不能通过候选六图合同 | 🔴 charts阶段FAIL，三轮后停止 | [失败契约](../Go-based%20Refactored%20System/internal/handler/management_traits_test_word_test.go#L34)；[阻断交接](management-traits-local-implementation-20261003.md) |
+
+## 本地候选阻断（不代表线上回归）
+
+[补充 - 2026-10-02 原稿内容兼容模式] MT-WORD-01/02在独立LibreOffice兼容派生模式中本地GREEN，新17项含真实PDF、旧10/23回归保持；允许框/legend/pageflow调整但原字/rPr/字体颜色/star/footer保留。严格source-layout原模式仍会出现原框缺陷，不能将兼容模式结果冒称严格原模式或运行层已修复。见[模式分离证据](generated/management-traits-word-candidate-20261001/lo-compatible-validation.json)。
+
+| ID | 问题 | 状态 | 测试及证据 |
+|---|---|---|---|
+| MT-WORD-02 | 标签压环、摘要独占页、详情及建议拆页 | 🟢 本地GREEN，未激活 | [本切片证据](generated/management-traits-word-candidate-20261001/layout-slice-validation-20261002.json)：精确前版RED48失败子项→23完整测试0失败；实际SVG/144DPI避碰及各13块同页；整体视觉/Word PDF另验 |
+| MT-WORD-01 | 002 Word候选环图数字换行/裁切、组合图图例重叠及长文案尾字孤页 | 🔴 RED；三轮后停止，候选不得激活 | [实际PDF门禁](../scripts/test/management-traits-002-word-candidate-contract-test.py#L324)；0/25/75/100四组均4/5完整分值，退出1；[实图及范围](management-traits-word-candidate-verification-20261001.md) |
+
+[完成补充 - 2026-10-02] MT-WORD-01在用户批准的局部框/图例/分页范围内本地🟢 GREEN：18项测试0失败/错误/跳过，五组0/25/75/100/28.85完整5/5数字，图例不撞100标签、36长文案完整且无尾字孤页。历史RED保留。环图文字与环体相交、摘要页稀疏及责任心详情跨页属于后续整体版式待审，不由本项GREEN代表全部候选验收；未激活/部署。
+
 | ID | Bug | File | Status | Test |
 |----|-----|------|--------|------|
 | FB-042 | MBTI full report body static text rendered tofu boxes because w14 effects were only stripped from value runs | Go-based Refactored System/internal/handler/mbti_report.go | 🟢 GREEN | Go-based Refactored System/internal/handler/mbti_test.go::TestBugFB042_ReplaceDocumentFieldsStripsW14EffectsFromBody |
@@ -110,5 +603,62 @@
 | FB-153 | Phase-one reports show the complete validity notice even when the result is good | internal/handler/competency_report_word.go; ruoyi-ui/src/views/paper/exam/competencyReport.vue | 🟢 STAGING GREEN | Word and Vue RED both reproduced unconditional display. GREEN: good removes the whole paragraph including “提示：”; questionable retains the prefix and approved text. Local suites/builds pass. Staging real good/questionable PDFs prove absence/presence respectively; deployed Vue bundle passes exact DOM assertions in desktop and mobile Chromium. |
 | FB-154 | Phase-one doughnut score labels are visibly off-centre and inherit mixed bold formatting | internal/handler/competency_report_word.go; scripts/test/competency-customer-template-pdf-chart-center-test.py | 🟢 STAGING GREEN | RED: generated DOCX retained mixed bold attributes and rendered scores moved by value. GREEN removes native labels, adds a fixed non-bold centre overlay, and supports V1/V2 charts. Staging LibreOffice 24.2.7.2 real good/questionable reports are A4 11 pages; both pass ten rendered centre deltas ≤2px. Page-by-page visual review has no extra labels, blank pages, overlap or clipping. Word suite 37/37, Go full suite/build pass. |
 | FB-155 | Phase-one radar chart renders only the outer dashed polygon instead of five complete score levels | internal/handler/competency_report_word.go | 🟢 STAGING GREEN | RED: live chart2 had two value axes, no `majorUnit`, and one missing explicit min; real PDF showed only the outer polygon. GREEN freezes every value axis to min=0/max=5/majorUnit=1 with major gridlines. Staging LibreOffice 24.2.7.2 real good/questionable reports show five complete concentric levels; both remain A4 11 pages and pass FB-154 10/10 ring-label gates. Word suite 38/38, Go full suite/build pass. |
+| FB-156 | Phase-one mobile answer options do not share the same left edge | ruoyi-ui/src/views/paper/exam/competencyExam.vue; scripts/test/competency-mobile-ui-test.js | 🟢 STAGING GREEN | Staging RED measured option left edges `29,39,39,39,39`. GREEN resets Element UI bordered-radio sibling margin and fills the grid width. After deployment, real staging Chromium at 390px measures all five as left=29/right=361/width=332/height=48 with no overflow; tablet remains 3 columns and desktop 5 columns. Frontend 26 files/164 tests and production build pass. |
+| FB-157 | Competency “batch download” loops through selected reports and triggers one browser download per PDF instead of returning one ZIP archive | internal/handler/competency_report.go; ruoyi-ui/src/api/competency/index.js; ruoyi-ui/src/views/exam/exam/competencyResults.vue | 🟢 STAGING GREEN | RED: frontend full suite failed 2 archive assertions while the old loop still ran. GREEN: one authenticated POST carries all selected paper IDs; backend validates approval/current completed instances/allowed paths, creates one ZIP with unique sanitized PDF names, records one audit per report, and frontend saves once. Real staging call returned one 881097-byte `application/zip` containing 2 valid unique PDFs with audit delta=2. Go full suite/build and frontend 164 tests/build pass. |
+| FB-158 | Tester management sends `stuFlag`, but the backend list query ignores it, so selecting 是否学生=是/否 returns mixed rows | internal/handler/tester.go; ruoyi-ui/src/views/tester/tester/index.vue | 🟢 STAGING GREEN | `sql_pattern_test.go::TestBugFB158_TesterListAppliesStudentAndTelephoneFilters`; RED build failed because the shared identity filter did not exist. GREEN exact numeric filters share COUNT/row conditions. Real staging API returns `stuFlag=1` exactly 8/8 rows and `stuFlag=0` exactly 19/19 rows; temporary session cleanup passed. |
+| FB-159 | Competency result list still displays the “评价均值” column after product review requested its removal | ruoyi-ui/src/views/exam/exam/competencyResults.vue | 🟢 STAGING GREEN | `competency-results.spec.js::TestBugFB159_ResultListHidesEvaluationAverage`; RED 1 failed/164 passed, GREEN frontend 26 files/165 tests. Only the list column and row binding were removed; report, details, exports, sorting contract and persisted score data remain unchanged. Production build passes with the existing 2 size warnings. Staging Nginx responses for both result-list resources contain the page marker and no “评价均值”; the report resource intentionally retains it. External index HTTP 200 and its SHA matches the tested build. |
+| FB-160 | Latest staging Word template pie chart renders static sample labels and reverses the frozen group category order | staging active competency-phase1-report.docx; internal/handler/competency_report_word.go | 🟢 STAGING GREEN | User example retained: 3D turquoise/green pie with outside two-decimal values. Deployed runtime/template fix category order, remove manual labels and use dynamic `0.00`. Real 小鱼 report shows `3.10/3.25`; 小米 shows `2.65/2.38`, exactly matching each report’s analysis blocks. |
+| FB-161 | Latest staging radar chart hides all ten dimension names and places value labels directly on the polygon | staging active competency-phase1-report.docx; internal/handler/competency_report_word.go | 🟢 STAGING GREEN | Deployed runtime restores both category axes, keeps five 0–5 grids, displays one primary 8pt `0.00` value set and suppresses duplicates. Two real 11-page LibreOffice reports show all ten names and values without overlap or blank pages. |
+| FB-162 | V1 template upload validation reports valid while chart relationships still contain external Excel links | internal/handler/competency_report_template.go; staging active competency-phase1-report.docx | 🟢 STAGING GREEN | V1/V2 uploads now reject external relationships; generated output strips relationships and `externalData`. Deployed template SHA=`fa6c59a3...` passes zero-link and upload-contract gates; original author-local path is gone. |
+| FB-163 | Phase-one group pie maps general ability to the right cyan slice instead of the required left green slice | internal/handler/competency_report_word.go | 🟢 STAGING GREEN | RED captured runtime values `[general, psychological]`. GREEN uses idx0=`心理素养`/right cyan `#30C0B4` and idx1=`通用能力`/left green `#75BD42`; V1 cache and optional embedded workbook are consistent. Real staging paper `ff08cb88-...` has DB scores general=3.10/psychological=3.25 and its regenerated 11-page PDF visibly shows left green 3.10/right cyan 3.25. Full Go suite/build, services, health and logs pass. |
+| FB-164 | Phase-one PDF has 11 physical pages but footer displays `1～10 / 12` | internal/handler/competency_report_template.go; internal/handler/competency_report_word.go | 🟢 STAGING GREEN | RED was missing page-field guards. GREEN rejects uploaded `NUMPAGES`, normalizes legacy footer fields to PAGE-only, and deploys a repaired customer template. Real 小鱼/小米 PDFs are both 11 physical pages with labels exactly `1～10` and zero fractions; DB/file hashes match. Full Go suite/build, Word, LibreOffice, services and logs pass. |
+| FB-165 | Any Microsoft Word edit causes phase-one template upload to fail with “模板不得包含外部Excel链接” | internal/handler/competency_report_template.go | 🟢 STAGING GREEN | RED failed because upload sanitization was absent. GREEN strips chart `TargetMode=External` relationships and `externalData` before strict validation, installs only the sanitized DOCX, reports removed count, and preserves clean-file bytes. Real staging upload started with 1 external relationship + 1 externalData, returned removed=2/valid=true, and saved 0/0. A real 11-page report regenerated with PAGE-only labels and matching DB/file SHA. |
+| FB-166 | Phase-one report personal-information fields retain sparse left/right template slots instead of flowing continuously | internal/handler/competency_report_word.go | 🟢 STAGING GREEN / SUPERSEDED | Historical GREEN removed sparse slots by making identity fields full-width. FB-171 supersedes only that row shape with compact double columns while retaining no-gap filtering and aligned `时间｜时长`. |
+| FB-167 | FB-166 hardcodes personal-information order, preventing customers from adjusting field order in the Word template | internal/handler/competency_report_word.go | 🟢 STAGING GREEN / PARTLY SUPERSEDED | Template order remains authoritative. FB-171 supersedes template-owned row position: runtime now pairs non-name identity controls into compact two-column rows while preserving their template order and styles. |
+| FB-168 | Personal-information rows in the Word template use inconsistent paragraph spacing | competency-phase1-report.docx | 🟢 STAGING GREEN | RED found affiliation/duration spacing different from other cells. Option B preserved: deployed template defines one spacing contract (before/after=156, line=144) for all six identity fields plus time/duration; runtime does not override customer styles. Real subset/all-field reports visually pass, have no blank pages, and match DB/file SHA. |
+| FB-169 | Phase-one chart generation overwrites customer pie-label positions and radar score font size | internal/handler/competency_report_word.go | 🟢 STAGING GREEN | `TestBugFB169_Phase1ChartGenerationPreservesTemplateLabelStyles`; RED lost both pie point layouts and changed radar 12pt to 8pt. GREEN preserves template positions/primary typography while normalizing only dynamic `0.00`, visibility and duplicate series. Real staging paper `287347a7-...` regenerated to A4 10 pages: left green 2.90/right cyan 3.18 values sit close inside the pie; ten 12pt radar values, names and five grids are clear. DB/file SHA matches; full Go tests/build, services and logs pass. |
+| FB-170 | Phase-one group pie values overlap the colored pie surface | competency-phase1-report.docx | 🟢 STAGING GREEN | `TestBugFB170_Phase1GroupPieLabelsStayOutsideChart`; deployed template SHA=`54b167fc...` keeps two independent point layouts, uses point `bestFit` + series `outEnd`, and changes point labels from white `bg1` to foreground `tx1`. Real staging paper `287347a7-...` regenerated to A4 10 pages: left green 2.90 and right cyan 3.18 are outside the pie with short leader lines and no overlap; radar remains 12pt with ten names/five grids. DB/file SHA matches; full Go tests/build, services and logs pass. |
+| FB-171 | Phase-one profile fields occupy separate full-width rows instead of a compact double-column flow | internal/handler/competency_report_word.go | 🟢 STAGING GREEN | `TestBugFB171_Phase1ProfileUsesCompactDoubleColumns`; RED was 4 rows instead of 3 for `name,gender,telephone`. Deployed backend SHA=`1b0938ce...` keeps name full-width, pairs remaining fields in template order, leaves odd remainder left, and keeps submittedAt+userTime paired. Real staging `name,age,telephone,gender` report renders name / age+gender / telephone-left / time+duration with no blank row; A4 10 pages, DB/file SHA matches, services/logs pass. |
 | FB-141 | Re-entering an in-progress assessment restores saved answers but traditional and 00401 pages reopen at question 1 instead of the first unanswered question | Go-based Refactored System/ruoyi-ui/src/views/paper/exam/exam.vue; examClick.vue; competencyExam.vue | 🟢 STAGING GREEN | `ruoyi-ui/tests/unit/participant-resume.spec.js::TestBugFB141_ReLoginResumesAtFirstUnanswered`; RED 3 failed/1 passed → GREEN 4/4; frontend full suite 26 files/160 tests and production build pass. Staging real 00401 flow answered 10 questions, re-logged in to the same paper, retained 10 answers, and real Chromium opened question 11. |
 | FB-144 | Public participant pages expose the system name in the mobile browser title bar | Go-based Refactored System/ruoyi-ui/src/App.vue; src/router/index.js | 🟢 STAGING GREEN | `ruoyi-ui/tests/unit/participant-browser-title.spec.js::TestBugFB144_PublicParticipantPagesHideSystemBrowserTitle`; RED 2 failed/1 passed → GREEN 3/3; frontend full suite 26 files/160 tests and production build pass. Staging real Chromium participant login/preparation/00401 answering flow returned an empty `document.title`; the deployed index SHA exactly matches the locally tested bundle. |
+| FB-172 | The 260915 customer report sample has missing/incorrect dynamic bindings, 12 author-local chart links, unreachable rounded sample scores, and a LibreOffice 13-page drift from the Word 10-page design | docs/260915/competency-frontline-report-template-draft-v2.docx | 🟢 LOCAL GREEN / NOT DEPLOYED | `competency-260915-template-contract-test.py` RED: cleaned draft missing. GREEN: deterministic 75 controls/58 stable tags, 12 unique chart business keys, zero external relationships/externalData/formulas, customer media bytes unchanged, exact samples `78.13/75.00/68.13`; Word 16 opens as 10 pages/9 tables, LibreOffice 26.2.5.2 produces 10 nonblank A4 pages. DOCX SHA=`23d605ea...` |
+| FB-173 | A paper-keyed competency result cannot retain the existing v1 result and an independently recomputed v2 result at the same time | internal/model/competency.go; scripts/sql/competency_011_result_runs.sql | 🟢 LOCAL GREEN / DB NOT APPLIED | `TestBugFB173_VersionedResultRunStorageIsAdditive` and `TestBugFB173_VersionedResultRunModels`; RED was a compile failure for five missing models. GREEN adds result_run plus one-to-one overall/validity and one-to-many module/dimension tables, exact DECIMAL fields, frozen versions/identity, unique paper+scoring-version and child identities, and guarded RESTRICT FKs. Migration contains no legacy result-table mutation and no seed/backfill. Focused/full model, Go full suite and build pass; real MySQL execution is intentionally pending. |
+| FB-174 | The v1 A/B display identities cannot safely represent the reordered A/B/C v2 dimensions during historical answer recomputation | internal/service/competency_v2_identity.go; internal/model/competency.go; scripts/sql/competency_012_v2_dimension_catalog.sql | 🟢 LOCAL GREEN / DB NOT APPLIED | `TestBugFB174_V2SemanticDimensionsMapEveryV1AnswerIdentity`, `TestBugFB174_V2VersionSetIsDefinedButNotActivated`, `TestBugFB174_V2DimensionCatalogMigrationIsAdditive`, `TestBugFB174_V2DimensionCatalogModels`; RED was a compile failure for missing semantic definitions, mapping function and additive catalog models. GREEN fixes ten semantic identities, A/B/C display metadata, 5/2/3 module membership and an explicit one-to-one map from all v1 dimension IDs. v2 versions are defined but remain non-executable. Focused tests, Go full suite, build, diagnostics, format and migration hygiene pass; real MySQL execution is intentionally pending. |
+| FB-175 | v2 must not reuse v1's 1–5 dimension scores or 10–50 summed overall score when recomputing historical answers | internal/service/competency_v2_scoring.go | 🟢 LOCAL GREEN / NOT WIRED | `TestBugFB175_Phase1V2UsesExactPercentageScores`, `TestBugFB175_Phase1V2LevelBoundaries`, `TestBugFB175_Phase1V2IncompleteHasNoFormalScore`, `TestBugFB175_Phase1V2RejectsMalformedInput`; RED was a compile failure for the absent v2 scorer, result types and level constants. GREEN maps all v1 source IDs to semantic v2 identities, calculates each dimension as exact `25 × sum/8 - 25`, calculates the exact ten-dimension mean, preserves 68.125 as 545/8, applies continuous percentage bands, handles arbitrary row order and fails closed on malformed input. Focused/compatibility/full Go tests, build, diagnostics and format pass; runtime entry and persistence remain intentionally disconnected. |
+| FB-176 | v2 requires three fixed module means and customer-approved continuous norm-comparison bands instead of the v1 two-group aggregation | internal/service/competency_v2_modules.go | 🟢 LOCAL GREEN / NOT WIRED | `TestBugFB176_Phase1V2ModulesUseExactMeansAndNorms`, `TestBugFB176_Phase1V2NormComparisonBoundaries`, `TestBugFB176_Phase1V2IncompleteAndMalformedModules`; RED was a compile failure for the absent module aggregator, comparison functions, result types and constants. GREEN calculates exact task/interpersonal/self means of 67.5/59.375/75, freezes norms 58/53.75/60 and overall 57.75, and applies every customer-approved continuous boundary. Reordered dimensions are deterministic, incomplete modules expose no formal output, malformed aggregate input fails closed, and v1 aggregation remains green. Focused/compatibility/full Go tests, build, diagnostics and format pass; runtime and persistence remain disconnected. |
+| FB-177 | v2 report overview and advice require deterministic selectors with different slot-count rules | internal/service/competency_v2_selectors.go | 🟢 LOCAL GREEN / NOT WIRED | `TestBugFB177_Phase1V2SelectorsUseExactScoresAndStableTies`, `TestBugFB177_Phase1V2SelectorsHandleEmptyCategories`, `TestBugFB177_Phase1V2AdviceUsesSeparateTwoAndThreeRules`, `TestBugFB177_Phase1V2SelectorsRejectIncompleteOrMalformedInput`; initial RED was a compile failure for absent selector functions/types. A strengthened RED then proved independently valid but cross-run module rows were accepted with current dimensions. GREEN sorts modules and dimensions by exact scores with fixed-order ties, returns non-nil empty category slices, enforces 3/2 overview caps and separate 2/3 advice counts, and recomputes modules to reject cross-source mixtures. Focused/chain/full Go tests, build, diagnostics and format pass; report DTO/runtime remain disconnected. |
+| FB-178 | v2 report values and customer rule text need a version-frozen DTO with exact fail-closed lookup keys | internal/service/competency_v2_report.go | 🟢 LOCAL GREEN / NOT WIRED | `TestBugFB178_Phase1V2ReportDTOFreezesVersionsScoresAndExactTexts`, `TestBugFB178_Phase1V2ReportTextNeverFallsBackOrDuplicates`, `TestBugFB178_Phase1V2ReportDTOAllowsEmptyCategories`; RED was a compile failure for the absent DTO builder, DTO types and v2 content-type constants. GREEN freezes result_run plus all four v2 versions, projects exact-scoring results with final two-decimal HALF_UP display, preserves selector order, and requires exact content-version/audience/type/semantic-identity/condition rows. It rejects fallback, temporary/retired/blank/duplicate rows, inconsistent disclaimers and mixed scores; empty categories remain non-nil slices. Focused/chain/full Go tests, build, diagnostics and format pass; no content seeds, DB query, runtime endpoint or renderer is wired. |
+| FB-179 | The v2 customer template must update body/header values and literal chart data without applying the v1 renderer's style normalization | internal/handler/competency_report_v2_word.go; configs/export-templates/competency-phase1-report-v2.docx | 🟢 LOCAL GREEN / NOT WIRED | Raw 260918 template first failed on an external chart relationship. The deterministic already-bound cleanup now preserves 75 controls/58 keys, 12 semantic chart keys and customer media while removing all external/formula/reference artifacts and restoring compact layout. Renderer RED was a compile failure; a strengthened RED then proved external chart relationships were accepted. GREEN updates only control text in body/headers and existing literal numeric series by semantic chart key, rejects incomplete/unknown contracts and any external relationship, and preserves every non-value XML fragment/unrelated ZIP part byte-for-byte. Rendered evidence opens read-only in Word as 10 pages/9 tables/19 inline/20 shapes and converts in LibreOffice to a non-empty 10-page A4 PDF. Handler/full Go tests and build pass; runtime is not wired. |
+| FB-180 | Report instances must bind an exact result run while preserving legacy reports/PDFs and exposing a separate current-display pointer | internal/model/competency.go; scripts/sql/competency_013_report_result_run_binding.sql; internal/handler/exam.go | 🟢 LOCAL GREEN / DB NOT APPLIED | `TestBugFB180_VersionedReportBindingMigrationIsAdditive`, `TestBugFB180_VersionedReportBindingModels`, and extended `TestBugFB048_CompetencyDeleteUsesFullChainTransaction`; RED was a model compile failure plus six missing delete-chain steps. GREEN adds nullable `result_run_id`, a separate paper+audience current pointer, run/version and composite integrity keys/FKs, no backfill or report/PDF mutation, and deletion order audit→pointer→report→run children→run→legacy results. DDL reruns skip constrained-column alignment. Focused/full model+handler, Go full suite, build, diagnostics, format and migration hygiene pass; real MySQL execution is pending and runtime does not yet write/read bindings. |
+| FB-181 | Persisted v2 result runs and the 75-control customer template are not connected to report generation, current selection or download | internal/service/competency_v2_runtime.go; internal/handler/competency_report_v2_runtime.go; internal/handler/competency_report.go | 🟢 LOCAL GREEN / DB NOT APPLIED / NO V2 RUNS | `TestBugFB181_PersistedV2RunReconstructsExactReportInputs`, `TestBugFB181_Phase1V2ContentPackageRequiresDualApproval`, `TestBugFB181_V2DTOBuildsExactWordPayload`, and `TestBugFB181_ReportRuntimeUsesRunBindingAndCurrentPointer`; RED was missing runtime/adapter symbols. GREEN reconstructs and cross-validates exact persisted results/norms, requires exact environment-aware approval, emits 58 fields/12 exact charts, runs the real v2 DOCX through the configured converter, binds completed instances and current pointer atomically, preserves an old completed PDF on failed force regeneration, resolves single download through the pointer, and gates all new-schema SQL so pre-migration v1 remains compatible. Focused/affected/full Go tests, build, diagnostics and format checks pass. 011–013, real v2 rows, database transactions, batch-current download, gate activation and deployment remain pending. |
+| FB-182 | Deleting a v1 competency exam fails before 011/013 because the full-chain delete unconditionally accesses absent current/result-run tables | internal/handler/exam.go | 🟢 GREEN | `TestBugFB182_CompetencyDeleteSkipsUnappliedVersionTables`; RED reported all six optional tables unguarded. GREEN checks current independently, checks the result-run parent before every child subquery, checks each optional child table, and preserves the FB-048 dependency order plus the full v1 transaction. Focused FB-182/FB-048, Go full suite and build pass; real pre-/partial-migration MySQL deletion remains unexecuted. |
+| FB-183 | A malformed v2 run can claim another paper owner, and concurrent single download can race regeneration deleting the old PDF path | internal/service/competency_v2_runtime.go; internal/handler/competency_report.go | 🟢 GREEN | `TestBugFB183_V2RunParticipantMustOwnPaper`, `TestBugFB183_DownloadIsSerializedWithRegeneration`; RED was a missing identity validator compile failure plus an unlocked download assertion. GREEN reads `exam_id+user_id+user_time` in one paper query, requires run exam/participant equality, and holds the established per-paper lock through report lookup, audit and streaming so regeneration cannot delete the selected path concurrently. FB-181～183 focused tests pass; full-suite/build evidence recorded with FB-181 closure. |
+| FB-184 | Complete v1 phase-1 answers could not create the parallel exact v2 result run required by the wired report runtime | internal/service/competency_v2_result_run.go; internal/service/competency_runtime.go; internal/handler/competency_runtime.go; internal/router/router.go | 🟢 GREEN / DB NOT APPLIED | Exact construction, five-table writer, paper-lock idempotency, administrator route and pre-migration compatibility are implemented. FB-185C now executes rollback and zero-write reuse locally; FB-185I real-MySQL concurrency and 011 execution remain environment-gated and unverified. |
+| FB-185 | FB-184 review found transaction/concurrency, identity, schema, performance, error-disclosure, duration and migration-rerun gaps | internal/service/competency_v2_result_run.go; internal/service/competency_v2_schema.go; internal/service/competency_runtime.go; internal/handler/competency_runtime.go; internal/handler/competency_report.go; scripts/sql/competency_011_result_runs.sql; scripts/sql/competency_012_v2_dimension_catalog.sql | 🟢 LOCAL HARDENING COMPLETE / MYSQL GATE PENDING | FB-185A～H are locally GREEN with executable or static migration contracts, full Go tests/build and final independent review PASS. FB-185I harness exists but skipped without `FB185_MYSQL_DSN`; real 011–013 first/rerun, two-connection concurrency and staging recompute remain mandatory before migration approval. |
+| FB-185A | v2 run creation accepted a non-frontline frozen audience and answer reconstruction did not prove question/dimension snapshots belonged to the locked exam | internal/service/competency_v2_result_run.go | 🟢 GREEN | `TestBugFB185A_V2ResultRunRejectsNonFrontlineAudience`, `TestBugFB185A_FrozenAnswerSnapshotsMustBelongToLockedExam`; RED was a missing helper argument plus the audience fixture being accepted. GREEN requires `frontline_employee`, passes the locked paper exam into the loader, and constrains both frozen question and dimension joins by that exam. Focused 2/2, result-run/runtime 3/3, Go full suite, build and diagnostics pass; no DB migration or remote execution. |
+| FB-185B | persisted v2 module identity and run source could drift while visible score metadata remained valid | internal/service/competency_v2_runtime.go; internal/service/competency_v2_result_run.go | 🟢 GREEN | `TestBugFB185B_PersistedModuleIdentityCannotDrift`, `TestBugFB185B_ResultRunSourceMustBeKnown`, `TestBugFB185B_SourceValidationIsWiredAcrossRunLifecycle`; initial RED was the missing source validator, strengthened RED was missing reuse/formal-header validators. GREEN requires module_id=module_code, accepts only submission/historical_recompute at creation/reuse/formal read, and explicitly permits historical recompute to reuse a valid submission-created immutable run without rewriting source. Focused FB-185B, connected FB-181/183/184/185A/B, Go full suite, build, diagnostics and two review passes succeed. |
+| FB-185C | child-table write failures needed executable proof that the real v2 writer rolls back run and earlier child inserts | internal/service/competency_v2_result_run_test.go | 🟢 GREEN | `TestBugFB185C_ChildInsertFailureRollsBackWholeResultRun`, `TestBugFB185C_ValidExistingRunIsReusedWithoutWrites`; the existing writer passed injected module-failure BEGIN→run→overall→ROLLBACK with no COMMIT, so production transaction code required no churn. Valid existing submission run also commits reuse with no INSERT/UPDATE/DELETE. |
+| FB-185D | result-run readiness performed per-submit metadata probes and accepted same-name but structurally wrong schema objects | internal/service/competency_v2_schema.go; internal/service/competency_runtime.go | 🟢 GREEN | `TestBugFB185D_ResultRunSchemaRequiresExactUniqueAndForeignKeySignatures`, `TestBugFB185D_ResultRunSchemaPreflightIsCachedOutsideSubmitTransactions`; one cached preflight now runs before the submit transaction and validates five tables, exact columns/types/nullability/defaults/lengths/precision/charset, required unique indexes, six FK targets/actions, and the optional 013 index shape. Zero-table pre-migration state remains compatible until process restart after migration. |
+| FB-185E | result-run schema/write/report failures could expose raw database details through HTTP responses | internal/handler/competency_runtime.go; internal/handler/competency_report.go; internal/service/competency_v2_result_run.go | 🟢 GREEN | `TestBugFB185E_ResultRunErrorsDoNotExposeDatabaseDetails`; submit, expired-answer auto-submit, recompute and v2 report generation route wrapped failures through one stable public message while logging the retained internal cause server-side. |
+| FB-185F | v2 reports read mutable paper.user_time instead of a duration frozen with the immutable result run | internal/model/competency.go; scripts/sql/competency_011_result_runs.sql; internal/service/competency_v2_runtime.go | 🟢 GREEN / DB NOT APPLIED | `TestBugFB185F_ReportDurationComesFromFrozenRun` plus FB-173 contracts; overall freezes nonzero user_time, submission/history supply the paper-completion value, reuse checks it, and v2 reports no longer select mutable paper duration. |
+| FB-185G | migration 012 no-op reruns silently preserved drifted immutable dimension catalog or v1-to-v2 mappings | scripts/sql/competency_012_v2_dimension_catalog.sql | 🟢 STATIC GREEN / DB NOT APPLIED | Extended FB-174 migration contract; exact 10+10 tuple signatures and total scoped counts are checked after no-op seeds. MySQL 5.7-compatible prepared missing-table guards fail deployment on changed or extra rows without unsupported prepared SIGNAL. |
+| FB-185H | rerunning migration 011 after 013 could alter result_run.paper_id while the report composite FK still referenced it | scripts/sql/competency_011_result_runs.sql | 🟢 STATIC GREEN / DB NOT APPLIED | Extended FB-173 migration contract; when optional `fk_competency_report_result_run` exists, its successful creation proves paper_id compatibility, so 011 skips that constrained alteration while independently aligning exam/participant columns and restoring its own FKs. |
+| FB-185I | two independent database connections recomputing one paper need proof of one creation, one reuse and one complete child set | internal/service/competency_v2_result_run_test.go | 🟢 STAGING GREEN | Real MySQL 8.0.46 execution with two independent connections produced exactly one create, one reuse and child counts 1/1/3/10/1; isolated database was dropped and temporary privileges were removed. |
+| FB-186 | staging MySQL 8.0.46 rejected schema preflight because `precision`/`scale` were used as unquoted SELECT aliases | internal/service/competency_v2_schema.go | 🟢 STAGING GREEN | `TestBugFB186_SchemaPreflightAvoidsMySQLReservedAliases`; safe aliases are mapped explicitly, service was restarted, and the failure no longer occurs. |
+| FB-187 | staging schema preflight did not populate projected table/index/foreign-key identities, first reporting the existing column and then PRIMARY index as missing | internal/service/competency_v2_schema.go | 🟢 STAGING GREEN | `TestBugFB187_SchemaPreflightMapsInformationSchemaColumnsExplicitly`; every information_schema alias now has an explicit GORM column tag. After redeploy, 15 historical runs were created and a second batch reused all 15 with counts 15/15/45/150/15. |
+| FB-188 | staging runs the production-shaped config profile (`APP_ENV=production`), so v2 approval incorrectly requires a production content package and rejects the staging-only package | internal/service/competency_report.go; internal/service/competency_v2_runtime.go; internal/handler/competency_report.go | 🟢 STAGING GREEN | `TestBugFB188_ReportApprovalEnvironmentCanDifferFromConfigProfile`; `REPORT_EFFECTIVE_ENV` now controls report authorization with `APP_ENV` fallback. Staging alone has `REPORT_EFFECTIVE_ENV=staging`; approved v2 generation and authenticated download passed. |
+| FB-189 | the staging recompute verifier still expects v2 report generation to be disabled after the exact content package was approved, so an otherwise successful 15-run idempotency check exits with failure | scripts/tools/staging-competency-v2-recompute.py | 🟢 STAGING GREEN | scripts/test/competency-v2-recompute-contract-test.py; RED rejected the obsolete default error branch. GREEN default verification returned `eligible=15|created=0|reused=15|counts=15|15|45|150|15` without generating or replacing a report. |
+| FB-190 | the real v2 PDF clips duration, shows unconfigured empty profile labels, leaves the empty-strength block blank, omits approved validity/disclaimer text, distorts the grade scale, and drifts detail pagination | v2 Word template and runtime adapter | 🟢 STAGING GREEN | RED: Go compile failed without requiredFields and approved-text fields; template contract reported 58 instead of 60 fields. GREEN: template-first repair plus runtime filtering/binding. Staging LibreOffice 24.2 initially proved row `pageBreakBefore` insufficient (2/3/2/2/1), so the template was corrected to split detail tables with real page separators. Final authenticated PDF is A4 10 pages, detail distribution 2/2/2/2/2, complete duration/empty state/approved text, zero unresolved fields, and clean page-by-page visual review. |
+| FB-191 | customer Word re-save renumbers the grade-scale image relationship from `rId27` to `rId28`, so the runtime-template adaptation rejects an otherwise valid 75-control/12-chart template | scripts/tools/repair-competency-v2-report-template.py | 🟢 STAGING GREEN | `test_bug_fb191_customer_grade_scale_relationship`; RED was `TypeError` plus the real customer file failing with `grade scale drawing not found`. GREEN resolves `word/media/image17.png` through the OPC relationship target instead of a fixed ID. The repaired customer file, local active template and staging template share SHA `eb88e00...`; target LibreOffice 24.2 generated an authenticated A4 10-page PDF with exact 2/2/2/2/2 details, all dynamic text, zero unresolved fields and clean visual review. The byte-exact customer original remains backed up. |
+| FB-192 | LibreOffice renders the grade image but drops the ten-dimension bar/normal-line chart because `chart2` is nested inside a Word 2010 `wpg` group | v2 Word template repair and PDF gate | 🟢 STAGING GREEN | `test_bug_fb192_comparison_chart_is_not_grouped` plus `competency-v2-comparison-chart-pdf-test.py`; RED proved the grouped chart remained and was absent from both original-template and real staging PDFs. GREEN deterministically splits the original vertical grade image and dynamic chart2 into ordinary inline drawings without changing chart XML/style/data. Word 16 remains 10 pages; target LibreOffice 24.2 produces A4 10 pages with all ten category labels, score bars and the normal line visible on page 4, exact persisted values, and unchanged 2/2/2/2/2 detail pages. |
+| FB-193 | generated strengths/developments omit the selected dimension names and render the whole sentence bold, unlike the customer template's bold label plus regular description | v2 report adapter and Word content-control renderer | 🟢 STAGING GREEN | `TestBugFB193_V2OverviewIncludesDynamicDimensionNames`, `TestBugFB193_V2OverviewPreservesLabelAndBodyStyles`; RED proved the adapter wrote only `RuleText` and generic replacement collapsed each mixed-style control into its first bold run. GREEN writes `DimensionName：RuleText` and treats only the five predefined selected-item controls as two dynamic runs: bold label and regular body. Real staging data selected 3 strengths/2 developments; all five labels and approved texts match DB exactly, Word/LibreOffice stay A4 10 pages, and the full adjacent v2 suite/build pass. |
+| FB-194 | report overview lacks visual hierarchy in the summary card, doughnut centre and narrow/pixelated vertical grade scale | customer v2 Word template | 🟢 STAGING GREEN | `test_fb194_overview_visual_hierarchy`; GREEN adds one 3.5pt green left accent with subtle border/background and cell padding, replaces the crowded centre with a 9pt gray `总体得分` plus 16pt green score, and replaces the 70×447 scale with a 180×650 antialiased customer-green/orange scale. Real target-LibreOffice PDF is A4 10 pages; overview page, all-ten-page contact sheet, comparison chart, 2/2/2/2/2 details, data bindings, full Go suite/build and health/log gates pass. |
+| FB-195 | UI template management sends the active v2 DOCX through the legacy v1 field/workbook validator and rejects valid semantic tags such as `dimension.cooperation.score` | template management API and UI | 🟢 STAGING GREEN | `TestBugFB195_V2TemplateUsesDedicatedUploadContract` and `competency-template-management.spec.js`; RED was missing v2 contract plus 3/4 frontend failures. GREEN adds separate administrator-protected v2 metadata/download/upload routes targeting `v2TemplatePath`, exact body+header 60-field/12-chart value-only validation, and a v2 UI card/API. Real multipart API upload of attached SHA `f9859993...`, metadata refresh, authenticated download, atomic backup and subsequent A4 10-page report generation all pass; v1 SHA remains unchanged. |
+| FB-196 | comparison-chart bar colors are fixed by dimension position, so equal score bands can render in different colors | v2 Word chart renderer | 🟢 STAGING GREEN | `TestBugFB196_V2ComparisonBarsUseFiveScoreBandColors`; RED was the missing color function, then adjacent FB-179 caught the new approved style exception. GREEN replaces all ten score-series `c:dPt` fills from exact bands `>=90 #00A651`, `>=70 #38B86A`, `>=30 #A8D889`, `>=10 #F2A45F`, `<10 #E88937`; only point fills are dynamic and the orange normal-line series is byte-preserved apart from values. Real staging PDF shows qualified bars consistently light green, good bars green and excellent dark green; A4 10 pages and full regressions pass. |
+| FB-197 | competency result export still reads v1 1–5/10–50 tables and two legacy groups, so it disagrees with the v2 percentage report | competency export workbook | 🟢 STAGING GREEN | `TestBugFB197_Phase1ExportUsesCompletedV2ResultRuns`, `TestBugFB197_Phase1ExportDoesNotFallBackToV1Results`, `TestBugFB197_Phase1ExportDispatchesToV2OnlyBuilder` plus `competency-v2-export-xlsx-test.py`; real exam with 3 v2 runs produced identical workbooks from both endpoints: summary 3×75, answers 270×20, dictionary 90×14. All 42 persisted overall/module/dimension/validity facts match; another phase-1 exam without v2 runs produced headers only on all sheets, proving no v1 fallback. |
+| FB-198 | v2 report strengths/developments are filtered by score level, so some reports do not show the highest three and lowest two dimensions | v2 overview selector and report DTO | 🟢 STAGING GREEN | `TestBugFB198_Phase1V2OverviewAlwaysUsesHighestThreeAndLowestTwoScores`, `TestBugFB198_Phase1V2SelectedItemsUseCompletePerformanceTexts`; RED returned zero strengths when all ten dimensions were below good. GREEN ranks all ten exact scores, always takes top 3/bottom 2, uses stable dimension order for ties, and reuses each selected dimension's approved five-level performance text. Real varied-score PDF selected `自律性/成就导向/计划执行` as top three and `敬业奉献/逻辑思维` as bottom two; all five full approved texts and column order match DB. PDF is A4 10 pages, 814637 bytes, SHA=`e981f5de...`; full local suite/build and staging health/log gates pass. |
+| FB-199 | Isolated runtime verification rejects a valid already-running private Redis after captcha/login keys exist | Go-based Refactored System/bin/mng005-runtime/main.go | 🟢 LOCAL GREEN | `TestVerifyRuntimeAllowsExistingPrivateRedisKeys`, `TestVerifyRuntimeRejectsInvalidRedisMetadata`; RED failed to compile because the validator was absent. GREEN accepts any nonnegative authenticated private DBSIZE while preserving exact owned-schema/current-user, source-SELECT-1142, cross-schema-FK0, loopback and secret-isolation gates. Real post-login `VerifyRuntime` returned exit0 with redisKeys=1; this does not weaken or replace database/network isolation checks. |
+| FB-200 | Local dev runtime accepted any Redis process that knew the password, without proving exact loopback listener PID, executable, private config identity or config secret | Go-based Refactored System/bin/mng005-runtime/main.go; scripts/tools/mng005-local-debug.ps1 | 🟢 LOCAL GREEN | `TestBugFB200_RedisRuntimeRequiresExactOwnedProcessAndConfig`; RED did not compile because `redisRuntimeBinding`/`verifyRedisRuntime` were absent. GREEN rejects wrong host/port/PID/listener/executable/private ACL/config SHA/requirepass. Actual listener PID12324, Memurai executable, private nonreparse config and SHA all match persisted DPAPI metadata. |
+| FB-201 | Short-lived verifier and normal backend startup did not share one authenticated live Redis ownership gate | Go-based Refactored System/bin/mng005-runtime/main.go; scripts/tools/mng005-local-debug.ps1 | 🟢 LOCAL GREEN | `TestBugFB201_RedisRuntimeRequiresAuthenticatedLiveState`; rejects PING/auth failure, DBSIZE failure and negative metadata. All runtime modes now execute the same gate before mode-specific DB work or router/Worker startup. Rebuilt backend PID20036 passed verify plus direct/proxy/captcha/NOAUTH live contract; no UI rerun, remote DB write or deployment. |
+| FB-203 | Partial-baseline inspector returns success when the exact parent anchor is absent without independently checking residual child tables or retained baseline cardinality | Go-based Refactored System/bin/mng005-runtime/main.go | 🟢 GREEN | `TestBugFB203_PartialInspectorChecksChildrenWhenParentIsAbsent`, `TestBugFB203_PartialInspectorAcceptsAllAbsentAndRetainedBaselines`, `TestBugFB203_PartialInspectorRejectsWrongRetainedBaselineCount`; exact parent=0/child=1 rejects, all-zero plus both retained baselines passes, and retained-count drift rejects. |
+| FB-217 | Safe local server control trusted the hostname string `localhost` without resolving and validating its complete address set, and bound the hostname for a second OS lookup | Go-based Refactored System/cmd/server/main.go | 🟢 LOCAL GREEN | `TestResolveServerRuntimeControls`; RED failed to compile because the resolver parameter was absent. GREEN injects one pure resolver call under a fixed two-second context, keeps literal IPs DNS-free, permits only exact lowercase `localhost`, requires a nonempty all-loopback result, binds a deterministic numeric address (127.0.0.1 first, otherwise sorted IPv6), and rejects resolver error, spoofed, mixed or empty results. Focused/full/build/vet all exit 0; no service, DB or remote access. |

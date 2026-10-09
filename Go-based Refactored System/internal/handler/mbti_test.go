@@ -1,9 +1,83 @@
 package handler
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
+
+// TestBugFB218_MBtiLibreOfficeConversionHasDeadline
+// 对应：docs/regression-tests.md #FB-218
+// 复现：staging MBTI 完整版报告请求超过客户端180秒，LibreOffice子进程无截止时间。
+// 期望：转换命令使用有界context，超时后返回context deadline exceeded。
+func TestBugFB218_MBtiLibreOfficeConversionHasDeadline(t *testing.T) {
+	source, err := os.ReadFile("mbti_report.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, required := range []string{"context.WithTimeout", "libreofficepdf.NewClient", ".Convert(ctx"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("MBTI report conversion missing bounded shared client marker %q", required)
+		}
+	}
+	if strings.Contains(text, "exec.Command(loCmd") || strings.Contains(text, "exec.CommandContext(ctx, loCmd") {
+		t.Fatal("MBTI report conversion still starts LibreOffice directly")
+	}
+}
+
+// TestBugFB218_MBtiAsyncConversionFailureDoesNotPublishDocx
+// 对应：docs/regression-tests.md #FB-218
+// 复现：异步报告转换失败后仍把DOCX路径写入pdf_path并设置pdf_flag=1。
+// 期望：失败返回空发布路径、清理临时DOCX，调用方不得写成功状态。
+func TestBugFB218_MBtiAsyncConversionFailureDoesNotPublishDocx(t *testing.T) {
+	dir := t.TempDir()
+	docx := filepath.Join(dir, "report.docx")
+	if err := os.WriteFile(docx, []byte("docx"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	published, err := finalizeMbtiPDFConversion(docx, dir, func(string, string) (string, error) {
+		return docx, errors.New("conversion failed")
+	})
+	if err == nil || published != "" {
+		t.Fatalf("published=%q err=%v, want empty path and conversion error", published, err)
+	}
+	if _, statErr := os.Stat(docx); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("temporary DOCX remains after conversion failure: %v", statErr)
+	}
+}
+
+func TestBugFB218_MBtiAsyncFailurePerformsZeroPublicationWrites(t *testing.T) {
+	db, mock := identityHandlerDB(t)
+	paperID := "fb218-paper"
+	mock.ExpectQuery("SELECT `pdf_path` FROM `el_candidate`").WillReturnRows(sqlmock.NewRows([]string{"pdf_path"}))
+	mock.ExpectQuery("SELECT `pdf_path` FROM `el_tester`").WillReturnRows(sqlmock.NewRows([]string{"pdf_path"}))
+	mock.ExpectQuery("SELECT q.content, ma.score_a, ma.score_b").WillReturnRows(sqlmock.NewRows([]string{"content", "score_a", "score_b"}).AddRow("V1", 3, 2))
+	mock.ExpectQuery("SELECT .* FROM `el_tester`").WillReturnRows(sqlmock.NewRows([]string{"name", "age", "gender", "telephone", "affiliation", "post", "exam_id"}).AddRow("Synthetic", 30, "0", "18800000000", "", "", "exam"))
+	mock.ExpectQuery("SELECT `user_time` FROM `el_paper`").WillReturnRows(sqlmock.NewRows([]string{"user_time"}).AddRow(1))
+	mock.ExpectQuery("SELECT `required_fields` FROM `el_exam`").WillReturnRows(sqlmock.NewRows([]string{"required_fields"}).AddRow("name,gender,telephone"))
+	h := &MbtiReportHandler{
+		db: db, templateDir: filepath.Join("..", "..", "deploy", "mbti-templates"),
+		simpleDir: filepath.Join("..", "..", "deploy", "mbti-templates-simple"), outputDir: t.TempDir(),
+		convertPDF: func(string, string) (string, error) { return "", errors.New("synthetic conversion failure") },
+	}
+	h.GenerateReportByPaperID(paperID)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal("conversion failure executed an unexpected publication write", err)
+	}
+	entries, err := os.ReadDir(h.outputDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("unexpected output root state: entries=%d err=%v", len(entries), err)
+	}
+	dayEntries, err := os.ReadDir(filepath.Join(h.outputDir, entries[0].Name()))
+	if err != nil || len(dayEntries) != 0 {
+		t.Fatalf("temporary DOCX/PDF remained: entries=%d err=%v", len(dayEntries), err)
+	}
+}
 
 // ============================================================
 // 回归测试 — FB-006 / FB-007 / FB-008 (mbti.calcMbtiScores 业务规则)

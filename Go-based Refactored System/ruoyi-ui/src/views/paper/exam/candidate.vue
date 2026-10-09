@@ -1,10 +1,11 @@
 <template>
   <div class="app-container" style="margin-left: auto; margin-right: auto;">
-
+    <el-alert v-if="managementTraitsMode" title="TEST · 管理特质，仅供测试，不可作为人才决策依据" type="warning" :closable="false" />
+    <div v-if="managementTraitsError" role="alert"><p>{{ managementTraitsError }}</p><el-button @click="loadManagementTraitsConfig" :disabled="configLoading">重试配置</el-button></div>
     <template v-if="!examBlocked">
     <el-card style="margin-top: 20px; ">
       <h3 align="center"  style="margin-bottom: 20px;">考生信息</h3>
-      <el-form ref="candidateForm" :model="candidateForm" :rules="rules" label-position="left" label-width="120px"
+      <el-form ref="candidateForm" :model="candidateForm" :rules="candidateRules" label-position="left" label-width="120px"
        >
 
         <el-form-item label="姓名" prop="name" v-if="showField('name')">
@@ -45,11 +46,13 @@
         <el-form-item label="专业" prop="major" v-if="showField('major')">
           <el-input v-model="candidateForm.major" placeholder="请输入专业" />
         </el-form-item>
-
+        <el-form-item v-if="managementTraitsMode && showField('stuFlag')" label="是否学生" prop="stuFlag">
+          <el-select v-model="candidateForm.stuFlag" placeholder="请选择"><el-option value="1" label="是" /><el-option value="0" label="否" /></el-select>
+        </el-form-item>
 
       </el-form>
       <div style="margin-top: 20px; text-align: right;" >
-        <el-button type="primary" @click="handleSave" style="margin-left: auto; margin-right: auto">保存</el-button>
+        <el-button type="primary" :loading="saving" :disabled="configLoading || examBlocked" @click="handleSave" style="margin-left: auto; margin-right: auto">保存</el-button>
       </div>
     </el-card>
     </template>
@@ -61,6 +64,8 @@
 <script>
 import {fetchCandidate, saveData} from '@/api/candidate/candidate'
 import {fetchDetail} from "@/api/exam/exam";
+import { managementTraitsIntent, managementTraitsParticipantToken, managementTraitsTokenClaims, rememberManagementTraitsParticipant, fetchManagementTraitsExamConfig, registerManagementTraitsCandidate, resumeManagementTraitsPaper, clearManagementTraitsTokens } from '@/api/managementTraits'
+import { classifyManagementTraitsExam, classifyManagementTraitsProduct, isManagementTraitsProduct } from '@/utils/managementTraitsProduct'
 
 export default {
   name: 'CandidateInfo',
@@ -101,6 +106,11 @@ export default {
       examBlocked: false,
       repoCode: '',
       requiredFields: null,
+      managementTraitsError: '',
+      managementTraitsDetected: false,
+      configRequest: 0,
+      configLoading: false,
+      saving: false,
       rules: {
         name: [
           { required: true, message: '姓名不能为空！' },
@@ -155,6 +165,23 @@ export default {
     }
   },
   computed: {
+    candidateRules() {
+      if (!this.managementTraitsMode) return this.rules
+      const labels = { name: '姓名', gender: '性别', telephone: '手机号', affiliation: '单位', post: '职务', age: '年龄', degree: '学历', major: '专业', stuFlag: '是否学生' }
+      const rules = {}
+      ;(this.requiredFields || []).forEach(field => {
+        rules[field] = [{ required: true, message: `${labels[field]}不能为空`, trigger: 'blur' }, { trigger: 'blur', validator: (rule, value, callback) => {
+          const text = value == null ? '' : String(value)
+          if (field === 'age') return callback(/^[1-9]\d*$/.test(text) && Number(text) <= 2147483647 ? undefined : new Error('请输入正整数年龄'))
+          if (field === 'stuFlag') return callback(['0','1'].includes(text) ? undefined : new Error('请选择是或否'))
+          return callback(text.trim() && !text.includes('\0') && new Blob([text]).size <= 255 ? undefined : new Error(`${labels[field]}须为非空文本且不超过255字节`))
+        } }]
+      })
+      return rules
+    },
+    managementTraitsMode() {
+      return this.managementTraitsDetected || managementTraitsIntent(this.$route) || !!managementTraitsParticipantToken(this.examId)
+    },
     // FB-040 修复：仅 001 心理特质 + 学生版（stuFlag==1）显示"学校"。
     // 002 管理特质里 stuFlag==1 含义是"基层员工"，仍属于职场单位，应显示"单位"。
     isStu() {
@@ -162,6 +189,7 @@ export default {
     }
   },
   watch: {
+    '$route.params.examId'() { this.loadCandidateConfig() },
     // R06: 勾选的信息项均为必填
     requiredFields(fields) {
       if (!fields || fields.length === 0) return
@@ -186,13 +214,61 @@ export default {
     }
   },
   created() {
+    this.loadCandidateConfig()
+  },
+  beforeDestroy() { this.configRequest++ },
+
+  methods: {
+
+    loadCandidateConfig() {
+    const request = ++this.configRequest
+    this.saving = false
+    this.candidateForm = this.$options.data.call(this).candidateForm
+    this.managementTraitsDetected = false
+    this.requiredFields = null
+    this.managementTraitsError = ''
+    this.configLoading = false
+    this.examBlocked = true
     this.examId = this.$route.params.examId
     this.stuFlag = this.$route.params.stuFlag
     this.repoCode = this.$route.params.repoCode
 
+    if (this.managementTraitsMode) {
+      this.candidateForm.id = this.$route.params.testerId || ''
+      this.candidateForm.stuFlag = ''
+      this.resumeOrLoadManagementTraits()
+      return
+    }
+
     // 加载考试配置（勾选信息项 + 时间校验）
     if (this.examId) {
-      fetchDetail(this.examId).then(res => {
+      this.configLoading = true
+      fetchDetail(this.examId).then(async res => {
+        if (request !== this.configRequest) return
+        const responseId = res.data && res.data.id
+        const validId = typeof responseId === 'string' || (Number.isSafeInteger(responseId) && responseId > 0)
+        const serverCode = res.data && res.data.repoCode
+    const lifecycle = res.data && res.data.managementTraitsLifecycle
+    if ((isManagementTraitsProduct(this.repoCode) || isManagementTraitsProduct(serverCode)) && classifyManagementTraitsExam(res.data, this.examId) === 'UNKNOWN') {
+      this.managementTraitsError = '测评身份配置未确认冻结状态，请重试或联系管理员。'
+      return
+    }
+        if ((isManagementTraitsProduct(this.repoCode) || isManagementTraitsProduct(serverCode)) &&
+            (!res.data || typeof res.data.managementTraitsProfileFrozen !== 'boolean' || !validId || String(responseId) !== String(this.examId))) {
+          this.managementTraitsError = '测评身份配置未确认冻结状态，请重试或联系管理员。'
+          return
+        }
+        if (res.data && res.data.managementTraitsProfileFrozen === true) {
+          this.managementTraitsDetected = true
+          this.candidateForm.stuFlag = ''
+          this.configLoading = false
+          await this.resumeOrLoadManagementTraits()
+          return
+        }
+    if (lifecycle === 'draft') {
+      this.managementTraitsError = '管理特质新版草稿尚未冻结，请等待管理员冻结后再登记。'
+      return
+    }
         if (res.data) {
           // 考试状态检查 — 同时检查 state 和实际时间
           const state = res.data.state
@@ -236,32 +312,76 @@ export default {
           } else {
             this.requiredFields = [] // 未配置则显示全部
           }
+          this.examBlocked = false
+          if (this.$route.params.testerId !== undefined && this.$route.params.testerId !== '') {
+            this.candidateForm.id = this.$route.params.testerId
+            this.fetchData()
+          }
+        } else {
+          this.managementTraitsError = '身份字段配置缺失，请重试或联系管理员。'
         }
       }).catch((err) => {
-        console.error('fetchDetail failed:', err)
-        this.requiredFields = [] // 加载失败则显示全部
+        if (request !== this.configRequest) return
+        this.managementTraitsError = '身份配置加载失败，请重试或联系管理员。'
+        this.examBlocked = true
+      }).finally(() => {
+        if (request === this.configRequest) this.configLoading = false
       })
     }
+    },
 
-    if (this.$route.params.testerId !== undefined && this.$route.params.testerId !== '') {
-      this.candidateForm.id = this.$route.params.testerId
-      console.log(this.candidateForm.id)
-      this.fetchData()
-    }
-  },
+    async resumeOrLoadManagementTraits() {
+      const request = this.configRequest
+      const examId = this.examId
+      this.examBlocked = true; this.configLoading = true
+      try {
+        const paper = await resumeManagementTraitsPaper(examId)
+        if (request !== this.configRequest) return
+        if (paper) {
+          if (paper.state === 2) { clearManagementTraitsTokens(); this.$router.replace({ name: 'ExamThankYou' }) }
+          else this.$router.replace({ name: 'ManagementTraitsExam', params: { paperId: paper.paperId } })
+          return
+        }
+      } catch (error) { if (request === this.configRequest) this.managementTraitsError = error.message || '已有试卷恢复失败，请重试或联系管理员。'; return }
+      finally { if (request === this.configRequest) this.configLoading = false }
+      if (request !== this.configRequest) return
+      return this.loadManagementTraitsConfig()
+    },
 
-  methods: {
+    async loadManagementTraitsConfig() {
+      if (this.configLoading) return
+      if (!this.managementTraitsMode) return this.loadCandidateConfig()
+      const request = this.configRequest
+      const examId = this.examId
+      this.configLoading = true; this.examBlocked = true; this.requiredFields = null; this.managementTraitsError = ''
+      try {
+        const response = await fetchManagementTraitsExamConfig(examId)
+        if (request !== this.configRequest) return
+        const responseId = response.data && response.data.id
+        const validId = typeof responseId === 'string' || (Number.isSafeInteger(responseId) && responseId > 0)
+        if (!response.data || response.data.managementTraitsProfileFrozen !== true || !validId || String(responseId) !== String(examId) || (Object.prototype.hasOwnProperty.call(response.data, 'isManagementTraits') && response.data.isManagementTraits !== true) || (Object.prototype.hasOwnProperty.call(response.data, 'managementTraitsLifecycle') && response.data.managementTraitsLifecycle !== 'frozen') || (response.data.repoCode !== undefined && !['NEW005', 'FROZEN_COMPAT002'].includes(classifyManagementTraitsExam(response.data, examId)))) throw new Error('测评身份配置未确认冻结或与当前测评不一致，请重试或联系管理员。')
+        if (classifyManagementTraitsProduct(this.repoCode) === 'NEW005' && classifyManagementTraitsExam(response.data, examId) !== 'NEW005') throw new Error('服务器未确认005新版产品与冻结状态，请联系管理员。')
+        if (!response.data || typeof response.data.requiredFields !== 'string') throw new Error('身份字段配置缺失，请联系管理员。')
+        const fields = response.data.requiredFields ? response.data.requiredFields.split(',') : []
+        const allowed = ['name', 'gender', 'telephone', 'affiliation', 'post', 'age', 'degree', 'major', 'stuFlag']
+        if (!fields.length || fields.some(field => !allowed.includes(field)) || new Set(fields).size !== fields.length) throw new Error('身份字段配置不受支持，请联系管理员。')
+        this.requiredFields = fields; this.examBlocked = false
+      } catch (error) { if (request === this.configRequest) this.managementTraitsError = error.message || '配置加载失败，请重试。' }
+      finally { if (request === this.configRequest) this.configLoading = false }
+    },
 
     showField(fieldName) {
       // requiredFields 未加载完成前不显示任何字段
       if (this.requiredFields === null) return false
+      if (this.managementTraitsMode) return this.requiredFields.includes(fieldName)
       return this.requiredFields.length === 0 || this.requiredFields.includes(fieldName)
     },
 
     fetchData() {
+      const request = this.configRequest
       fetchCandidate(this.examId, this.candidateForm.id).then(response => {
+        if (request !== this.configRequest) return
         this.candidateForm = response.data
-        console.log(this.candidateForm)
         // this.candidateForm.name = response.data.name
         // this.candidateForm.age = response.data.age
         // this.candidateForm.gender = response.data.gender
@@ -271,8 +391,10 @@ export default {
     },
 
     handleSave() {
+      if (this.saving || this.configLoading || this.examBlocked) return
+      const request = this.configRequest
       this.$refs.candidateForm.validate((valid) => {
-        if (!valid) {
+        if (!valid || request !== this.configRequest) {
           return
         }
 
@@ -283,20 +405,34 @@ export default {
           cancelButtonText: '取消',
           type: 'warning'
         }).then(() => {
-          this.submitForm()
+          if (request === this.configRequest) this.submitForm()
         })
       })
     },
 
-    submitForm() {
+    async submitForm() {
+      if (this.saving || this.configLoading || this.examBlocked) return
+      const request = this.configRequest
+      this.saving = true
+      try {
+        if (this.managementTraitsMode) {
+          const response = await registerManagementTraitsCandidate(this.examId, this.requiredFields, this.candidateForm)
+          if (request !== this.configRequest) return
+          this.acceptManagementTraitsIdentity(response.data)
+          return
+        }
       this.candidateForm.stuFlag = this.stuFlag
-      saveData(this.candidateForm).then(response => {
+      const response = await saveData(this.candidateForm)
+        if (request !== this.configRequest) return
+        if (response.data && managementTraitsTokenClaims(response.data.participantToken)) {
+          this.acceptManagementTraitsIdentity(response.data)
+          return
+        }
         this.candidateForm.id = response.data.id
         if (response.data.participantToken) {
           sessionStorage.setItem('competencyParticipantToken', response.data.participantToken)
           sessionStorage.setItem('competencyParticipantType', 'candidate')
         }
-        console.log(this.candidateForm.id)
         this.$notify({
           title: '成功',
           message: '信息保存成功！',
@@ -306,9 +442,15 @@ export default {
         // console.log("====================================")
         this.$router.replace({ name: 'PreExam', params:
             { examId: this.examId , id: this.candidateForm.id,stuFlag: this.stuFlag,repoCode: this.repoCode}})
-      })
+      } catch (error) { if (request === this.configRequest) this.$message.error(error.message || '信息保存失败，请重试。') }
+      finally { if (request === this.configRequest) this.saving = false }
+    },
 
-      // this.$router.push({ name: 'PreExam', params: { id: this.examId }})
+    acceptManagementTraitsIdentity(data) {
+      if (!data || !data.id) throw new Error('身份响应无效，请重新登记。')
+      rememberManagementTraitsParticipant(data.participantToken, this.examId)
+      this.candidateForm.id = data.id
+      this.$router.replace({ name: 'PreExam', params: { examId: this.examId, id: data.id, stuFlag: this.stuFlag, repoCode: this.repoCode }, query: { mngTest: '1' } })
     },
 
   }

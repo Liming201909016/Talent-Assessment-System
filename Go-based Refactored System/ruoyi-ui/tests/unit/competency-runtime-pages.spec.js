@@ -54,6 +54,16 @@ describe('Competency runtime pages', () => {
     expect(wrapper.text()).not.toContain('五级量表')
   })
 
+  // TestBugFB156_MobileOptionsShareOneLeftEdge
+  // 对应：docs/regression-tests.md #FB-156
+  it('resets bordered-radio sibling spacing and fills the mobile option column', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/paper/exam/competencyExam.vue'), 'utf8')
+    expect(source).toContain('.scale-options .el-radio.is-bordered + .el-radio.is-bordered')
+    expect(source).toContain('margin-left: 0;')
+    expect(source).toContain('width: 100%;')
+    expect(source).toContain('box-sizing: border-box;')
+  })
+
   // TestBugFB119_AnswerSaveAdvancesWithoutAutoSubmitting
   // 对应：docs/regression-tests.md #FB-119
   it('advances after a successful save, but stays on failure and on the final question', async () => {

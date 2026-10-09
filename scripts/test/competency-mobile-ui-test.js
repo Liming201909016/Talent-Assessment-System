@@ -39,6 +39,7 @@ async function verifyViewport(browser, width, height, expectedColumns) {
 
   const metrics = await page.evaluate(() => {
     const options = document.querySelector('.scale-options')
+    const optionCards = Array.from(options.querySelectorAll('.el-radio'))
     const nav = document.querySelector('.question-nav')
     const navButton = nav.querySelector('button')
     const option = options.querySelector('.el-radio')
@@ -49,6 +50,9 @@ async function verifyViewport(browser, width, height, expectedColumns) {
       optionColumns: getComputedStyle(options).gridTemplateColumns.split(' ').length,
       navColumns: getComputedStyle(nav).gridTemplateColumns.split(' ').length,
       optionHeight: option.getBoundingClientRect().height,
+      optionLefts: optionCards.map(card => Math.round(card.getBoundingClientRect().left * 10) / 10),
+      optionRights: optionCards.map(card => Math.round(card.getBoundingClientRect().right * 10) / 10),
+      optionWidths: optionCards.map(card => Math.round(card.getBoundingClientRect().width * 10) / 10),
       navButtonHeight: navButton.getBoundingClientRect().height,
       actionsWidth: document.querySelector('.actions').getBoundingClientRect().width
     }
@@ -62,6 +66,9 @@ async function verifyViewport(browser, width, height, expectedColumns) {
   assert(metrics.actionsWidth <= metrics.clientWidth, `${width}px actions must fit the viewport`)
 
   if (width === 390) {
+    assert.strictEqual(new Set(metrics.optionLefts).size, 1, `390px option left edges must align: ${metrics.optionLefts}`)
+    assert.strictEqual(new Set(metrics.optionRights).size, 1, `390px option right edges must align: ${metrics.optionRights}`)
+    assert.strictEqual(new Set(metrics.optionWidths).size, 1, `390px option widths must match: ${metrics.optionWidths}`)
     await page.screenshot({ path: 'screenshots/competency-mobile-390.png', fullPage: true })
   }
   await context.close()

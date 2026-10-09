@@ -1,0 +1,95 @@
+package service
+
+import (
+ "bytes"
+ "context"
+ "encoding/json"
+ "errors"
+ "fmt"
+ "io"
+ "log"
+ "os"
+ "regexp"
+ "strings"
+ "sync"
+ "testing"
+ "time"
+
+ driver "github.com/go-sql-driver/mysql"
+ "github.com/talent-assessment/refactored/internal/config"
+ "github.com/talent-assessment/refactored/internal/model"
+ "gorm.io/driver/mysql"
+ "gorm.io/gorm"
+ "gorm.io/gorm/logger"
+)
+
+type reissueSafeSQLObserver struct { logger.Interface; mu sync.Mutex; classes []string; persistence bool; firstReads int; ready chan struct{}; release chan struct{} }
+func (o *reissueSafeSQLObserver) Trace(ctx context.Context,begin time.Time,fn func()(string,int64),err error) {
+ sql,_:=fn()
+ if err==nil {
+  o.mu.Lock();wait:=o.persistence&&o.firstReads<2&&strings.HasPrefix(sql,"SELECT * FROM `el_mng_result_run` WHERE id = ");if wait{o.firstReads++};o.mu.Unlock()
+  if wait {o.ready<-struct{}{};select{case <-o.release:case <-ctx.Done():}}
+  return
+ };class:="unknown";var e *driver.MySQLError
+ if errors.As(err,&e) { class=fmt.Sprintf("mysql_%d",e.Number);if strings.HasPrefix(sql,"INSERT INTO `el_mng_report_reissue`") {class="report_insert/"+class;if strings.HasSuffix(e.Message," for key 'el_mng_report_reissue.uk_mng_reissue_input'")||strings.HasSuffix(e.Message," for key 'uk_mng_reissue_input'"){class+="/input_unique"}} } else if errors.Is(err,ErrManagementTraitsRuntimeInvalid) { class="runtime_guard_invalid" }
+ o.mu.Lock();defer o.mu.Unlock();o.classes=append(o.classes,class)
+}
+
+// Explicit owned restored-schema integration test, never the main database.
+func TestManagementTraitsReissueMySQLStagingExternal(t *testing.T) {
+ schema := os.Getenv("MNG_REISSUE_OWNED_SCHEMA")
+ if schema == "" { t.Skip("explicit owned restored schema required") }
+ if !regexp.MustCompile(`^mng_reissue_test_[a-f0-9]{16}$`).MatchString(schema) || os.Geteuid()!=0 { t.Fatal("owned schema gate") }
+ pid:=os.Getenv("MNG_REISSUE_MAIN_PID")
+ if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(pid) { t.Fatal("pid gate") }
+ raw,e:=os.ReadFile("/proc/"+pid+"/environ"); if e!=nil { t.Fatal("environment read gate") }
+ for _,item:=range strings.Split(string(raw),"\x00") { if k,v,ok:=strings.Cut(item,"=");ok { if os.Setenv(k,v)!=nil { t.Fatal("environment load gate") } } }
+ if os.Getenv("REPORT_EFFECTIVE_ENV")!="staging" || os.Getenv("MNG_TEST_REPORT_ENV")!="staging" { t.Fatal("staging gate") }
+ log.SetOutput(io.Discard)
+ cwd,_:=os.Getwd(); if os.Chdir("/opt/talent-assessment")!=nil { t.Fatal("config cwd") }; cfg:=config.Load(); if os.Chdir(cwd)!=nil { t.Fatal("test cwd") }
+ dc,e:=driver.ParseDSN(cfg.Mysql.DSN); if e!=nil || dc.DBName!="element" || dc.User!="positive_app" { t.Fatal("application account gate") }
+ dc.DBName=schema; dc.ParseTime=true; dc.MultiStatements=false; dc.InterpolateParams=false; dc.Timeout=10*time.Second
+ observer:=&reissueSafeSQLObserver{Interface:logger.Default.LogMode(logger.Silent),ready:make(chan struct{},2),release:make(chan struct{})}
+ open:=func()*gorm.DB { db,e:=gorm.Open(mysql.Open(dc.FormatDSN()),&gorm.Config{Logger:observer}); if e!=nil { t.Fatal("application connection gate") }; pool,e:=db.DB(); if e!=nil { t.Fatal("pool gate") }; t.Cleanup(func(){pool.Close()}); return db }
+ db1,db2:=open(),open()
+ for _,db:=range []*gorm.DB{db1,db2}{pool,_:=db.DB();pool.SetMaxOpenConns(1);pool.SetMaxIdleConns(1)}
+ var isolation string;var connection1,connection2 int64
+ if db1.Raw("SELECT @@transaction_isolation").Scan(&isolation).Error!=nil||isolation!="REPEATABLE-READ"||db1.Raw("SELECT CONNECTION_ID()").Scan(&connection1).Error!=nil||db2.Raw("SELECT CONNECTION_ID()").Scan(&connection2).Error!=nil||connection1==connection2{t.Fatal("two distinct repeatable-read connection gate")}
+ var actual,account string
+ if db1.Raw("SELECT DATABASE()").Scan(&actual).Error!=nil || actual!=schema || db1.Raw("SELECT CURRENT_USER()").Scan(&account).Error!=nil || account!="positive_app@%" { t.Fatal("actual application identity gate") }
+ ctx,cancel:=context.WithTimeout(context.Background(),120*time.Second);defer cancel()
+ s1,s2:=NewManagementTraitsRuntimeService(db1,cfg.Jwt.Secret,1<<20),NewManagementTraitsRuntimeService(db2,cfg.Jwt.Secret,1<<20)
+ for _,s:=range []*ManagementTraitsRuntimeService{s1,s2} { if s.checkReissueSchema(ctx)!=nil || s.CheckRuntimeSchema(ctx)!=nil { t.Fatal("actual schema gate") } }
+ var runs []model.ManagementTraitsResultRun
+ if db1.Where("exam_id = ? AND status = ?","1791298091700970647","completed").Find(&runs).Error!=nil || len(runs)!=1 { t.Fatal("trusted completed source gate") }
+ c:=reissueTestContent(t); q,e:=s1.QualifyReportReissue(ctx,runs[0].ID,c); if e!=nil || !q.Eligible { t.Fatal("actual frozen qualification gate") }
+ before,e:=json.Marshal(runs[0]); if e!=nil { t.Fatal("run baseline gate") }
+ root:=t.TempDir(); pdf:=append([]byte("%PDF-1.7\n"),bytes.Repeat([]byte("OWNED_STORAGE_FIXTURE_ONLY\n"),100)...)
+ ready:=make(chan struct{},2);release:=make(chan struct{}); var wg sync.WaitGroup
+ type answer struct{ report model.ManagementTraitsReportReissue; reused bool; err error }
+ out:=make([]answer,2)
+ for i,s:=range []*ManagementTraitsRuntimeService{s1,s2} { wg.Add(1);go func(i int,s *ManagementTraitsRuntimeService){defer wg.Done();r,reused,e:=s.GenerateReportReissue(ctx,runs[0].ID,1,root,c,func(ctx context.Context,d ManagementTraitsTestReportData)([]byte,error){ if !d.TestOnly || d.Overall.Score!="58.64" || len(d.Dimensions)!=13 || len(d.Modules)!=4 { return nil,ErrManagementTraitsReissueInvalid };ready<-struct{}{};select{case <-release:return pdf,nil;case <-ctx.Done():return nil,ErrManagementTraitsReissueInvalid} });out[i]=answer{r,reused,e}}(i,s) }
+ for i:=0;i<2;i++ { select{case <-ready:case <-ctx.Done():close(release);wg.Wait();t.Fatal("render outside lock concurrency gate")} }
+ observer.mu.Lock();observer.persistence=true;observer.mu.Unlock();close(release)
+ for i:=0;i<2;i++{select{case <-observer.ready:case <-ctx.Done():close(observer.release);wg.Wait();t.Fatal("both persistence snapshots before paper lock gate")}};close(observer.release);wg.Wait()
+ if out[0].err!=nil || out[1].err!=nil || out[0].report.ID=="" || out[0].report.ID!=out[1].report.ID || out[0].reused==out[1].reused {
+  observer.mu.Lock();classes:=append([]string{},observer.classes...);observer.mu.Unlock()
+  var reports,audits int64;db1.Model(&model.ManagementTraitsReportReissue{}).Count(&reports);db1.Model(&model.ManagementTraitsReissueAudit{}).Count(&audits)
+  t.Logf("SAFE_CONCURRENCY err0=%t err1=%t reused0=%t reused1=%t sameReport=%t sameDataSHA=%t reports=%d audits=%d sqlClasses=%v",out[0].err!=nil,out[1].err!=nil,out[0].reused,out[1].reused,out[0].report.ID==out[1].report.ID,out[0].report.DataSHA==out[1].report.DataSHA,reports,audits,classes)
+  t.Fatal("actual two-pool unique reuse gate")
+ }
+ observer.mu.Lock();classes:=append([]string{},observer.classes...);firstReads:=observer.firstReads;observer.mu.Unlock()
+ if firstReads!=2||len(classes)!=1||classes[0]!="report_insert/mysql_1062/input_unique"{t.Fatal("exact one input-constraint duplicate gate")}
+ if out[0].report.DataSHA!=out[1].report.DataSHA||out[0].report.DataSnapshot!=out[1].report.DataSnapshot||out[0].report.FileSHA!=out[1].report.FileSHA||out[0].report.FileBytes!=out[1].report.FileBytes||managementTraitsReissueSHA([]byte(out[0].report.DataSnapshot))!=out[0].report.DataSHA{t.Fatal("winner exact immutable metadata gate")}
+ var generated,reusedAudits int64
+ if db1.Model(&model.ManagementTraitsReissueAudit{}).Where("action = ?","generate").Count(&generated).Error!=nil||generated!=1||db1.Model(&model.ManagementTraitsReissueAudit{}).Where("action = ?","reuse").Count(&reusedAudits).Error!=nil||reusedAudits!=1{t.Fatal("one generate one reuse gate")}
+ for _,action:=range []string{"view","download"} { r,b,e:=s2.ReadReportReissue(ctx,out[0].report.ID,1,root,action); if e!=nil || r.ID!=out[0].report.ID || !bytes.Equal(b,pdf) { t.Fatal("actual archival read gate") } }
+ var count int64
+ if db1.Model(&model.ManagementTraitsReportReissue{}).Count(&count).Error!=nil || count!=1 { t.Fatal("single report gate") }
+ if db1.Model(&model.ManagementTraitsReissueAudit{}).Count(&count).Error!=nil || count!=4 { t.Fatal("atomic four audits gate") }
+ var after model.ManagementTraitsResultRun
+ if db1.Where("id = ?",runs[0].ID).Take(&after).Error!=nil { t.Fatal("run reread gate") };b,e:=json.Marshal(after);if e!=nil || !bytes.Equal(before,b) { t.Fatal("source immutable gate") }
+ files,e:=os.ReadDir(root);if e!=nil || len(files)!=1 { t.Fatal("no orphan fixture gate") }
+ t.Log("ACTUAL_MYSQL_TWO_POOLS_SCHEMA_QUALIFICATION_UNIQUE_REUSE_ARCHIVE_AUDIT_SOURCE_IMMUTABLE_PASS; synthetic PDF only")
+ t.Log("SAFE_GREEN isolation_repeatable_read=true distinct_connections=true prior_snapshots=2 report_input_1062=1 report=1 generate_audit=1 reuse_audit=1 total_audit=4 same_report=true same_data=true same_file=true files=1 orphans=0 source_unchanged=true")
+}

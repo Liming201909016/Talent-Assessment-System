@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -26,6 +27,14 @@ const (
 )
 
 var ErrPhase1ReportContentNotApproved = errors.New("一期正式报告内容尚未完成双重批准")
+
+func CompetencyReportEffectiveEnvironment() string {
+	environment := strings.ToLower(strings.TrimSpace(os.Getenv("REPORT_EFFECTIVE_ENV")))
+	if environment == "" {
+		environment = strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	}
+	return environment
+}
 
 type CompetencyReportTextSnapshot struct {
 	ContentVersion string            `json:"contentVersion"`
@@ -168,13 +177,27 @@ func BuildPhase1FormalReportData(result model.CompetencyResult, groups []model.C
 
 func ValidatePhase1ReportContentApproval(row model.CompetencyReportContentPackage) error {
 	versions := CompetencyVersionSet{ProductVersion: row.ProductVersion, ScoringVersion: row.ScoringVersion, ContentVersion: row.ContentVersion, ReportTemplateVersion: row.TemplateVersion}
-	if !IsPhase1CompetencyVersionSet(versions) || row.Audience != CompetencyReportAudienceFrontlineEmployee || row.ApprovalStatus != CompetencyReportApprovalApproved {
+	if (!IsPhase1CompetencyVersionSet(versions) && !IsPhase1V2VersionSet(versions)) || row.Audience != CompetencyReportAudienceFrontlineEmployee || row.ApprovalStatus != CompetencyReportApprovalApproved {
 		return ErrPhase1ReportContentNotApproved
 	}
 	if strings.TrimSpace(row.ContentApprovedBy) == "" || row.ContentApprovedAt == nil || strings.TrimSpace(row.PsychometricApprovedBy) == "" || row.PsychometricApprovedAt == nil {
 		return ErrPhase1ReportContentNotApproved
 	}
 	if !isSHA256(row.QuestionSourceSHA256) || !isSHA256(row.ContentSourceSHA256) || strings.TrimSpace(row.EffectiveEnvironment) == "" || strings.TrimSpace(row.Disclaimer) == "" {
+		return ErrPhase1ReportContentNotApproved
+	}
+	return nil
+}
+
+func ValidatePhase1ReportContentApprovalForEnvironment(row model.CompetencyReportContentPackage, environment string) error {
+	if err := ValidatePhase1ReportContentApproval(row); err != nil {
+		return err
+	}
+	environment = strings.ToLower(strings.TrimSpace(environment))
+	if environment == "" {
+		environment = "local"
+	}
+	if !strings.EqualFold(strings.TrimSpace(row.EffectiveEnvironment), environment) {
 		return ErrPhase1ReportContentNotApproved
 	}
 	return nil

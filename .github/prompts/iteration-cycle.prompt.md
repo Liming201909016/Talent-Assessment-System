@@ -25,13 +25,12 @@ cd "Go-based Refactored System" && go test ./... -v -count=1
 
 #### A2. API 集成测试（快速回归）
 ```bash
-node scripts/test/chain-batch.js
-node scripts/test/business-rules-test.js
+cd "Go-based Refactored System/ruoyi-ui" && npm test
 ```
 
 #### A3. 需求验证
 ```bash
-node scripts/test/requirement-tests.js
+cd "Go-based Refactored System" && go test ./internal/handler -run 'TestBugFB1(54|55|60|61|62)|TestPhase1CustomerWordTemplateHasCompleteStableContract' -count=1
 ```
 
 #### A4. 收集结果

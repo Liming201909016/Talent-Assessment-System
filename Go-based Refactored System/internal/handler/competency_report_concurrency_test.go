@@ -1,12 +1,99 @@
 package handler
 
 import (
+	"archive/zip"
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestNormalizeCompetencyReportPaperIDs(t *testing.T) {
+	ids, err := normalizeCompetencyReportPaperIDs([]string{" paper-1 ", "paper-1", "paper-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != "paper-1" || ids[1] != "paper-2" {
+		t.Fatalf("normalized ids=%v", ids)
+	}
+	if _, err := normalizeCompetencyReportPaperIDs(nil); err == nil {
+		t.Fatal("empty paper ids were accepted")
+	}
+	if _, err := normalizeCompetencyReportPaperIDs([]string{"paper-1", " "}); err == nil {
+		t.Fatal("blank paper id was accepted")
+	}
+	tooMany := make([]string, 101)
+	for index := range tooMany {
+		tooMany[index] = "paper-" + strings.Repeat("x", index+1)
+	}
+	if _, err := normalizeCompetencyReportPaperIDs(tooMany); err == nil {
+		t.Fatal("more than 100 paper ids were accepted")
+	}
+}
+
+// TestBugFB157_BatchDownloadBuildsOneZipWithEverySelectedReport
+// 对应：docs/regression-tests.md #FB-157
+// 复现：前端逐份保存PDF，浏览器产生多个独立下载。
+// 期望：后端一次生成ZIP，所选PDF全部存在且同名人员的文件名仍唯一。
+func TestBugFB157_BatchDownloadBuildsOneZipWithEverySelectedReport(t *testing.T) {
+	tempDir := t.TempDir()
+	firstPath := filepath.Join(tempDir, "first.pdf")
+	secondPath := filepath.Join(tempDir, "second.pdf")
+	if err := os.WriteFile(firstPath, []byte("%PDF-first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondPath, []byte("%PDF-second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := []competencyReportArchiveEntry{
+		{PaperID: "paper/1", ParticipantName: "../同名/人员", Path: firstPath},
+		{PaperID: "paper-2", ParticipantName: "同名人员", Path: secondPath},
+	}
+	var output bytes.Buffer
+	if err := writeCompetencyReportArchive(&output, entries); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+
+	reader, err := zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len()))
+	if err != nil {
+		t.Fatalf("open archive: %v", err)
+	}
+	if len(reader.File) != 2 {
+		t.Fatalf("archive entries=%d, want 2", len(reader.File))
+	}
+	if reader.File[0].Name == reader.File[1].Name {
+		t.Fatalf("duplicate archive filename: %s", reader.File[0].Name)
+	}
+	for _, file := range reader.File {
+		if strings.Contains(file.Name, "/") || strings.Contains(file.Name, "\\") {
+			t.Fatalf("archive entry contains a path separator: %s", file.Name)
+		}
+	}
+	for index, file := range reader.File {
+		stream, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(stream)
+		stream.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []byte("%PDF-first")
+		if index == 1 {
+			want = []byte("%PDF-second")
+		}
+		if !bytes.Equal(content, want) {
+			t.Fatalf("entry %d content=%q, want %q", index, content, want)
+		}
+	}
+}
 
 // TestBugFB080_SamePaperGenerationIsSerialized
 // 对应：docs/regression-tests.md #FB-080

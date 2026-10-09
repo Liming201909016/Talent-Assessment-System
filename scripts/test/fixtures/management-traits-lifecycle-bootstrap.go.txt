@@ -1,0 +1,42 @@
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	mysql "github.com/go-sql-driver/mysql"
+	"github.com/talent-assessment/refactored/internal/config"
+)
+
+func main() {
+	if len(os.Args)!=5 || os.Geteuid()!=0 { os.Exit(2) }
+	schema,binary,output,pid:=os.Args[1],os.Args[2],os.Args[3],os.Args[4]
+	if !regexp.MustCompile(`^mng_lifecycle_test_[a-f0-9]{16}$`).MatchString(schema)||!filepath.IsAbs(binary)||!filepath.IsAbs(output)||!regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(pid) { os.Exit(2) }
+	raw,e:=os.ReadFile("/proc/"+pid+"/environ");if e!=nil{os.Exit(2)}
+	for _,item:=range strings.Split(string(raw),"\x00") { if k,v,ok:=strings.Cut(item,"=");ok { if os.Setenv(k,v)!=nil {os.Exit(2)} } }
+	if os.Getenv("REPORT_EFFECTIVE_ENV")!="staging"||os.Getenv("MNG_TEST_REPORT_ENV")!="staging"||os.Chdir("/opt/talent-assessment")!=nil{os.Exit(2)}
+	log.SetOutput(io.Discard);cfg:=config.Load();dc,e:=mysql.ParseDSN(cfg.Mysql.DSN)
+	if e!=nil||dc.DBName!="element"||dc.Net!="tcp"||(dc.Addr!="127.0.0.1:3306"&&dc.Addr!="localhost:3306")||cfg.Jwt.Secret==""{os.Exit(2)}
+	if dc.User!="positive_app"{os.Exit(2)}
+	dc.DBName=schema
+	dc.ParseTime,dc.MultiStatements,dc.InterpolateParams=true,false,false;dc.Timeout,dc.ReadTimeout,dc.WriteTimeout=10*time.Second,15*time.Second,15*time.Second
+	// Root is used only for the pre-authorized exact disposable-schema DDL, never application validation.
+	ddlConfig:=*dc;ddlConfig.User,ddlConfig.Passwd,ddlConfig.Net,ddlConfig.Addr="root","","unix","/var/run/mysqld/mysqld.sock"
+	ddl,e:=sql.Open("mysql",ddlConfig.FormatDSN());if e!=nil{os.Exit(2)};defer ddl.Close()
+	marker:="MTL atomic "+schema[len("mng_lifecycle_test_"):]
+	statement:="CREATE TRIGGER `"+schema+"`.mng_lifecycle_owned_failure BEFORE INSERT ON `"+schema+"`.el_mng_result_module FOR EACH ROW BEGIN IF EXISTS (SELECT 1 FROM `"+schema+"`.el_mng_result_run r INNER JOIN `"+schema+"`.el_mng_paper_snapshot s ON s.paper_id=r.paper_id WHERE r.id=NEW.run_id AND JSON_UNQUOTE(JSON_EXTRACT(s.participant_snapshot,'$.name'))='"+marker+"') THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='MNG_OWNED_FAILURE'; END IF; END"
+	if _,e=ddl.Exec(statement);e!=nil{fmt.Println("OWNED_TRIGGER_DDL_FAILED");os.Exit(2)}
+	fmt.Println("OWNED_TRIGGER_DDL_ROOT_ONLY=1 APPLICATION_ROOT_CONNECTIONS=0 MAIN_DDL=0")
+	env:=make([]string,0);for _,item:=range os.Environ(){k,_,_:=strings.Cut(item,"=");if k!="MYSQL_DSN"&&k!="JWT_SECRET"&&!strings.HasPrefix(k,"MNG_LIFECYCLE_"){env=append(env,item)}}
+	env=append(env,"JWT_SECRET="+cfg.Jwt.Secret,"MNG_LIFECYCLE_DSN="+dc.FormatDSN(),"MNG_LIFECYCLE_SCHEMA="+schema,"MNG_LIFECYCLE_OUTPUT="+output,"MNG_LIFECYCLE_SCOPE=worker-atomic")
+	cmd:=exec.Command(binary,"-test.run","^TestManagementTraitsLifecycleRestoredStaging$","-test.v","-test.timeout","240s");cmd.Env=env;cmd.Dir="/opt/talent-assessment";cmd.Stdout,cmd.Stderr=os.Stdout,os.Stderr
+	if cmd.Run()!=nil{fmt.Println("RESTORED_LIFECYCLE_CHILD_FAIL");os.Exit(1)};fmt.Println("RESTORED_LIFECYCLE_CHILD_PASS SERVICE_ONLY_NOT_HTTP=1")
+}

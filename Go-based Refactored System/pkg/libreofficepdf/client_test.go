@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClientConvertWritesValidPDFAndCleansWorkspace(t *testing.T) {
@@ -133,4 +136,115 @@ func containsArgument(arguments []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+// MT-REPORT-DIAG-01: retain typed causes, not raw command output/text, with
+// original public messages and the same isolated-workspace cleanup.
+func TestBugMTReportDiag_ConverterRetainsSafeFailureIdentity(t *testing.T) {
+	secret := "INJECTED_CONVERTER_SECRET_PATH_OUTPUT"
+	for _, x := range []struct {
+		name, class, message string
+		cause                error
+	}{
+		{"unknown", "lo_command", "LibreOffice转换PDF失败", errors.New(secret)},
+		{"permission", "lo_command", "LibreOffice转换PDF失败", &os.PathError{Op: secret, Path: secret, Err: os.ErrPermission}},
+		{"exit", "lo_command", "LibreOffice转换PDF失败", &exec.ExitError{Stderr: []byte(secret)}},
+		{"start", "lo_command", "LibreOffice转换PDF失败", &exec.Error{Name: secret, Err: exec.ErrNotFound}},
+	} {
+		t.Run(x.name, func(t *testing.T) {
+			runner := &fakeRunner{runErr: x.cause, output: []byte(secret)}
+			_, err := newClient("libreoffice", runner).Convert(context.Background(), "report.docx", []byte("docx"))
+			var classified *ConversionError
+			if !errors.As(fmt.Errorf("wrapped: %w", err), &classified) || classified.DiagnosticClass() != x.class || !errors.Is(err, x.cause) || err.Error() != x.message || strings.Contains(err.Error(), secret) {
+				t.Fatal("converter cause or fixed public message changed")
+			}
+			if _, err := os.Stat(runner.outDir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("converter workspace remains")
+			}
+		})
+	}
+	t.Run("queue-canceled", func(t *testing.T) {
+		conversionSlot <- struct{}{}
+		defer func() { <-conversionSlot }()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := newClient("libreoffice", &fakeRunner{}).Convert(ctx, "report.docx", []byte("docx"))
+		var classified *ConversionError
+		if !errors.As(err, &classified) || classified.DiagnosticClass() != "lo_queue" || !errors.Is(err, context.Canceled) || err.Error() != "LibreOffice转换排队超时" {
+			t.Fatal("queue classification changed behavior")
+		}
+	})
+	t.Run("non-pdf", func(t *testing.T) {
+		runner := &fakeRunner{pdf: []byte(secret)}
+		_, err := newClient("libreoffice", runner).Convert(context.Background(), "report.docx", []byte("docx"))
+		var classified *ConversionError
+		if !errors.As(err, &classified) || classified.DiagnosticClass() != "lo_output_invalid" || err.Error() != "LibreOffice返回的文件不是有效PDF" || strings.Contains(err.Error(), secret) {
+			t.Fatal("invalid output leaked")
+		}
+		if _, err := os.Stat(runner.outDir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("invalid-output workspace remains")
+		}
+	})
+}
+
+type diagnosticConverterRunner struct {
+	wait      bool
+	workspace string
+}
+
+func (r *diagnosticConverterRunner) Run(ctx context.Context, _ string, args ...string) ([]byte, error) {
+	for i, arg := range args {
+		if arg == "--outdir" {
+			r.workspace = args[i+1]
+		}
+	}
+	if r.wait {
+		<-ctx.Done()
+		return []byte("INJECTED_SECRET_OUTPUT"), ctx.Err()
+	}
+	return nil, nil
+}
+
+func TestBugMTReportDiag_ConverterLocalCategories(t *testing.T) {
+	for _, x := range []struct{ name, class string }{
+		{"config", "lo_config"}, {"input-size", "lo_input_size"}, {"input-name", "lo_input_name"},
+		{"workspace", "lo_workspace"}, {"missing-output", "lo_output_open"}, {"command-deadline", "lo_command"},
+	} {
+		t.Run(x.name, func(t *testing.T) {
+			runner := &diagnosticConverterRunner{wait: x.name == "command-deadline"}
+			client := newClient("libreoffice", runner)
+			ctx := context.Background()
+			name, docx := "report.docx", []byte("docx")
+			switch x.name {
+			case "config":
+				client = nil
+			case "input-size":
+				docx = nil
+			case "input-name":
+				name = "../INJECTED_SECRET_PATH.docx"
+			case "workspace":
+				missing := filepath.Join(t.TempDir(), "nonexistent")
+				t.Setenv("TMP", missing)
+				t.Setenv("TEMP", missing)
+				t.Setenv("TMPDIR", missing)
+			case "command-deadline":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 20*time.Millisecond)
+				defer cancel()
+			}
+			_, err := client.Convert(ctx, name, docx)
+			var classified *ConversionError
+			if !errors.As(err, &classified) || classified.DiagnosticClass() != x.class || strings.Contains(err.Error(), "INJECTED_SECRET") {
+				t.Fatal("local converter category unavailable or leaked")
+			}
+			if x.name == "command-deadline" && (!errors.Is(err, context.DeadlineExceeded) || err.Error() != "LibreOffice转换PDF超时") {
+				t.Fatal("command deadline cause/message lost")
+			}
+			if runner.workspace != "" {
+				if _, err := os.Stat(runner.workspace); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("local converter workspace remains")
+				}
+			}
+		})
+	}
 }

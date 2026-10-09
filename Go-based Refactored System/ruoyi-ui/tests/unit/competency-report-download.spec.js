@@ -6,7 +6,7 @@ vi.mock('@/utils/request', () => ({
 }))
 
 import request from '@/utils/request'
-import { downloadCompetencyReport, fetchCompetencyInternalReportData } from '@/api/competency'
+import { downloadCompetencyReport, downloadCompetencyReportsArchive, fetchCompetencyInternalReportData } from '@/api/competency'
 
 // TestBugFB077_RejectsJsonBusinessErrorBlob
 // 对应：docs/regression-tests.md #FB-077
@@ -36,6 +36,24 @@ describe('FB-077 competency report Blob validation', () => {
       params: { paperId: 'paper-ready' },
       responseType: 'blob'
     }))
+  })
+
+  it('returns one ZIP for all paper ids and rejects a JSON business error', async () => {
+    const archive = new Blob(['PK\x03\x04'], { type: 'application/zip' })
+    request.mockResolvedValueOnce(archive)
+
+    await expect(downloadCompetencyReportsArchive(['paper-1', 'paper-2'])).resolves.toBe(archive)
+    expect(request).toHaveBeenCalledWith({
+      url: '/exam/api/competency/reports/batch-download',
+      method: 'post',
+      data: { paperIds: ['paper-1', 'paper-2'] },
+      responseType: 'blob'
+    })
+
+    request.mockResolvedValueOnce(new Blob([
+      JSON.stringify({ code: 1, msg: '报告尚未生成: paper-2', success: false })
+    ], { type: 'application/json' }))
+    await expect(downloadCompetencyReportsArchive(['paper-1', 'paper-2'])).rejects.toThrow('报告尚未生成: paper-2')
   })
 })
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,13 +25,14 @@ const (
 )
 
 var (
-	ErrCompetencyNotPublished      = errors.New("competency exam is not published")
-	ErrCompetencyAlreadyDone       = errors.New("competency paper is already completed")
-	ErrCompetencyPaperExpired      = errors.New("competency paper has expired")
-	ErrCompetencyDurationRequired  = errors.New("胜任力测评必须配置大于0的答题时长")
-	ErrCompetencyExamEnded         = errors.New("测评已结束，不能开始答题")
-	ErrCompetencyTimeoutNotReached = errors.New("试卷尚未到达提交时间")
-	ErrCompetencyIncompleteReport  = errors.New("未完整作答，不能生成正式报告")
+	ErrCompetencyNotPublished       = errors.New("competency exam is not published")
+	ErrCompetencyAlreadyDone        = errors.New("competency paper is already completed")
+	ErrCompetencyPaperExpired       = errors.New("competency paper has expired")
+	ErrCompetencyDurationRequired   = errors.New("胜任力测评必须配置大于0的答题时长")
+	ErrCompetencyExamEnded          = errors.New("测评已结束，不能开始答题")
+	ErrCompetencyTimeoutNotReached  = errors.New("试卷尚未到达提交时间")
+	ErrCompetencyIncompleteReport   = errors.New("未完整作答，不能生成正式报告")
+	ErrPhase1V2ResultRunUnavailable = errors.New("新版结果服务暂不可用")
 )
 
 func validateCompetencyStart(exam *model.Exam, now time.Time) error {
@@ -61,13 +63,23 @@ func validateCompetencyFormalReport(result model.CompetencyResult) error {
 }
 
 type CompetencyRuntimeService struct {
-	db           *gorm.DB
-	cfg          *config.Config
-	randomSource io.Reader
+	db                   *gorm.DB
+	cfg                  *config.Config
+	randomSource         io.Reader
+	resultRunSchemaOnce  sync.Once
+	resultRunSchemaReady bool
+	resultRunSchemaErr   error
 }
 
 func NewCompetencyRuntimeService(db *gorm.DB, cfg *config.Config) *CompetencyRuntimeService {
 	return &CompetencyRuntimeService{db: db, cfg: cfg, randomSource: rand.Reader}
+}
+
+func (s *CompetencyRuntimeService) phase1V2ResultRunSchemaState() (bool, error) {
+	s.resultRunSchemaOnce.Do(func() {
+		s.resultRunSchemaReady, s.resultRunSchemaErr = loadPhase1V2SchemaState(s.db)
+	})
+	return s.resultRunSchemaReady, s.resultRunSchemaErr
 }
 
 type CompetencyPublishSummary struct {
@@ -542,8 +554,12 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 	if submitType != CompetencySubmitManual && submitType != CompetencySubmitTimeout {
 		return CompetencySubmitSummary{}, errors.New("提交类型错误")
 	}
+	resultRunReady, err := s.phase1V2ResultRunSchemaState()
+	if err != nil {
+		return CompetencySubmitSummary{}, phase1V2ResultRunError(err)
+	}
 	var summary CompetencySubmitSummary
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var paper model.Paper
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND exam_id = ? AND user_id = ?", claims.PaperID, claims.ExamID, claims.ParticipantID).Take(&paper).Error; err != nil {
 			return err
@@ -748,15 +764,20 @@ func (s *CompetencyRuntimeService) Submit(claims CompetencyTokenClaims, submitTy
 			Where("id = ? AND paper_id = ?", claims.ParticipantID, paper.ID).Take(&participant).Error; err != nil {
 			return err
 		}
-		result := model.CompetencyResult{PaperID: paper.ID, ExamID: paper.ExamID, TotalQuestionCount: len(rows), AnsweredQuestionCount: calculated.AnsweredQuestionCount + calculatedValidity.AnsweredQuestionCount, DimensionQuestionCount: calculated.TotalQuestionCount, AnsweredDimensionQuestionCount: calculated.AnsweredQuestionCount, EffectiveDimensionCount: calculated.EffectiveDimensionCount, OverallScore: overall, EvaluationAverage: average, EvaluationLevel: evaluation, ParticipantType: claims.ParticipantType, ParticipantID: claims.ParticipantID, ParticipantName: participant.Name, ParticipantTelephone: participant.Telephone, ParticipantAge: participant.Age, ParticipantGender: participant.Gender, ParticipantAffiliation: participant.Affiliation, ParticipantPost: participant.Post, ParticipantDegree: participant.Degree, ParticipantMajor: participant.Major, ReportAudience: *exam.CompetencyReportAudience, IsComplete: complete, SubmitType: submitType, ProductVersion: versions.ProductVersion, ScoringVersion: versions.ScoringVersion, ContentVersion: versions.ContentVersion, ReportTemplateVersion: versions.ReportTemplateVersion, SubmittedAt: &now, CreateTime: &now, UpdateTime: &now}
-		if err := tx.Create(&result).Error; err != nil {
-			return err
-		}
 		userTime := 1
 		if paper.CreateTime != nil {
 			userTime = int(now.Sub(*paper.CreateTime).Minutes())
 			if userTime < 1 {
 				userTime = 1
+			}
+		}
+		result := model.CompetencyResult{PaperID: paper.ID, ExamID: paper.ExamID, TotalQuestionCount: len(rows), AnsweredQuestionCount: calculated.AnsweredQuestionCount + calculatedValidity.AnsweredQuestionCount, DimensionQuestionCount: calculated.TotalQuestionCount, AnsweredDimensionQuestionCount: calculated.AnsweredQuestionCount, EffectiveDimensionCount: calculated.EffectiveDimensionCount, OverallScore: overall, EvaluationAverage: average, EvaluationLevel: evaluation, ParticipantType: claims.ParticipantType, ParticipantID: claims.ParticipantID, ParticipantName: participant.Name, ParticipantTelephone: participant.Telephone, ParticipantAge: participant.Age, ParticipantGender: participant.Gender, ParticipantAffiliation: participant.Affiliation, ParticipantPost: participant.Post, ParticipantDegree: participant.Degree, ParticipantMajor: participant.Major, ReportAudience: *exam.CompetencyReportAudience, IsComplete: complete, SubmitType: submitType, ProductVersion: versions.ProductVersion, ScoringVersion: versions.ScoringVersion, ContentVersion: versions.ContentVersion, ReportTemplateVersion: versions.ReportTemplateVersion, SubmittedAt: &now, CreateTime: &now, UpdateTime: &now}
+		if err := tx.Create(&result).Error; err != nil {
+			return err
+		}
+		if resultRunReady && isComplete {
+			if _, _, err := persistPhase1V2ResultRun(tx, result, dimensionInputs, validityInputs, userTime, phase1V2ResultRunSourceSubmission, nil, now); err != nil {
+				return phase1V2ResultRunError(err)
 			}
 		}
 		if err := tx.Model(&model.Paper{}).Where("id = ?", paper.ID).Updates(map[string]any{"state": 2, "user_time": userTime, "update_time": &now}).Error; err != nil {

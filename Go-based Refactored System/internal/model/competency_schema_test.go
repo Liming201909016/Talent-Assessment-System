@@ -609,3 +609,247 @@ func TestCompetencyPhase1Models_TableNames(t *testing.T) {
 		}
 	}
 }
+
+// TestBugFB173_VersionedResultRunStorageIsAdditive
+// Corresponds to docs/regression-tests.md FB-173.
+// The v2 scoring result must coexist with the original paper-keyed result tables.
+func TestBugFB173_VersionedResultRunStorageIsAdditive(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Clean(filepath.Join(wd, "..", "..", "..", "scripts", "sql", "competency_011_result_runs.sql"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read result-run migration failed: %v", err)
+	}
+	sql := string(data)
+	for _, required := range []string{
+		"CREATE TABLE IF NOT EXISTS `el_competency_result_run`",
+		"CREATE TABLE IF NOT EXISTS `el_competency_result_run_overall`",
+		"CREATE TABLE IF NOT EXISTS `el_competency_result_run_module`",
+		"CREATE TABLE IF NOT EXISTS `el_competency_result_run_dimension`",
+		"CREATE TABLE IF NOT EXISTS `el_competency_result_run_validity`",
+		"UNIQUE KEY `uk_competency_result_run_version` (`paper_id`,`scoring_version`)",
+		"UNIQUE KEY `uk_result_run_module` (`result_run_id`,`module_code`)",
+		"UNIQUE KEY `uk_result_run_dimension` (`result_run_id`,`dimension_id`)",
+		"`user_time` int NOT NULL DEFAULT 0",
+		"fk_result_run_paper", "fk_result_run_exam",
+		"fk_result_run_overall", "fk_result_run_module", "fk_result_run_dimension", "fk_result_run_validity",
+		"ON DELETE RESTRICT ON UPDATE RESTRICT",
+		"information_schema.COLUMNS", "information_schema.REFERENTIAL_CONSTRAINTS",
+		"PREPARE stmt FROM @sql", "DEALLOCATE PREPARE stmt",
+		"@report_run_fk_exists", "fk_competency_report_result_run",
+		"result_run paper_id alignment retained by 013 foreign key",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Errorf("result-run migration missing %q", required)
+		}
+	}
+	for _, legacyTable := range []string{
+		"el_competency_result", "el_competency_dimension_result",
+		"el_competency_group_result", "el_competency_validity_result",
+	} {
+		if strings.Contains(sql, "ALTER TABLE `"+legacyTable+"`") ||
+			strings.Contains(sql, "UPDATE `"+legacyTable+"`") ||
+			strings.Contains(sql, "INSERT INTO `"+legacyTable+"`") ||
+			strings.Contains(sql, "DELETE FROM `"+legacyTable+"`") {
+			t.Errorf("result-run migration modifies legacy table %s", legacyTable)
+		}
+	}
+	for _, forbidden := range []string{
+		"DROP TABLE", "DROP COLUMN", "TRUNCATE TABLE", "AutoMigrate",
+		"INSERT INTO `el_competency_result_run`", "UPDATE `el_competency_result_run`",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Errorf("result-run migration contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
+func TestBugFB173_VersionedResultRunModels(t *testing.T) {
+	for got, want := range map[string]string{
+		(CompetencyResultRun{}).TableName():          "el_competency_result_run",
+		(CompetencyResultRunOverall{}).TableName():   "el_competency_result_run_overall",
+		(CompetencyResultRunModule{}).TableName():    "el_competency_result_run_module",
+		(CompetencyResultRunDimension{}).TableName(): "el_competency_result_run_dimension",
+		(CompetencyResultRunValidity{}).TableName():  "el_competency_result_run_validity",
+	} {
+		if got != want {
+			t.Errorf("TableName()=%q want=%q", got, want)
+		}
+	}
+
+	decimalPointer := reflect.PointerTo(reflect.TypeOf(decimal.Decimal{}))
+	for _, target := range []struct {
+		name   string
+		typeOf reflect.Type
+		fields []string
+	}{
+		{"result run", reflect.TypeOf(CompetencyResultRun{}), []string{"ID", "PaperID", "ExamID", "ProductVersion", "ScoringVersion", "ContentVersion", "ReportTemplateVersion", "ParticipantType", "ParticipantID", "ParticipantName", "Status"}},
+		{"overall", reflect.TypeOf(CompetencyResultRunOverall{}), []string{"ResultRunID", "OverallScore", "LevelCode", "NormScore", "NormComparisonCode", "UserTime"}},
+		{"module", reflect.TypeOf(CompetencyResultRunModule{}), []string{"ID", "ResultRunID", "ModuleCode", "ModuleName", "DisplayOrder", "ModuleScore", "LevelCode", "NormScore", "NormComparisonCode"}},
+		{"dimension", reflect.TypeOf(CompetencyResultRunDimension{}), []string{"ID", "ResultRunID", "DimensionID", "DimensionCode", "DimensionName", "DisplayOrder", "ScoreSum", "DimensionScore", "LevelCode", "NormScore"}},
+		{"validity", reflect.TypeOf(CompetencyResultRunValidity{}), []string{"ResultRunID", "ValidityScore", "ValidityStatus"}},
+	} {
+		for _, name := range target.fields {
+			if _, ok := target.typeOf.FieldByName(name); !ok {
+				t.Errorf("%s missing field %s", target.name, name)
+			}
+		}
+	}
+	for _, field := range []struct {
+		typeOf reflect.Type
+		name   string
+	}{
+		{reflect.TypeOf(CompetencyResultRunOverall{}), "OverallScore"},
+		{reflect.TypeOf(CompetencyResultRunOverall{}), "NormScore"},
+		{reflect.TypeOf(CompetencyResultRunModule{}), "ModuleScore"},
+		{reflect.TypeOf(CompetencyResultRunDimension{}), "DimensionScore"},
+		{reflect.TypeOf(CompetencyResultRunValidity{}), "ValidityScore"},
+	} {
+		actual, ok := field.typeOf.FieldByName(field.name)
+		if !ok || actual.Type != decimalPointer {
+			t.Errorf("%s type=%v want *decimal.Decimal", field.name, actual.Type)
+		}
+	}
+}
+
+func TestBugFB174_V2DimensionCatalogMigrationIsAdditive(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Clean(filepath.Join(wd, "..", "..", "..", "scripts", "sql", "competency_012_v2_dimension_catalog.sql"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read v2 dimension migration failed: %v", err)
+	}
+	sql := string(data)
+	for _, required := range []string{
+		"CREATE TABLE IF NOT EXISTS `el_competency_version_dimension`",
+		"CREATE TABLE IF NOT EXISTS `el_competency_dimension_mapping`",
+		"UNIQUE KEY `uk_version_dimension_key` (`product_version`,`stable_key`)",
+		"UNIQUE KEY `uk_version_dimension_code` (`product_version`,`display_code`)",
+		"UNIQUE KEY `uk_dimension_mapping_source` (`source_product_version`,`source_dimension_id`,`target_product_version`)",
+		"competency-frontline-phase1-v1", "competency-frontline-phase1-v2",
+		"competency-logical-reasoning", "competency-dedication",
+		"logical_reasoning", "task_management", "interpersonal_management", "self_management",
+		"A1-01", "A1-05", "B1-01", "B1-02", "C1-01", "C1-03",
+		"ON DUPLICATE KEY UPDATE `id`=`id`",
+		"@v2_dimension_signature_count", "@v2_mapping_signature_count",
+		"@v2_dimension_scope_count", "@v2_mapping_scope_count",
+		"__v2_dimension_catalog_drift__", "__v2_dimension_catalog_extra_rows__",
+		"__v1_to_v2_dimension_mapping_drift__", "__v1_to_v2_dimension_mapping_extra_rows__",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Errorf("v2 dimension migration missing %q", required)
+		}
+	}
+	seedSQL := strings.Split(sql, "-- No-op reruns must not silently preserve drifted immutable catalog rows.")[0]
+	if count := strings.Count(seedSQL, "  ('competency-"); count != 10 {
+		t.Errorf("v2 dimension seed rows=%d want=10", count)
+	}
+	mappingSeedStart := strings.Index(sql, "INSERT INTO `el_competency_dimension_mapping`")
+	mappingSignatureStart := strings.Index(sql, "SELECT COUNT(*) INTO @v2_mapping_signature_count")
+	if mappingSeedStart < 0 || mappingSignatureStart < mappingSeedStart {
+		t.Fatal("v1-to-v2 mapping seed section is invalid")
+	}
+	if count := strings.Count(sql[mappingSeedStart:mappingSignatureStart], "('v1-to-v2-"); count != 10 {
+		t.Errorf("v1-to-v2 mapping rows=%d want=10", count)
+	}
+	for _, forbidden := range []string{
+		"ALTER TABLE `el_competency_dimension`", "UPDATE `el_competency_dimension`", "DELETE FROM `el_competency_dimension`",
+		"ALTER TABLE `el_qu`", "UPDATE `el_qu`", "DELETE FROM `el_qu`",
+		"ALTER TABLE `el_exam_competency_dimension`", "UPDATE `el_exam_competency_dimension`",
+		"DROP TABLE", "DROP COLUMN", "TRUNCATE TABLE", "AutoMigrate",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Errorf("v2 dimension migration contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
+func TestBugFB174_V2DimensionCatalogModels(t *testing.T) {
+	for got, want := range map[string]string{
+		(CompetencyVersionDimension{}).TableName(): "el_competency_version_dimension",
+		(CompetencyDimensionMapping{}).TableName(): "el_competency_dimension_mapping",
+	} {
+		if got != want {
+			t.Errorf("TableName()=%q want=%q", got, want)
+		}
+	}
+	for _, target := range []struct {
+		typeOf reflect.Type
+		fields []string
+	}{
+		{reflect.TypeOf(CompetencyVersionDimension{}), []string{"ID", "ProductVersion", "StableKey", "DisplayCode", "Name", "ModuleCode", "DisplayOrder"}},
+		{reflect.TypeOf(CompetencyDimensionMapping{}), []string{"ID", "SourceProductVersion", "SourceDimensionID", "TargetProductVersion", "TargetDimensionID"}},
+	} {
+		for _, name := range target.fields {
+			if _, ok := target.typeOf.FieldByName(name); !ok {
+				t.Errorf("%v missing field %s", target.typeOf, name)
+			}
+		}
+	}
+}
+
+func TestBugFB180_VersionedReportBindingMigrationIsAdditive(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Clean(filepath.Join(wd, "..", "..", "..", "scripts", "sql", "competency_013_report_result_run_binding.sql"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read report binding migration failed: %v", err)
+	}
+	sql := string(data)
+	for _, required := range []string{
+		"ADD COLUMN `result_run_id` varchar(64) DEFAULT NULL",
+		"CREATE TABLE IF NOT EXISTS `el_competency_report_current`",
+		"PRIMARY KEY (`paper_id`,`audience`)",
+		"UNIQUE KEY `uk_competency_report_current_report` (`report_id`)",
+		"uk_competency_report_result_run_version",
+		"(`result_run_id`,`content_version`,`template_version`,`audience`)",
+		"uk_result_run_id_paper", "(`id`,`paper_id`)",
+		"uk_competency_report_id_paper_audience", "(`id`,`paper_id`,`audience`)",
+		"fk_competency_report_result_run", "FOREIGN KEY (`result_run_id`,`paper_id`)",
+		"REFERENCES `el_competency_result_run` (`id`,`paper_id`)",
+		"fk_competency_report_current_report", "FOREIGN KEY (`report_id`,`paper_id`,`audience`)",
+		"REFERENCES `el_competency_report` (`id`,`paper_id`,`audience`)",
+		"@report_run_fk_exists=0", "@current_report_fk_exists=0",
+		"ON DELETE RESTRICT", "ON UPDATE RESTRICT",
+		"information_schema.COLUMNS", "information_schema.STATISTICS", "information_schema.REFERENTIAL_CONSTRAINTS",
+		"PREPARE stmt FROM @sql", "DEALLOCATE PREPARE stmt",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Errorf("report binding migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"UPDATE `el_competency_report`", "INSERT INTO `el_competency_report_current`", "INSERT INTO `el_competency_report`",
+		"DELETE FROM", "DROP TABLE", "DROP COLUMN", "DROP INDEX", "TRUNCATE TABLE", "AutoMigrate", "ADD COLUMN IF NOT EXISTS",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Errorf("report binding migration contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
+func TestBugFB180_VersionedReportBindingModels(t *testing.T) {
+	if got := (CompetencyReportCurrent{}).TableName(); got != "el_competency_report_current" {
+		t.Fatalf("current report TableName()=%q", got)
+	}
+	reportType := reflect.TypeOf(CompetencyReport{})
+	field, ok := reportType.FieldByName("ResultRunID")
+	if !ok || !strings.Contains(field.Tag.Get("gorm"), "column:result_run_id") || field.Type.Kind() != reflect.Pointer {
+		t.Fatalf("CompetencyReport.ResultRunID must be a nullable mapped field: %+v exists=%v", field, ok)
+	}
+	currentType := reflect.TypeOf(CompetencyReportCurrent{})
+	for _, name := range []string{"PaperID", "Audience", "ReportID", "CreateTime", "UpdateTime"} {
+		if _, ok := currentType.FieldByName(name); !ok {
+			t.Errorf("CompetencyReportCurrent missing %s", name)
+		}
+	}
+}

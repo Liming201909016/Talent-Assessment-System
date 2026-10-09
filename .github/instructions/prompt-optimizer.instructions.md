@@ -9,7 +9,8 @@ description: '提示词优化指令：自动读取项目记忆和规则，增强
 ## 1. 上下文加载（必须先做）
 
 在处理用户请求之前，先读取：
-- `docs/project-memory.md`（项目事实、模块状态、已知问题）
+- `docs/project-status.md`（当前事实、模块状态、有效决策和遗漏事项）
+- `docs/project-memory.md`与本次模块相关的日期/编号段落（完整历史；仅全项目审计或无法定位时全文读取）
 - `.github/copilot-instructions.md`（三区结构、Go编码规约 §5.1-§5.7、文件归属规则）
 - 用户记忆中的 api-contracts / deployment-discipline / test-strategy
 

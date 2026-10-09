@@ -5,7 +5,53 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
+
+// TestBugFB158_TesterListAppliesStudentAndTelephoneFilters
+// 对应：docs/regression-tests.md #FB-158
+// 复现：测评者管理选择“是否学生=是/否”或输入手机号后，后端列表忽略这些参数。
+// 期望：是/否使用精确stu_flag条件，空值不过滤，手机号使用精确条件；COUNT与行查询共享该过滤器。
+func TestBugFB158_TesterListAppliesStudentAndTelephoneFilters(t *testing.T) {
+	sqlDB, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buildSQL := func(alias, telephone, stuFlag string) string {
+		return db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+			query := tx.Table("el_tester AS t")
+			query = applyTesterListIdentityFilters(query, alias, telephone, stuFlag)
+			return query.Find(&[]struct{}{})
+		})
+	}
+
+	yesSQL := buildSQL("t", "13800138000", "1")
+	if !strings.Contains(yesSQL, "t.telephone = '13800138000'") || !strings.Contains(yesSQL, "t.stu_flag = 1") {
+		t.Fatalf("student=yes filters missing: %s", yesSQL)
+	}
+	noSQL := buildSQL("t", "", "0")
+	if !strings.Contains(noSQL, "t.stu_flag = 0") {
+		t.Fatalf("student=no filter missing: %s", noSQL)
+	}
+	allSQL := buildSQL("t", "", "")
+	if strings.Contains(allSQL, "stu_flag") {
+		t.Fatalf("empty student filter added a condition: %s", allSQL)
+	}
+
+	source := readSourceFile(t, "tester.go")
+	if strings.Count(source, "applyTesterListIdentityFilters(") < 3 {
+		t.Fatal("COUNT and row queries do not both use the shared tester identity filters")
+	}
+}
 
 // ============================================================
 // 回归测试 — FB-018 / FB-020 SQL 模式守护

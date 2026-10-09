@@ -325,10 +325,8 @@ func (h *ExamHandler) generateOneReport(ctx context.Context, paperID string) (st
 		return "", false, err
 	}
 
-	// 8. 异步压缩 PDF（ghostscript），不阻塞响应
-	// gs ebook 压缩约 3-4s，能把 1.4MB → 680KB（-50%）
-	// 异步：generate-report 立即返回；用户立刻下载可能拿到大文件，但 4s 后就是压缩版
-	go compressPDF(saved)
+	// 8. 在 HTTP 请求的冻结 gate 内完成压缩，不遗留响应后文件写入。
+	compressPDF(saved)
 
 	slog.Info("[exam] report generated",
 		"paperId", paperID, "name", info.Name, "size", len(pdfBytes), "path", saved, "incomplete", incomplete)

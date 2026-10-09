@@ -1,5 +1,14 @@
 <template>
   <div class="app-container">
+    <el-alert v-if="managementTraitsSelected || managementTraitsFrozen" title="管理特质新版 TEST 链：仅系统测试，不可作为人才决策依据；正式报告关闭。保存不会自动冻结，必须另行确认。" type="warning" :closable="false" show-icon />
+    <el-alert v-if="!managementTraitsSelected && !isCompetency && ['00201', '00202'].includes(repoCode)" title="旧版管理特质：保留原测评、评分、报告及导出流程。新版本请另建00501/00502测评。" type="info" :closable="false" />
+    <el-alert v-if="managementTraitsFrozen" title="TEST profile 已冻结，测评配置只读。" type="info" :closable="false" />
+    <div v-if="managementTraitsFrozen && canManageTraits" class="test-entry">
+      <router-link :to="managementTraitsEntry" target="_blank" rel="noopener">打开{{ postForm.isOpen === 1 ? '开放登记' : '封闭登录' }} TEST 入口</router-link>
+      <p class="field-hint">请复制此链接给测试参与者；链接明确携带 TEST 标记，不替换旧002入口。封闭人员须预先登记。</p>
+    </div>
+    <el-alert v-if="managementTraitsError" :title="managementTraitsError" type="error" :closable="false" />
+    <el-button v-if="managementTraitsError" size="small" :loading="managementTraitsLoading" @click="fetchData(postForm.id)">重试配置探测</el-button>
 
     <template v-if="!isCompetency">
     <h3>组卷信息</h3>
@@ -24,7 +33,7 @@
             width="300"
           >
             <template slot-scope="scope">
-              <repo-select v-model="scope.row.repoId" :multi="false" @change="repoChange($event, scope.row,scope.$index)" />
+              <repo-select v-model="scope.row.repoId" :multi="false" :disabled="managementTraitsReadOnly" @change="repoChange($event, scope.row,scope.$index)" />
             </template>
 
           </el-table-column>
@@ -113,10 +122,15 @@
     <h3>测评配置</h3>
     <el-card style="margin-top: 20px">
 
-      <el-form ref="postForm" :model="postForm" :rules="rules" label-position="left" label-width="120px">
+      <el-form ref="postForm" v-loading="managementTraitsLoading" :disabled="managementTraitsReadOnly" :model="postForm" :rules="rules" label-position="left" label-width="120px">
+
+        <el-form-item v-if="!isCompetency && canManageTraits && (isNewManagementTraitsProduct || managementTraitsDraft || managementTraitsFrozen)" label="新版 TEST 链">
+          <el-checkbox v-model="managementTraitsSelected" :disabled="managementTraitsMandatory" @change="handleManagementTraitsSelection">管理特质新版</el-checkbox>
+          <div class="field-hint">00501基层员工新版、00502干部新版必须使用新版草稿，不能取消。已有002新版配置保留兼容；未冻结不能登记或开始，保存后仍须另行确认冻结。</div>
+        </el-form-item>
 
         <el-form-item label="测评类别" prop="assessmentType">
-          <el-radio-group v-model="postForm.assessmentType" :disabled="isPublishedCompetency" @change="handleAssessmentTypeChange">
+          <el-radio-group v-model="postForm.assessmentType" :disabled="isPublishedCompetency || managementTraitsSelected" @change="handleAssessmentTypeChange">
             <el-radio size="large" border label="legacy">传统测评</el-radio>
             <el-radio size="large" border label="competency">胜任力测评</el-radio>
           </el-radio-group>
@@ -126,9 +140,9 @@
           <el-input v-model="postForm.title" />
         </el-form-item>
         <el-form-item v-if="!isCompetency" label="适用版本">
-          <el-radio-group v-model="postForm.stuFlag">
-            <el-radio size="large" border :label="1">{{repoCode.startsWith('002')?'基层员工':'学生版'}}</el-radio>
-            <el-radio size="large" border :label="0">{{repoCode.startsWith('002')?'管理干部':'职场版'}}</el-radio>
+          <el-radio-group v-model="postForm.stuFlag" :disabled="isNewManagementTraitsProduct">
+            <el-radio size="large" border :label="1">{{isManagementTraitsProduct(repoCode)?'基层员工':'学生版'}}</el-radio>
+            <el-radio size="large" border :label="0">{{isManagementTraitsProduct(repoCode)?'干部':'职场版'}}</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -170,7 +184,7 @@
         </el-form-item>
 
         <el-form-item label="测评时长(分钟)" prop="totalTime">
-          <el-input-number v-model="postForm.totalTime" :min="isCompetency ? 1 : 0" />
+          <el-input-number v-model="postForm.totalTime" :disabled="managementTraitsSelected" :min="isCompetency ? 1 : 0" />
           <div v-if="isCompetency" class="field-hint">胜任力测评必须配置答题时长，到时由系统自动提交。</div>
         </el-form-item>
 
@@ -188,12 +202,13 @@
               <el-checkbox label="gender">性别</el-checkbox>
               <el-checkbox label="age">年龄</el-checkbox>
               <el-checkbox label="telephone">手机号</el-checkbox>
-              <el-checkbox label="idNumber">身份证号</el-checkbox>
+              <el-checkbox v-if="!managementTraitsSelected" label="idNumber">身份证号</el-checkbox>
               <el-checkbox label="affiliation">单位/学校</el-checkbox>
               <el-checkbox label="post">岗位</el-checkbox>
-              <el-checkbox label="depart">部门</el-checkbox>
+              <el-checkbox v-if="!managementTraitsSelected" label="depart">部门</el-checkbox>
               <el-checkbox label="degree">学历</el-checkbox>
               <el-checkbox label="major">专业</el-checkbox>
+              <el-checkbox v-if="managementTraitsSelected" label="stuFlag">是否学生</el-checkbox>
             </el-checkbox-group>
           </div>
           <div style="color: #999; font-size: 12px; margin-top: 4px">勾选后，开放测评时考生需填写对应信息，报告中也只体现已勾选项</div>
@@ -207,7 +222,7 @@
         </el-form-item>
 
         <el-form-item label="是否查看报告">
-          <el-switch v-model="postForm.showPdf" active-text="是" inactive-text="否" />
+          <el-switch v-model="postForm.showPdf" :disabled="managementTraitsSelected" active-text="是" inactive-text="否" />
         </el-form-item>
 
         <el-form-item label="是否限时">
@@ -234,7 +249,8 @@
     </el-card>
 
     <div style="margin-top: 20px">
-      <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+      <el-button type="primary" :loading="saving" :disabled="managementTraitsReadOnly" @click="handleSave">保存</el-button>
+      <el-button v-if="managementTraitsFrozen" @click="$router.push({ name: 'ManagementTraitsResults', params: { examId: postForm.id } })">TEST 结果</el-button>
       <el-button v-if="isCompetency && postForm.id && postForm.publishStatus === 0" type="success" :loading="publishing" @click="handlePublish">
           发布并冻结题目
       </el-button>
@@ -246,8 +262,10 @@
 <script>
 import { fetchDetail, saveData } from '@/api/exam/exam'
 import { fetchCompetencyDimensions, publishCompetencyExam } from '@/api/competency'
+import { canManageManagementTraits, fetchManagementTraitsProfile, freezeManagementTraitsProfile, managementTraitsExamKnown, rememberManagementTraitsProfile } from '@/api/managementTraits'
 import { fetchTree } from '@/api/sys/depart/depart'
 import RepoSelect from '@/components/RepoSelect'
+import { classifyManagementTraitsProduct, classifyManagementTraitsExam, isManagementTraitsProduct } from '@/utils/managementTraitsProduct'
 
 export default {
   name: 'ExamDetail',
@@ -257,6 +275,11 @@ export default {
       repoCode:'',
       flag:false,
       saving: false,
+      managementTraitsSelected: false,
+      managementTraitsFrozen: false,
+	  managementTraitsDraft: false,
+      managementTraitsLoading: false,
+      managementTraitsError: '',
       publishing: false,
       dimensionLoading: false,
       competencyDimensions: [],
@@ -373,6 +396,15 @@ export default {
   },
 
   computed: {
+    canManageTraits() { return canManageManagementTraits(this.$store) },
+    isNewManagementTraitsProduct() { return classifyManagementTraitsProduct(this.repoCode) === 'NEW005' },
+    managementTraitsMandatory() { return this.managementTraitsDraft || this.isNewManagementTraitsProduct },
+    managementTraitsReadOnly() { return this.managementTraitsFrozen || this.managementTraitsLoading || !!this.managementTraitsError },
+    managementTraitsEntry() {
+      const params = { examId: this.postForm.id, repoCode: this.repoCode }
+      if (this.postForm.isOpen === 1) params.stuFlag = this.postForm.stuFlag == null ? '0' : String(this.postForm.stuFlag)
+      return { name: this.postForm.isOpen === 1 ? 'candidateInfo' : 'tester', params, query: { mngTest: '1' } }
+    },
     isCompetency() {
       return this.postForm.assessmentType === 'competency'
     },
@@ -426,7 +458,7 @@ export default {
 
         that.postForm.totalScore = 0
         this.repoList.forEach(function(item) {
-          if(that.repoCode.startsWith('002')){
+          if(isManagementTraitsProduct(that.repoCode)){
             item.radioScore = 5
           }else{
             item.radioScore = 1
@@ -454,6 +486,34 @@ export default {
     })*/
   },
   methods: {
+    isManagementTraitsProduct,
+    handleManagementTraitsSelection(selected) {
+	  if (!selected && this.managementTraitsMandatory) { this.managementTraitsSelected = true; return }
+      if (selected && !this.isNewManagementTraitsProduct && !this.managementTraitsDraft && !this.managementTraitsFrozen) { this.managementTraitsSelected = false; this.$message.error('新版本请使用00501/00502，普通002保留旧版流程。'); return }
+      if (selected && this.canManageTraits && !this.managementTraitsReadOnly) {
+        this.handleAssessmentTypeChange('legacy')
+        this.postForm.assessmentType = 'legacy'
+        this.postForm.totalTime = 25
+        this.postForm.showPdf = false
+      }
+    },
+
+    validateManagementTraitsConfiguration() {
+      const repos = this.repoList || []
+      const repo = repos[0]
+      const allowedFields = ['name', 'gender', 'telephone', 'affiliation', 'post', 'age', 'degree', 'major', 'stuFlag']
+      if (!Array.isArray(this.requiredFieldsList) || !this.requiredFieldsList.length || new Set(this.requiredFieldsList).size !== this.requiredFieldsList.length || this.requiredFieldsList.some(field => !allowedFields.includes(field))) {
+        this.$message.error('TEST 个人信息须选择非空、不重复的受支持字段；身份证号、部门不在当前合同内。请明确调整配置，不自动替换。')
+        return false
+      }
+      if (!this.canManageTraits || this.isCompetency || this.postForm.scoringMode !== 'legacy' || this.postForm.joinType !== 1 || repos.length !== 1 || !repo || !repo.repoId || !(classifyManagementTraitsProduct(repo.repoCode) === 'NEW005' || this.managementTraitsDraft && classifyManagementTraitsProduct(repo.repoCode) === 'LEGACY002') || Number(repo.radioCount) !== 140 || Number(repo.multiCount || 0) !== 0 || Number(repo.judgeCount || 0) !== 0 || Number(repo.saqCount || 0) !== 0) {
+        this.$message.error('新版 TEST 仅允许单一00501/00502物理题库、140道单选；已有002新版草稿按原产品兼容。请核对配置。')
+        return false
+      }
+      this.postForm.totalTime = 25
+      this.postForm.showPdf = false
+      return true
+    },
 
     handlePublish() {
       this.$confirm('发布后测评维度、题目范围、报告对象和版本配置不可修改，确认发布吗？', '发布胜任力测评', { type: 'warning' }).then(async () => {
@@ -470,7 +530,9 @@ export default {
     },
 
     handleAssessmentTypeChange(value) {
+      if (this.managementTraitsReadOnly) return
       if (value === 'competency') {
+        this.managementTraitsSelected = false
         this.postForm.scoringMode = 'competency_average'
         this.postForm.publishStatus = 0
         this.applyPhase1Profile(true)
@@ -517,6 +579,9 @@ export default {
     },
 
     handleSave() {
+      if (this.saving || this.managementTraitsReadOnly) return
+	  if (this.managementTraitsMandatory) this.managementTraitsSelected = true
+      if (this.managementTraitsSelected && !this.validateManagementTraitsConfiguration()) return
 
       if (this.isCompetency) {
         this.applyPhase1Profile()
@@ -593,7 +658,7 @@ export default {
           type: 'warning'
         }).then(() => {
           this.submitForm()
-        })
+        }).catch(() => {})
       })
     },
 
@@ -619,8 +684,11 @@ export default {
 
     fetchData(id) {
       const that = this
+      if (this.managementTraitsLoading) return
+      this.managementTraitsLoading = true
+      this.managementTraitsError = ''
 
-      fetchDetail(id).then(response => {
+      return fetchDetail(id).then(async response => {
         const data = response.data || {}
         data.assessmentType = data.assessmentType || 'legacy'
         data.scoringMode = data.scoringMode || (data.assessmentType === 'competency' ? 'competency_average' : 'legacy')
@@ -643,7 +711,7 @@ export default {
         }
 
         // 恢复信息项勾选
-        if (this.postForm.requiredFields) {
+        if (typeof this.postForm.requiredFields === 'string') {
           this.requiredFieldsList = this.postForm.requiredFields.split(',').filter(f => f)
         } else {
           // DB 为空时用默认值回填，保证保存时会写入
@@ -663,16 +731,44 @@ export default {
           that.repoList = that.postForm.repoList
         }
         const firstRepo = response.data.repoList && response.data.repoList[0]
-        this.repoCode = firstRepo ? firstRepo.repoCode : ''
-      })
+        this.repoCode = firstRepo ? firstRepo.repoCode : data.repoCode || ''
+        if (this.isNewManagementTraitsProduct && classifyManagementTraitsExam(data, id) === 'UNKNOWN') throw new Error('005新版配置状态未确认，请联系管理员；不会按旧版编辑。')
+    if (data.managementTraitsLifecycle === 'draft' && data.isManagementTraits === true && data.managementTraitsProfileFrozen === false && String(data.id) === String(id)) {
+      this.managementTraitsDraft = true
+      this.managementTraitsSelected = true
+      this.managementTraitsFrozen = false
+      return
+    }
+        if (!this.isCompetency && isManagementTraitsProduct(this.repoCode) && (data.managementTraitsProfileFrozen === true || managementTraitsExamKnown(id, this.$route)) && this.canManageTraits) {
+          const profile = await fetchManagementTraitsProfile(id)
+          if (!profile || !Object.prototype.hasOwnProperty.call(profile, 'data') || profile.data === undefined) throw new Error('profile响应无效，不能按旧测评处理。')
+          if (profile.data !== null) {
+            if (profile.data.examId !== id || !profile.data.frozenAt) throw new Error('profile身份或冻结状态无效。')
+            this.managementTraitsFrozen = true
+            this.managementTraitsSelected = true
+            rememberManagementTraitsProfile(profile.data)
+          } else {
+            this.managementTraitsFrozen = false
+          }
+        }
+      }).catch(err => {
+        this.managementTraitsError = `配置读取失败：${err.message || err}；请重试，不回退旧配置。`
+        this.$message.error(this.managementTraitsError)
+      }).finally(() => { this.managementTraitsLoading = false })
     },
 
-    submitForm() {
+    async submitForm() {
+      if (this.saving || this.managementTraitsReadOnly) return
+	  if (this.managementTraitsMandatory) this.managementTraitsSelected = true
+      if (this.managementTraitsSelected && !this.validateManagementTraitsConfiguration()) return
       // 校验和处理数据
       this.postForm.repoList = this.isCompetency ? [] : this.repoList
+      this.postForm.requiredFields = this.requiredFieldsList.join(',')
       this.saving = true
+      let freezeAttempted = false
 
-      saveData(this.postForm).then(() => {
+      try {
+        const response = await saveData({ ...this.postForm, ...(this.managementTraitsSelected ? { managementTraitsTestOnly: true } : {}), repoList: this.postForm.repoList.map(repo => ({ ...repo })) })
         this.$notify({
           title: '成功',
           message: '测评保存成功！',
@@ -680,10 +776,30 @@ export default {
           duration: 2000
         })
 
-        this.$router.push({ name: 'ListExam' })
-      }).finally(() => {
+        if (this.managementTraitsSelected) {
+          const id = response && response.data && response.data.id
+          if (!id) throw new Error('保存响应缺少测评 ID，未执行冻结。')
+		  if (!this.postForm.id && (response.data.isManagementTraits !== true || response.data.managementTraitsLifecycle !== 'draft' || response.data.managementTraitsProfileFrozen !== false)) throw new Error('保存响应未确认新版草稿，未执行冻结。')
+		  this.managementTraitsDraft = response.data.managementTraitsLifecycle === 'draft'
+          this.$set(this.postForm, 'id', id)
+          try { await this.$confirm(`测评已保存。现在显式冻结 ${id} 的管理特质新版TEST profile？冻结后配置只读，仅系统测试，不可作为人才决策依据。取消则保留未冻结配置。`, '确认冻结 TEST', { type: 'warning' }) } catch (_) { return }
+          if (!this.canManageTraits) throw new Error('无管理员冻结权限。')
+          freezeAttempted = true
+          const frozen = await freezeManagementTraitsProfile(id)
+          if (!frozen || !frozen.data || frozen.data.examId !== id || !frozen.data.frozenAt) throw new Error('冻结响应无效，请重新读取配置确认状态。')
+          rememberManagementTraitsProfile(frozen.data)
+          this.managementTraitsFrozen = true
+		  this.managementTraitsDraft = false
+          this.$message.success('TEST profile 已冻结，配置只读；正式报告关闭。')
+        } else {
+          this.$router.push({ name: 'ListExam' })
+        }
+      } catch (err) {
+        if (freezeAttempted) this.managementTraitsError = `冻结状态未确认：${err.message || err}；配置暂只读，请重试配置探测确认服务器状态。`
+        this.$message.error(`保存或冻结失败：${err.message || err}；未自动重试或回退旧链。`)
+      } finally {
         this.saving = false
-      })
+      }
     },
 
     filterNode(value, data) {
@@ -692,7 +808,11 @@ export default {
     },
 
      repoChange(e, row,rowIndex) {
+      if (this.managementTraitsReadOnly) return
+    if (this.managementTraitsDraft && (!e || classifyManagementTraitsProduct(e.code) !== classifyManagementTraitsProduct(this.repoCode) || !isManagementTraitsProduct(e.code))) { this.$message.error('新版草稿只能编辑原产品系列，不能转换旧版或跨002/005产品。'); return }
+      if ((this.postForm.id || this.$route.params.id) && !this.managementTraitsDraft && e && classifyManagementTraitsProduct(e.code) === 'NEW005') { this.$message.error('不能把已有测评改为005新版，请新建测评。'); return }
       if (e != null) {
+        this.$set(row, 'repoCode', e.code)
         // console.log(e)
         // console.log(row)
         row.radioCount = e.radioCount
@@ -701,12 +821,21 @@ export default {
         row.totalJudge = e.judgeCount
         console.log(e,row,rowIndex)
       } else {
+        this.$set(row, 'repoCode', '')
         row.totalRadio = 0
         row.totalMulti = 0
         row.totalJudge = 0
       }
       if(rowIndex === 0){
-        this.repoCode = e.code
+        this.repoCode = e ? e.code : ''
+      }
+      if (!this.postForm.id && typeof this.$route.params.id === 'undefined' && !this.isCompetency) {
+        const eligible = this.canManageTraits && this.postForm.scoringMode === 'legacy' && this.postForm.joinType === 1 &&
+          this.repoList.length === 1 && rowIndex === 0 && e && e.id && classifyManagementTraitsProduct(e.code) === 'NEW005' &&
+          Number(e.radioCount) === 140 && ['multiCount', 'judgeCount', 'saqCount'].every(key => Number(e[key] || 0) === 0 && Number(row[key] || 0) === 0)
+        this.managementTraitsSelected = !!eligible
+        if (e && classifyManagementTraitsProduct(e.code) === 'NEW005') this.postForm.stuFlag = e.code === '00501' ? 1 : 0
+        if (this.managementTraitsSelected) this.handleManagementTraitsSelection(true)
       }
     }
 

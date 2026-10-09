@@ -16,11 +16,17 @@ func TestBugFB048_CompetencyDeleteUsesFullChainTransaction(t *testing.T) {
 	chain := extractFunctionBody(t, src, "func deleteCompetencyExamChain(")
 	requiredInOrder := []string{
 		"DELETE FROM el_competency_report_audit",
+		"DELETE FROM el_competency_report_current",
 		"DELETE FROM el_competency_report WHERE",
+		"DELETE FROM el_competency_result_run_validity",
+		"DELETE FROM el_competency_result_run_module",
+		"DELETE FROM el_competency_result_run_dimension",
+		"DELETE FROM el_competency_result_run_overall",
+		"DELETE FROM el_competency_result_run WHERE",
 		"DELETE FROM el_competency_group_result",
 		"DELETE FROM el_competency_validity_result",
 		"DELETE FROM el_competency_dimension_result",
-		"DELETE FROM el_competency_result",
+		"DELETE FROM el_competency_result WHERE paper_id",
 		"DELETE FROM el_paper_qu_answer",
 		"DELETE FROM el_paper_qu WHERE",
 		"DELETE FROM el_mbti_answer",
@@ -49,6 +55,26 @@ func TestBugFB048_CompetencyDeleteUsesFullChainTransaction(t *testing.T) {
 	}
 	if strings.Contains(chain, "Transaction(") {
 		t.Error("deleteCompetencyExamChain must use the transaction passed by Exam.Delete, not open a nested transaction")
+	}
+}
+
+// TestBugFB182_CompetencyDeleteSkipsUnappliedVersionTables
+// 对应：docs/regression-tests.md FB-182
+// 复现：011/013尚未执行时，整链删除无条件DELETE不存在的current/result_run表并导致事务失败。
+// 期望：新增版本表存在时按依赖顺序删除；不存在时继续执行完整v1删除链。
+func TestBugFB182_CompetencyDeleteSkipsUnappliedVersionTables(t *testing.T) {
+	chain := extractFunctionBody(t, readSourceFile(t, "exam.go"), "func deleteCompetencyExamChain(")
+	for _, table := range []string{
+		"el_competency_report_current",
+		"el_competency_result_run_validity",
+		"el_competency_result_run_module",
+		"el_competency_result_run_dimension",
+		"el_competency_result_run_overall",
+		"el_competency_result_run",
+	} {
+		if !strings.Contains(chain, `HasTable("`+table+`")`) {
+			t.Errorf("optional version table %s is deleted without an existence guard", table)
+		}
 	}
 }
 

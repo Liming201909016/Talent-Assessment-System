@@ -50,7 +50,7 @@ func TestBugFB116_Phase1WordTemplateMapsFrozenReportData(t *testing.T) {
 			t.Fatalf("token %s=%q, want %q", token, tokens[token], expected)
 		}
 	}
-	if got := charts["chart.group.overview"]; len(got) != 2 || got[0] != 3.75 || got[1] != 3.5 {
+	if got := charts["chart.group.overview"]; len(got) != 2 || got[0] != 3.5 || got[1] != 3.75 {
 		t.Fatalf("group chart values=%v", got)
 	}
 	if got := charts["chart.dimension.radar"]; len(got) != 10 || got[0] != 3.75 || got[9] != 3.5 {
@@ -652,7 +652,11 @@ func TestPhase1RenderingUpdatesChartCacheAndEmbeddedWorkbook(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer book.Close()
-	for cell, expected := range map[string]string{"C2": "3.75", "C3": "3.5", "C4": "3.75", "D4": "1.25", "C13": "3.5", "D13": "1.5"} {
+	for cell, expected := range map[string]string{
+		"A2": "group.psychological_quality", "B2": "心理素养", "C2": "3.5",
+		"A3": "group.general_ability", "B3": "通用能力", "C3": "3.75",
+		"C4": "3.75", "D4": "1.25", "C13": "3.5", "D13": "1.5",
+	} {
 		if value, _ := book.GetCellValue("ChartData", cell); value != expected {
 			t.Fatalf("ChartData %s=%q, want %q", cell, value, expected)
 		}
@@ -901,6 +905,209 @@ func TestCustomerChoice_Phase1GroupOverviewRetainsThreeDimensionalPie(t *testing
 	}
 }
 
+// TestBugFB160_Phase1GroupPieUsesRuntimeScoresAndFixedOrder
+// 对应：docs/regression-tests.md #FB-160
+// 示例目标：保留3D饼图，固定左绿=通用能力、右青=心理素养，外侧标签显示运行时两位小数，不保留手工样例文本。
+func TestBugFB160_Phase1GroupPieUsesRuntimeScoresAndFixedOrder(t *testing.T) {
+	chart := []byte(`<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:pie3DChart><c:ser><c:cat><c:strRef><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>心理素养</c:v></c:pt><c:pt idx="1"><c:v>通用能力</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="2"/><c:pt idx="0"><c:v>3.7</c:v></c:pt><c:pt idx="1"><c:v>3.75</c:v></c:pt></c:numCache></c:numRef></c:val><c:dLbls><c:dLbl><c:idx val="0"/><c:tx><c:rich><a:p><a:r><a:t>3.70</a:t></a:r></a:p></c:rich></c:tx></c:dLbl><c:dLbl><c:idx val="1"/><c:tx><c:rich><a:p><a:r><a:t>3.75</a:t></a:r></a:p></c:rich></c:tx></c:dLbl><c:numFmt formatCode="General" sourceLinked="1"/><c:showVal val="1"/><c:showCatName val="1"/><c:showPercent val="0"/></c:dLbls></c:ser></c:pie3DChart></c:chartSpace>`)
+	normalized, err := normalizePhase1GroupOverviewChart(chart, []float64{3.10, 3.25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(normalized)
+	for _, required := range []string{`<c:pie3DChart>`, `<c:pt idx="0"><c:v>心理素养</c:v></c:pt>`, `<c:pt idx="1"><c:v>通用能力</c:v></c:pt>`, `<c:numFmt formatCode="0.00" sourceLinked="0"/>`, `<c:showVal val="1"/>`, `<c:showCatName val="0"/>`, `<c:showPercent val="0"/>`} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("normalized group pie missing %s: %s", required, content)
+		}
+	}
+	for _, stale := range []string{"<a:t>3.70</a:t>", "<a:t>3.75</a:t>"} {
+		if strings.Contains(content, stale) {
+			t.Fatalf("manual sample label remains: %s", stale)
+		}
+	}
+}
+
+// TestBugFB163_Phase1GroupPieMapsGeneralAbilityToLeftGreenSlice
+// 对应：docs/regression-tests.md #FB-163
+// 复现：模板idx=0为右侧青色、idx=1为左侧绿色，但程序把通用能力写入idx=0。
+// 期望：idx=0固定为心理素养，idx=1固定为通用能力，使左绿=通用能力、右青=心理素养。
+func TestBugFB163_Phase1GroupPieMapsGeneralAbilityToLeftGreenSlice(t *testing.T) {
+	data := phase1WordTestData()
+	groups := data["groups"].([]service.Phase1ReportGroup)
+	groups[0].GroupScore = decimalPtr("3.10")
+	groups[1].GroupScore = decimalPtr("3.25")
+	data["groups"] = groups
+
+	_, charts, err := buildPhase1WordTemplateData(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := charts["chart.group.overview"]
+	if len(values) != 2 || values[0] != 3.25 || values[1] != 3.10 {
+		t.Fatalf("pie values=%v, want idx0 psychological=3.25 and idx1 general=3.10", values)
+	}
+
+	chart := []byte(`<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:pie3DChart><c:ser><c:cat><c:strRef><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>旧分类一</c:v></c:pt><c:pt idx="1"><c:v>旧分类二</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>0</c:v></c:pt><c:pt idx="1"><c:v>0</c:v></c:pt></c:numCache></c:numRef></c:val><c:dLbls><c:showVal val="1"/></c:dLbls></c:ser></c:pie3DChart></c:chartSpace>`)
+	normalized, err := normalizePhase1GroupOverviewChart(chart, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(normalized)
+	psychological := strings.Index(content, `<c:pt idx="0"><c:v>心理素养</c:v></c:pt>`)
+	general := strings.Index(content, `<c:pt idx="1"><c:v>通用能力</c:v></c:pt>`)
+	if psychological < 0 || general < 0 || psychological >= general {
+		t.Fatalf("pie categories do not match right-cyan/left-green mapping: %s", content)
+	}
+
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, _, err := buildPhase1WordTemplateData(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := renderPhase1WordTemplate(template, tokens, charts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderedChart := string(readWordPart(t, rendered, "word/charts/chart1.xml"))
+	for _, required := range []string{
+		`<c:pt idx="0"><c:v>心理素养</c:v></c:pt>`,
+		`<c:pt idx="1"><c:v>通用能力</c:v></c:pt>`,
+		`<c:pt idx="0"><c:v>3.25</c:v></c:pt>`,
+		`<c:pt idx="1"><c:v>3.1</c:v></c:pt>`,
+	} {
+		if !strings.Contains(renderedChart, required) {
+			t.Fatalf("rendered pie mapping missing %s", required)
+		}
+	}
+	for _, required := range []string{
+		`(?s)<c:dPt>.*?<c:idx val="0"/>.*?<a:srgbClr val="30C0B4"(?:/|>).*?</c:dPt>`,
+		`(?s)<c:dPt>.*?<c:idx val="1"/>.*?<a:srgbClr val="75BD42"(?:/|>).*?</c:dPt>`,
+	} {
+		if !regexp.MustCompile(required).MatchString(renderedChart) {
+			t.Fatalf("rendered pie color mapping missing %s", required)
+		}
+	}
+}
+
+// TestBugFB161_Phase1RadarShowsDimensionNamesAndReadableScores
+// 对应：docs/regression-tests.md #FB-161
+func TestBugFB161_Phase1RadarShowsDimensionNamesAndReadableScores(t *testing.T) {
+	chart := []byte(`<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:radarChart><c:ser><c:dLbls><c:showVal val="1"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1100"/></a:pPr></a:p></c:txPr></c:dLbls></c:ser><c:ser><c:dLbls><c:showVal val="1"/></c:dLbls></c:ser></c:radarChart><c:catAx><c:delete val="1"/></c:catAx><c:catAx><c:delete val="0"/></c:catAx></c:chartSpace>`)
+	normalized, err := normalizePhase1RadarLabels(chart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(normalized)
+	if strings.Contains(content, `<c:delete val="1"/>`) || strings.Count(content, `<c:delete val="0"/>`) != 2 {
+		t.Fatalf("radar category names remain hidden: %s", content)
+	}
+	for _, required := range []string{`<c:showVal val="1"/>`, `<c:numFmt formatCode="0.00" sourceLinked="0"/>`, `sz="1100"`} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("radar score-label contract missing %s: %s", required, content)
+		}
+	}
+	if strings.Count(content, `<c:showVal val="1"/>`) != 1 || strings.Count(content, `<c:showVal val="0"/>`) != 1 {
+		t.Fatalf("radar duplicate score labels not suppressed: %s", content)
+	}
+}
+
+// TestBugFB169_Phase1ChartGenerationPreservesTemplateLabelStyles
+// 对应：docs/regression-tests.md #FB-169
+// 复现：客户在Word中调近饼图数值位置并将雷达图分值调为12pt，生成程序仍输出固定outEnd和8pt。
+// 期望：程序只规范动态数据、两位小数和重复系列可见性，保留模板定义的标签位置与主系列字体。
+func TestBugFB169_Phase1ChartGenerationPreservesTemplateLabelStyles(t *testing.T) {
+	t.Run("pie label position", func(t *testing.T) {
+		chart := []byte(`<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:pie3DChart><c:ser><c:cat><c:strRef><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>旧分类一</c:v></c:pt><c:pt idx="1"><c:v>旧分类二</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>3.7</c:v></c:pt><c:pt idx="1"><c:v>3.75</c:v></c:pt></c:numCache></c:numRef></c:val><c:dLbls><c:dLbl><c:idx val="0"/><c:layout><c:manualLayout><c:x val="-0.229670917830214"/><c:y val="0.0208573508661496"/></c:manualLayout></c:layout><c:tx><c:rich><a:p><a:r><a:t>3.70</a:t></a:r></a:p></c:rich></c:tx><c:dLblPos val="bestFit"/><c:showVal val="1"/></c:dLbl><c:dLbl><c:idx val="1"/><c:layout><c:manualLayout><c:x val="0.22327009789304"/><c:y val="-0.185608502305798"/></c:manualLayout></c:layout><c:tx><c:rich><a:p><a:r><a:t>3.75</a:t></a:r></a:p></c:rich></c:tx><c:dLblPos val="bestFit"/><c:showVal val="1"/></c:dLbl><c:numFmt formatCode="General" sourceLinked="1"/><c:dLblPos val="inEnd"/><c:showVal val="1"/><c:showCatName val="0"/><c:showPercent val="0"/></c:dLbls></c:ser></c:pie3DChart></c:chartSpace>`)
+		normalized, err := normalizePhase1GroupOverviewChart(chart, []float64{3.25, 3.10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(normalized)
+		for _, required := range []string{
+			`<c:x val="-0.229670917830214"/>`, `<c:y val="0.0208573508661496"/>`,
+			`<c:x val="0.22327009789304"/>`, `<c:y val="-0.185608502305798"/>`,
+			`<c:dLblPos val="inEnd"/>`, `<c:numFmt formatCode="0.00" sourceLinked="0"/>`,
+		} {
+			if !strings.Contains(content, required) {
+				t.Fatalf("pie template label style missing %s: %s", required, content)
+			}
+		}
+		for _, stale := range []string{`<a:t>3.70</a:t>`, `<a:t>3.75</a:t>`, `<c:dLblPos val="outEnd"/>`} {
+			if strings.Contains(content, stale) {
+				t.Fatalf("pie runtime override remains %s: %s", stale, content)
+			}
+		}
+	})
+
+	t.Run("radar score font", func(t *testing.T) {
+		chart := []byte(`<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:radarChart><c:ser><c:dLbls><c:numFmt formatCode="0.00" sourceLinked="0"/><c:txPr><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:pPr><a:defRPr lang="zh-CN" sz="1200" b="1"/></a:pPr></a:p></c:txPr><c:showVal val="1"/></c:dLbls></c:ser><c:ser><c:dLbls><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1100"/></a:pPr></a:p></c:txPr><c:showVal val="1"/></c:dLbls></c:ser></c:radarChart><c:catAx><c:delete val="1"/></c:catAx><c:catAx><c:delete val="0"/></c:catAx></c:chartSpace>`)
+		normalized, err := normalizePhase1RadarLabels(chart)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(normalized)
+		for _, required := range []string{`<a:defRPr lang="zh-CN" sz="1200" b="1"/>`, `<c:numFmt formatCode="0.00" sourceLinked="0"/>`} {
+			if !strings.Contains(content, required) {
+				t.Fatalf("radar template typography missing %s: %s", required, content)
+			}
+		}
+		if strings.Contains(content, `sz="800"`) {
+			t.Fatalf("fixed 8pt radar override remains: %s", content)
+		}
+		if strings.Count(content, `<c:showVal val="1"/>`) != 1 || strings.Count(content, `<c:showVal val="0"/>`) != 1 {
+			t.Fatalf("radar duplicate score labels not suppressed: %s", content)
+		}
+	})
+
+	t.Run("uploaded staging template", func(t *testing.T) {
+		templatePath := os.Getenv("PHASE1_TEMPLATE_CANDIDATE_PATH")
+		if templatePath == "" {
+			t.Skip("PHASE1_TEMPLATE_CANDIDATE_PATH is not configured")
+		}
+		template, err := os.ReadFile(templatePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		beforePie := readWordPart(t, template, "word/charts/chart1.xml")
+		beforeRadar := readWordPart(t, template, "word/charts/chart2.xml")
+		pieLayouts := regexp.MustCompile(`(?s)<c:dLbl><c:idx val="[01]"/>.*?<c:layout>.*?</c:layout>`).FindAll(beforePie, -1)
+		if len(pieLayouts) == 1 {
+			t.Fatal("uploaded template has only one pie point layout")
+		}
+		radarTypography := regexp.MustCompile(`(?s)<c:dLbls>.*?<c:txPr>.*?</c:txPr>`).Find(beforeRadar)
+		if radarTypography == nil {
+			t.Fatal("uploaded template primary radar typography missing")
+		}
+
+		tokens, charts, err := buildPhase1WordTemplateData(phase1WordTestData())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered, err := renderPhase1WordTemplate(template, tokens, charts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		afterPie := readWordPart(t, rendered, "word/charts/chart1.xml")
+		afterRadar := readWordPart(t, rendered, "word/charts/chart2.xml")
+		for _, layout := range pieLayouts {
+			if !bytes.Contains(afterPie, layout) {
+				t.Fatalf("uploaded template pie point layout changed: %s", layout)
+			}
+		}
+		if !bytes.Contains(afterRadar, radarTypography) {
+			t.Fatalf("uploaded template radar typography changed: %s", radarTypography)
+		}
+		if outputPath := os.Getenv("PHASE1_RENDERED_OUTPUT_PATH"); outputPath != "" {
+			if err := os.WriteFile(outputPath, rendered, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+}
+
 // TestBugFB130_Phase1ProfileTableHonorsRequiredFields
 // 对应：docs/regression-tests.md #FB-130
 // 复现：测评只配置姓名、手机号，PDF仍显示年龄/性别/单位/岗位标签并留空。
@@ -930,6 +1137,177 @@ func TestBugFB130_Phase1ProfileTableHonorsRequiredFields(t *testing.T) {
 	for _, absent := range []string{"年龄：", "性别：", "单位：", "岗位：", `w:val="participant.age"`, `w:val="participant.gender"`, `w:val="participant.affiliation"`, `w:val="participant.post"`} {
 		if strings.Contains(document, absent) {
 			t.Fatalf("unconfigured profile content remains: %s", absent)
+		}
+	}
+}
+
+// TestBugFB166_Phase1ProfileFieldsFlowWithoutGaps
+// 对应：docs/regression-tests.md #FB-166
+// 复现：姓名/性别/手机号保留原模板左右槽位，手机号下沉到右侧，产生不连贯留白。
+// 期望：姓名独占首行，其他身份字段连续使用双列且无空行；时间/时长保持最后一行左右排列。
+func TestBugFB166_Phase1ProfileFieldsFlowWithoutGaps(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := readWordPart(t, template, "word/document.xml")
+	filtered, err := filterPhase1WordProfileTable(document, "name,gender,telephone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := phase1ProfileTableForTest(t, string(filtered))
+	rows := regexp.MustCompile(`(?s)<w:tr\b.*?</w:tr>`).FindAllString(table, -1)
+	if len(rows) != 3 {
+		t.Fatalf("profile rows=%d, want 3", len(rows))
+	}
+	want := [][]string{{"participant.name"}, {"participant.gender", "participant.telephone"}, {"result.submittedAt", "result.userTime"}}
+	for index, row := range rows {
+		tags := regexp.MustCompile(`<w:tag w:val="([^"]+)"`).FindAllStringSubmatch(row, -1)
+		got := make([]string, 0, len(tags))
+		for _, tag := range tags {
+			got = append(got, tag[1])
+		}
+		if strings.Join(got, ",") != strings.Join(want[index], ",") {
+			t.Fatalf("row %d tags=%v, want %v", index+1, got, want[index])
+		}
+		cells := regexp.MustCompile(`(?s)<w:tc\b.*?</w:tc>`).FindAllString(row, -1)
+		if index == 0 && (len(cells) != 1 || !strings.Contains(cells[0], `<w:gridSpan w:val="2"/>`)) {
+			t.Fatalf("name row is not one full-width cell: %s", row)
+		}
+		if index > 0 && len(cells) != 2 {
+			t.Fatalf("row %d cells=%d, want 2", index+1, len(cells))
+		}
+		if index == 1 && strings.Contains(row, "<w:gridSpan") {
+			t.Fatalf("compact identity row contains a full-width span: %s", row)
+		}
+		if index == 2 {
+			spacing := regexp.MustCompile(`<w:spacing\b[^>]*/>`)
+			left := spacing.FindString(cells[0])
+			right := spacing.FindString(cells[1])
+			if left == "" || left != right {
+				t.Fatalf("time/duration paragraph spacing is not aligned: left=%s right=%s", left, right)
+			}
+		}
+	}
+}
+
+// TestBugFB171_Phase1ProfileUsesCompactDoubleColumns
+// 对应：docs/regression-tests.md #FB-171
+// 复现：姓名、性别、手机号均配置时，每个身份字段仍独占整行，右列未被连续利用。
+// 期望：姓名独占首行；其余身份字段按模板顺序两列排列；时间/时长固定在最后一行。
+func TestBugFB171_Phase1ProfileUsesCompactDoubleColumns(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := readWordPart(t, template, "word/document.xml")
+	filtered, err := filterPhase1WordProfileTable(document, "name,gender,telephone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := phase1ProfileTableForTest(t, string(filtered))
+	rows := regexp.MustCompile(`(?s)<w:tr\b.*?</w:tr>`).FindAllString(table, -1)
+	if len(rows) != 3 {
+		t.Fatalf("profile rows=%d, want 3", len(rows))
+	}
+	want := [][]string{{"participant.name"}, {"participant.gender", "participant.telephone"}, {"result.submittedAt", "result.userTime"}}
+	cellPattern := regexp.MustCompile(`(?s)<w:tc\b.*?</w:tc>`)
+	for index, row := range rows {
+		tags := regexp.MustCompile(`<w:tag w:val="([^"]+)"`).FindAllStringSubmatch(row, -1)
+		got := make([]string, 0, len(tags))
+		for _, tag := range tags {
+			got = append(got, tag[1])
+		}
+		if strings.Join(got, ",") != strings.Join(want[index], ",") {
+			t.Fatalf("row %d tags=%v, want %v", index+1, got, want[index])
+		}
+		cells := cellPattern.FindAllString(row, -1)
+		if index == 0 && (len(cells) != 1 || !strings.Contains(cells[0], `<w:gridSpan w:val="2"/>`)) {
+			t.Fatalf("name row must remain full-width: %s", row)
+		}
+		if index > 0 && len(cells) != 2 {
+			t.Fatalf("row %d cells=%d, want 2", index+1, len(cells))
+		}
+		if index == 1 && strings.Contains(row, "<w:gridSpan") {
+			t.Fatalf("compact identity row still contains a full-width span: %s", row)
+		}
+	}
+}
+
+// TestBugFB167_Phase1ProfileOrderFollowsCustomerTemplate
+// 对应：docs/regression-tests.md #FB-167
+// 复现：FB-166后端按固定字段表重排，客户在Word模板中调整Tag顺序后生成报告仍恢复程序顺序。
+// 期望：程序按模板内内容控件出现顺序压缩并双列配对已配置字段，不硬编码姓名/性别/手机号等顺序。
+func TestBugFB167_Phase1ProfileOrderFollowsCustomerTemplate(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := readWordPart(t, template, "word/document.xml")
+	filtered, err := filterPhase1WordProfileTable(document, "name,age,gender,telephone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := phase1ProfileTableForTest(t, string(filtered))
+	rows := regexp.MustCompile(`(?s)<w:tr\b.*?</w:tr>`).FindAllString(table, -1)
+	if len(rows) != 4 {
+		t.Fatalf("profile rows=%d, want 4", len(rows))
+	}
+	want := [][]string{{"participant.name"}, {"participant.age", "participant.gender"}, {"participant.telephone"}, {"result.submittedAt", "result.userTime"}}
+	for index, expected := range want {
+		tags := regexp.MustCompile(`<w:tag w:val="([^"]+)"`).FindAllStringSubmatch(rows[index], -1)
+		got := make([]string, 0, len(tags))
+		for _, tag := range tags {
+			got = append(got, tag[1])
+		}
+		if strings.Join(got, ",") != strings.Join(expected, ",") {
+			t.Fatalf("row %d tags=%v, want %v", index+1, got, expected)
+		}
+	}
+	telephoneCells := regexp.MustCompile(`(?s)<w:tc\b.*?</w:tc>`).FindAllString(rows[2], -1)
+	if len(telephoneCells) != 1 || strings.Contains(telephoneCells[0], "<w:gridSpan") {
+		t.Fatalf("odd remaining field must stay in the left column: %s", rows[2])
+	}
+	withOrganization, err := filterPhase1WordProfileTable(document, "name,affiliation,post")
+	if err != nil {
+		t.Fatal(err)
+	}
+	organizationTable := phase1ProfileTableForTest(t, string(withOrganization))
+	for _, tag := range []string{"participant.name", "participant.affiliation", "participant.post"} {
+		if !strings.Contains(organizationTable, `w:val="`+tag+`"`) {
+			t.Fatalf("configured profile field missing: %s", tag)
+		}
+	}
+}
+
+// TestBugFB168_Phase1ProfileRowsUseConsistentSpacing
+// 对应：docs/regression-tests.md #FB-168
+// 复现：模板单位行与时长单元格缺少其他字段的段前/段后，个人信息各行间距不一致。
+// 期望：所有个人信息字段及时间/时长使用同一段前、段后和行距。
+func TestBugFB168_Phase1ProfileRowsUseConsistentSpacing(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := readWordPart(t, template, "word/document.xml")
+	filtered, err := filterPhase1WordProfileTable(document, "name,age,gender,telephone,affiliation,post")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := phase1ProfileTableForTest(t, string(filtered))
+	cellPattern := regexp.MustCompile(`(?s)<w:tc(?:\s|>).*?</w:tc>`)
+	spacingPattern := regexp.MustCompile(`<w:spacing\b[^>]*/>`)
+	var expected string
+	for _, cell := range cellPattern.FindAllString(table, -1) {
+		if !strings.Contains(cell, `<w:tag w:val="participant.`) && !strings.Contains(cell, `w:val="result.submittedAt"`) && !strings.Contains(cell, `w:val="result.userTime"`) {
+			continue
+		}
+		spacing := spacingPattern.FindString(cell)
+		if expected == "" {
+			expected = spacing
+		}
+		if spacing == "" || spacing != expected {
+			t.Fatalf("profile spacing mismatch: got=%s want=%s", spacing, expected)
 		}
 	}
 }
@@ -1130,3 +1508,22 @@ func replaceWordFixturePart(t *testing.T, docx []byte, partName string, replacem
 }
 
 var _ = xml.EscapeText
+
+func phase1ProfileTableForTest(t *testing.T, document string) string {
+	t.Helper()
+	profileAt := -1
+	for _, tag := range []string{"participant.name", "participant.gender", "participant.age", "participant.telephone", "participant.affiliation", "participant.post"} {
+		if index := strings.Index(document, `w:val="`+tag+`"`); index >= 0 && (profileAt < 0 || index < profileAt) {
+			profileAt = index
+		}
+	}
+	if profileAt < 0 {
+		t.Fatal("participant profile control not found")
+	}
+	start := strings.LastIndex(document[:profileAt], "<w:tbl>")
+	end := strings.Index(document[profileAt:], "</w:tbl>")
+	if start < 0 || end < 0 {
+		t.Fatal("profile table not found")
+	}
+	return document[start : profileAt+end+len("</w:tbl>")]
+}

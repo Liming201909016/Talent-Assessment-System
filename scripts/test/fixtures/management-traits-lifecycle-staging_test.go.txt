@@ -1,0 +1,333 @@
+package handler
+
+// Explicit disposable restored-MySQL/service validation, not authenticated HTTP.
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	driver "github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
+	"github.com/talent-assessment/refactored/internal/model"
+	"github.com/talent-assessment/refactored/internal/service"
+	"github.com/talent-assessment/refactored/pkg/libreofficepdf"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+// The production constructor preserves Logger across its private registry.
+// No SQL arguments, interpolated values or raw errors are logged or retained.
+type mngLifecycleTrace struct {
+	logger.Interface
+	mu sync.Mutex
+	observe func(context.Context, string, int64, error)
+}
+
+func (l *mngLifecycleTrace) ParamsFilter(ctx context.Context, query string, args ...interface{}) (string, []interface{}) {
+	return query, nil
+}
+
+func (l *mngLifecycleTrace) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.observe != nil {
+		query, rows := fc()
+		l.observe(ctx, query, rows, err)
+	}
+}
+
+func (l *mngLifecycleTrace) watch(f func(context.Context, string, int64, error)) func() {
+	l.mu.Lock(); l.observe = f; l.mu.Unlock()
+	return func() { l.mu.Lock(); l.observe = nil; l.mu.Unlock() }
+}
+
+func TestManagementTraitsLifecycleRestoredStaging(t *testing.T) {
+	dsn, schema, output := os.Getenv("MNG_LIFECYCLE_DSN"), os.Getenv("MNG_LIFECYCLE_SCHEMA"), os.Getenv("MNG_LIFECYCLE_OUTPUT")
+	if dsn == "" { t.Skip("explicit owned restored staging database absent") }
+	dc, err := driver.ParseDSN(dsn)
+	if err != nil || !regexp.MustCompile(`^mng_lifecycle_test_[a-f0-9]{16}$`).MatchString(schema) || dc.DBName != schema || dc.MultiStatements || dc.InterpolateParams || os.Getenv("REPORT_EFFECTIVE_ENV") != "staging" || !filepath.IsAbs(output) { t.Fatal("isolated ownership rejected") }
+	trace := &mngLifecycleTrace{Interface: logger.Default.LogMode(logger.Silent)}
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{Logger: trace})
+	if err != nil { t.Fatal("restored database unavailable") }
+	pool, err := db.DB(); if err != nil { t.Fatal("pool") }; defer pool.Close()
+	pool.SetMaxOpenConns(4); pool.SetMaxIdleConns(4)
+	ctx, cancel := context.WithTimeout(context.Background(), 210*time.Second); defer cancel()
+	began:=time.Now()
+	classify:=func(e error) string { if e==nil{return "none"};if errors.Is(e,context.DeadlineExceeded){return "context_deadline"};if errors.Is(e,context.Canceled){return "context_canceled"};if errors.Is(e,service.ErrManagementTraitsRuntimeExpired){return "runtime_expired"};if errors.Is(e,service.ErrManagementTraitsRuntimeToken){return "runtime_token"};if errors.Is(e,service.ErrManagementTraitsRuntimeInvalid){return "runtime_invalid"};var me *driver.MySQLError;if errors.As(e,&me){return fmt.Sprintf("mysql_%d",me.Number)};return "unknown" }
+	must := func(e error, stage string) { t.Helper(); if e != nil { t.Logf("FAILURE_STAGE=%s CLASS=%s CONTEXT=%s ELAPSED_MS=%d",stage,classify(e),classify(ctx.Err()),time.Since(began).Milliseconds());t.Fatal("bounded integration failed; raw error withheld") } }
+	var actual string; must(db.Raw("SELECT DATABASE()").Scan(&actual).Error,"database"); if actual != schema { t.Fatal("wrong database") }
+	var account string;must(db.Raw("SELECT SUBSTRING_INDEX(CURRENT_USER(),'@',1)").Scan(&account).Error,"actual application identity");if account!="positive_app"{t.Fatal("root not accepted as application")};t.Log("ACTUAL_DATABASE_ACCOUNT=positive_app RESTORE_ONLY=1")
+	var cross int64; must(db.Raw("SELECT COUNT(*) FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND referenced_table_schema IS NOT NULL AND referenced_table_schema<>DATABASE()").Scan(&cross).Error,"cross-schema"); if cross != 0 { t.Fatal("cross-schema FK") }
+	secret := os.Getenv("JWT_SECRET"); if secret == "" { t.Fatal("actual configuration secret absent") }
+	svc := service.NewManagementTraitsRuntimeService(db,secret,8<<20)
+	must(svc.CheckRuntimeSchema(ctx),"fresh production schema")
+	if os.Getenv("MNG_LIFECYCLE_WORKER_CHILD")=="1" {
+		paper:=os.Getenv("MNG_LIFECYCLE_WORKER_PAPER");if _,e:=uuid.Parse(paper);e!=nil{t.Fatal("worker owned paper")}
+		var owner int64;must(db.Table("el_mng_paper_snapshot").Where("paper_id = ? AND source = ?",paper,"new_creation").Count(&owner).Error,"worker ownership");if owner!=1{t.Fatal("worker ownership count")}
+		wc,stop:=context.WithCancel(ctx);defer stop();done:=make(chan struct{});errs:=make(chan error,1)
+		scanSeen:=make(chan struct{});var scanOnce sync.Once
+		removeScan:=trace.watch(func(c context.Context,query string,rows int64,e error){if c==wc&&e==nil&&strings.HasPrefix(query,"SELECT s.paper_id, s.exam_id,"){scanOnce.Do(func(){close(scanSeen)})}})
+		defer removeScan()
+		go func(){defer close(done);svc.RunExpiry(wc,time.Hour,100,func(e error){select{case errs<-e:default:}})}()
+		defer func(){stop();<-done}()
+		select{case <-scanSeen:case <-ctx.Done():must(ctx.Err(),"worker real startup scan")}
+		if os.Getenv("MNG_LIFECYCLE_WORKER_EXPECT")=="pending" {
+			// Explicit synchronous scan is evidence of the first process reading the unexpired DB.
+			must(svc.ScanExpiry(ctx,100),"first worker unexpired scan")
+			var n int64;must(db.Table("el_mng_result_run").Where("paper_id = ?",paper).Count(&n).Error,"offline pre-count");if n!=0{t.Fatal("unexpired worker submitted")}
+			must(os.WriteFile(filepath.Join(output,"worker-ready"),[]byte("UNEXPIRED_SCAN_PASS"),0600),"worker ready")
+			<-wc.Done();return
+		}
+		watch,stopWatch:=context.WithTimeout(ctx,15*time.Second);defer stopWatch();ticker:=time.NewTicker(100*time.Millisecond);defer ticker.Stop()
+		for {var n,remaining int64;must(db.WithContext(watch).Table("el_mng_result_run").Where("paper_id = ?",paper).Count(&n).Error,"worker result observation");must(db.WithContext(watch).Raw("SELECT COUNT(*) FROM el_mng_paper_snapshot s INNER JOIN el_paper p ON p.id=s.paper_id WHERE s.source=? AND p.state=1 AND s.limit_time<=?","new_creation",time.Now()).Scan(&remaining).Error,"worker entire sweep observation");if n==1&&remaining==0{t.Logf("RESTORED_WORKER_RESTART_IMMEDIATE_MS=%d ACTUAL_RUNEXPIRY_SCAN=1 ALL_EXPIRED_SETTLED=1 MAIN_SYSTEMD_RESTART=0",time.Since(began).Milliseconds());return};select{case e:=<-errs:must(e,"worker error");case <-watch.Done():must(watch.Err(),"worker startup deadline");case <-ticker.C:}}
+	}
+	for _, table := range []string{"el_mng_exam_profile","el_mng_paper_snapshot","el_mng_result_run","el_mng_report_revision"} { var n int64; must(db.Table(table).Count(&n).Error,"empty"); if n != 0 { t.Fatal("restore not empty") } }
+	rawContent, err := os.ReadFile(os.Getenv("MNG_TEST_CONTENT_PATH")); must(err,"content")
+	content, err := service.LoadManagementTraitsTestContent(rawContent); must(err,"205 content")
+	template, err := os.ReadFile(os.Getenv("MNG_TEST_TEMPLATE_PATH")); must(err,"template")
+	sha := func(b []byte) string { h:=sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+	if sha(template) != "05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c" { t.Fatal("template SHA") }
+	must(os.MkdirAll(output,0700),"output")
+	type owned struct { exam string; profile model.ManagementTraitsExamProfile; participant service.ManagementTraitsRuntimeClaims; paper service.ManagementTraitsRuntimePaperDetail; claims service.ManagementTraitsRuntimeClaims }
+	parse := func(token,purpose string) service.ManagementTraitsRuntimeClaims { c,e:=service.ParseManagementTraitsRuntimeToken(secret,token,purpose,time.Now()); must(e,"server-issued credential"); return c }
+	candidateName:="MTL synthetic"
+	create := func(code,kind string) owned {
+		var repo model.Repo; must(db.Where("code = ?",code).Take(&repo).Error,"source")
+		id:=uuid.NewString(); open:=1; if kind=="tester" { open=2 }
+		exam:=model.Exam{ID:id,Title:"MTL"+id[:8],AssessmentType:"legacy",ScoringMode:"legacy",TotalTime:25,RequiredFields:"name",IsOpen:open,JoinType:1}
+		must(db.Create(&exam).Error,"owned exam"); must(db.Create(&model.ExamRepo{ID:uuid.NewString(),ExamID:id,RepoID:repo.ID,RadioCount:140}).Error,"owned link")
+		var identity service.ManagementTraitsIdentityResponse
+		if kind=="tester" {
+			pid,pwd,status,del:=uuid.NewString(),uuid.NewString(),"0",0
+			must(db.Create(&model.Tester{ID:pid,ExamID:&id,IDNumber:"MTL"+id[:8],Name:"MTL synthetic",Password:pwd,Status:&status,DelFlag:&del}).Error,"own tester")
+			profile,e:=svc.FreezeProfile(ctx,id); must(e,"freeze tester")
+			r,handled,e:=svc.TryTesterIdentity(ctx,id,pid,pwd); must(e,"normal tester identity"); if !handled { t.Fatal("tester fallback") }; identity=r
+			c:=parse(identity.ParticipantToken,service.ManagementTraitsRuntimeParticipantPurpose); p,e:=svc.CreatePaper(ctx,c); must(e,"create tester"); return owned{id,profile,c,p,parse(p.PaperToken,service.ManagementTraitsRuntimePaperPurpose)}
+		}
+		profile,e:=svc.FreezeProfile(ctx,id); must(e,"freeze candidate")
+		r,handled,e:=svc.TryRegisterCandidateIdentity(ctx,service.ManagementTraitsCandidateIdentityRequest{ExamID:id,Name:candidateName},""); must(e,"candidate identity"); if !handled { t.Fatal("candidate fallback") }; identity=r
+		c:=parse(identity.ParticipantToken,service.ManagementTraitsRuntimeParticipantPurpose); p,e:=svc.CreatePaper(ctx,c); must(e,"create candidate")
+		if len(p.Questions)!=140 || !p.Deadline.Equal(p.StartedAt.Add(25*time.Minute)) { t.Fatal("140/25 frozen contract") }
+		return owned{id,profile,c,p,parse(p.PaperToken,service.ManagementTraitsRuntimePaperPurpose)}
+	}
+	fill := func(o owned,n,mode int) {
+		phase:=time.Now()
+		var rows []model.ManagementTraitsPaperQuestionSnapshot; must(db.Where("paper_id = ?",o.paper.PaperID).Order("v_number").Find(&rows).Error,"read frozen questions")
+		if len(rows)!=140 { t.Fatal("snapshot count") }
+		for i,q:=range rows { if i>=n { break }; final:=mode; if mode==0 { final=1+q.Number%5 }; raw:=final; if q.Reverse { raw=6-final }
+			var options []service.ManagementTraitsMappedOption; must(json.Unmarshal([]byte(q.OptionsSnapshot),&options),"frozen options")
+			option:=""; for _,v:=range options { if v.Raw==raw { option=v.SourceOptionID } }; if option=="" { t.Fatal("option raw") }
+			_,e:=svc.FillAnswer(ctx,o.claims,q.PaperQuestionID,option); must(e,"actual save")
+		}
+		var nread int64; must(db.Model(&model.ManagementTraitsPaperQuestionSnapshot{}).Where("paper_id = ? AND raw_answer IS NOT NULL",o.paper.PaperID).Count(&nread).Error,"save readback"); if nread!=int64(n) { t.Fatal("save cardinality") }
+		t.Logf("PHASE=fill ANSWERED=%d ELAPSED_MS=%d CONTEXT=%s",n,time.Since(phase).Milliseconds(),classify(ctx.Err()))
+	}
+	// Only this disposable schema's exact PKs are adjusted. The 25-minute source,
+	// profile, evidence hash, snapshot, paper and question timestamps stay coherent.
+	window := func(o owned, offset time.Duration) {
+		captured:=time.Now().Add(offset-26*time.Minute).Truncate(time.Second); started:=captured.Add(time.Minute); deadline:=started.Add(25*time.Minute)
+		must(db.Transaction(func(tx *gorm.DB) error {
+			var p model.ManagementTraitsExamProfile; if e:=tx.Where("exam_id = ?",o.exam).Take(&p).Error;e!=nil{return e}
+			var s model.ManagementTraitsPaperSnapshot; if e:=tx.Where("paper_id = ?",o.paper.PaperID).Take(&s).Error;e!=nil{return e}
+			var fields map[string]any; if e:=json.Unmarshal([]byte(p.FieldContract),&fields);e!=nil{return e}; fields["capturedAt"]=captured.Format(time.RFC3339Nano); f,e:=json.Marshal(fields);if e!=nil{return e}
+			var evidence map[string]any;if e:=json.Unmarshal([]byte(s.EvidenceSnapshot),&evidence);e!=nil{return e};evidence["capturedAt"]=captured.Format(time.RFC3339Nano)
+			// Production evidence hash uses a fixed struct order, not map JSON order.
+			ev:=struct { Schema string `json:"schema"`; Source string `json:"source"`; RepoCode string `json:"repoCode"`; CapturedAt time.Time `json:"capturedAt"`; ManifestSHA string `json:"manifestSha"`; MappingSHA string `json:"mappingSha"` }{fmt.Sprint(evidence["schema"]),fmt.Sprint(evidence["source"]),fmt.Sprint(evidence["repoCode"]),captured,fmt.Sprint(evidence["manifestSha"]),fmt.Sprint(evidence["mappingSha"])}
+			b,e:=json.Marshal(ev);if e!=nil{return e}
+			for _,u:=range []struct{table,key,id string; values map[string]any}{
+				{"el_mng_exam_profile","exam_id",o.exam,map[string]any{"frozen_at":captured,"created_at":captured,"field_contract":string(f)}},
+				{"el_mng_paper_snapshot","paper_id",o.paper.PaperID,map[string]any{"source_captured_at":captured,"started_at":started,"created_at":started,"limit_time":deadline,"field_contract":string(f),"evidence_snapshot":string(b),"evidence_sha":sha(b)}},
+				{"el_paper","id",o.paper.PaperID,map[string]any{"create_time":started,"limit_time":deadline}},
+			} { if e:=tx.Table(u.table).Where(u.key+" = ?",u.id).Updates(u.values).Error;e!=nil{return e} }
+			var qs []model.ManagementTraitsPaperQuestionSnapshot;if e:=tx.Where("paper_id = ?",o.paper.PaperID).Find(&qs).Error;e!=nil{return e};for _,q:=range qs { if e:=tx.Model(&model.ManagementTraitsPaperQuestionSnapshot{}).Where("id = ?",q.ID).Update("created_at",started).Error;e!=nil{return e} };return nil
+		}),"owned consistent expiry fixture")
+	}
+	expire := func(o owned) {
+		window(o,-time.Minute)
+		_,e:=svc.PaperDetail(ctx,o.claims);must(e,"expired metadata accepted")
+		_,e=svc.FillAnswer(ctx,o.claims,o.paper.Questions[0].ID,o.paper.Questions[0].Options[0].ID);if !errors.Is(e,service.ErrManagementTraitsRuntimeExpired) { t.Fatal("expired save not rejected") }
+	}
+	assertRun := func(o owned,r service.ManagementTraitsRuntimeSubmission,n int,complete bool) model.ManagementTraitsResultRun {
+		if r.Answered!=n || r.Complete!=complete || r.RunID=="" { t.Fatal("submission summary") }
+		var run model.ManagementTraitsResultRun;must(db.Where("id = ?",r.RunID).Take(&run).Error,"run readback")
+		for _,a:=range []struct{table,key,value string; expected int64}{{"el_mng_result_run","paper_id",o.paper.PaperID,1},{"el_mng_result_dimension","run_id",r.RunID,13},{"el_mng_result_module","run_id",r.RunID,4},{"el_mng_runtime_receipt","run_id",r.RunID,1}} { var count int64;must(db.Table(a.table).Where(a.key+" = ?",a.value).Count(&count).Error,"result count");if count!=a.expected {t.Fatal("1/13/4/1 invariant")} }
+		if !complete { var nd,nm int64;must(db.Table("el_mng_result_dimension").Where("run_id = ? AND (score IS NOT NULL OR norm IS NOT NULL OR level IS NOT NULL)",r.RunID).Count(&nd).Error,"NULL dims");must(db.Table("el_mng_result_module").Where("run_id = ? AND score IS NOT NULL",r.RunID).Count(&nm).Error,"NULL modules");if run.OverallScore!=nil||run.OverallNorm!=nil||run.OverallLevel!=nil||nd!=0||nm!=0 {t.Fatal("incomplete official scores not NULL")}
+			called:=false;_,e:=svc.GenerateTestReport(ctx,r.RunID,1,filepath.Join(output,"private"),content,func(context.Context,service.ManagementTraitsTestReportData)([]byte,error){called=true;return nil,nil});if e==nil||called{t.Fatal("incomplete rendered report")}
+		}
+		_,e:=svc.LoadValidatedRun(ctx,r.RunID);must(e,"actual validated stored run")
+		return run
+	}
+	if os.Getenv("MNG_LIFECYCLE_SCOPE")=="remaining" || os.Getenv("MNG_LIFECYCLE_SCOPE")=="worker-atomic" {
+		// No four-report replay: the failing historical slice remains unchanged on disk.
+		p2,e:=gorm.Open(mysql.Open(dsn),&gorm.Config{Logger:logger.Default.LogMode(logger.Silent)});must(e,"independent pool");pool2,e:=p2.DB();must(e,"independent pool handle");defer pool2.Close();pool2.SetMaxOpenConns(2);pool2.SetMaxIdleConns(2)
+		svc2:=service.NewManagementTraitsRuntimeService(p2,secret,8<<20);must(svc2.CheckRuntimeSchema(ctx),"second fresh schema")
+		count:=func(table,key,value string) int64 {var n int64;must(db.Table(table).Where(key+" = ?",value).Count(&n).Error,"exact count");return n}
+		negative:=func(e error,stage string){if e==nil{t.Fatal("negative action accepted")};t.Logf("NEGATIVE_STAGE=%s CLASS=%s CONTEXT=%s",stage,classify(e),classify(ctx.Err()))}
+		if os.Getenv("MNG_LIFECYCLE_SCOPE")=="remaining" {
+		full:=create("00201","candidate");fill(full,140,3);expire(full)
+		results:=make([]service.ManagementTraitsRuntimeSubmission,2);errs:=make([]error,2);var wg sync.WaitGroup;start:=make(chan struct{})
+		for j:=0;j<2;j++{wg.Add(1);go func(j int){defer wg.Done();<-start;if j==0{results[j],errs[j]=svc.SubmitParticipant(ctx,full.claims,"manual")}else{results[j],errs[j]=svc2.Submit(ctx,full.claims,"manual")}}(j)};close(start);wg.Wait();must(errs[0],"deadline manual");must(errs[1],"deadline trusted worker submit");if results[0].RunID!=results[1].RunID||results[0].Reused==results[1].Reused{t.Fatal("deadline race duplicate")}
+		run:=assertRun(full,results[0],140,true);if run.OverallScore==nil||run.OverallScore.String()!="50"{t.Fatal("independent raw3 score50")}
+		var receipt model.ManagementTraitsRuntimeReceipt;must(db.Where("run_id = ?",run.ID).Take(&receipt).Error,"deadline receipt");if receipt.SubmitType!="timeout"||receipt.UserTimeSeconds<1500{t.Fatal("deadline receipt time")}
+		t.Log("CASE=deadline_full_manual_worker PASS=1 ANSWERS=140 CREATED=1 REUSED=1 RUN=1 DIM=13 MODULE=4 RECEIPT=1 SCORE=50 INDEPENDENT_POOLS=2")
+		for _,n:=range []int{0,3}{o:=create("00202","candidate");fill(o,n,3);expire(o);r,e:=svc.SubmitParticipant(ctx,o.claims,"manual");must(e,"incomplete timeout");assertRun(o,r,n,false);var rr model.ManagementTraitsRuntimeReceipt;must(db.Where("run_id = ?",r.RunID).Take(&rr).Error,"incomplete receipt");if rr.SubmitType!="timeout"{t.Fatal("incomplete receipt type")};before:=count("el_mng_paper_question_snapshot","paper_id",o.paper.PaperID);_,e=svc.FillAnswer(ctx,o.claims,o.paper.Questions[0].ID,o.paper.Questions[0].Options[0].ID);negative(e,"expired completed fill");if count("el_mng_paper_question_snapshot","paper_id",o.paper.PaperID)!=before{t.Fatal("expired wrote row")};t.Logf("CASE=incomplete_%d PASS=1 OFFICIAL_NULL=1 REPORT_RENDER_CALLS=0",n)}
+		o:=create("00201","candidate");fill(o,1,3);resume,e:=svc.IssueCandidateResume(ctx,o.exam,o.claims.ParticipantID,o.paper.PaperID);must(e,"resume actual service")
+		rc:=parse(resume.ParticipantToken,service.ManagementTraitsRuntimePaperPurpose);if rc.ExpiresAt-time.Now().Unix()>300||rc.PaperID!=o.paper.PaperID||rc.ParticipantID!=o.claims.ParticipantID||rc.ExamID!=o.exam{t.Fatal("resume binding TTL")}
+		_,e=service.ParseManagementTraitsRuntimeToken(secret,resume.ParticipantToken,service.ManagementTraitsRuntimeParticipantPurpose,time.Now());negative(e,"resume wrong purpose")
+		_,e=service.ParseManagementTraitsRuntimeToken(secret,resume.ParticipantToken,service.ManagementTraitsRuntimePaperPurpose,time.Unix(rc.ExpiresAt+1,0));negative(e,"resume parser expiry actual signed credential")
+		foreign:=rc;foreign.PaperID=full.paper.PaperID;_,e=svc.PaperDetail(ctx,foreign);negative(e,"resume cross paper")
+		_,e=svc.IssueCandidateResume(ctx,o.exam,uuid.NewString(),o.paper.PaperID);negative(e,"resume cross candidate")
+		_,e=svc.IssueCandidateResume(ctx,full.exam,o.claims.ParticipantID,o.paper.PaperID);negative(e,"resume cross exam")
+		detail,e:=svc.PaperDetail(ctx,rc);must(e,"resume read");if !detail.Deadline.Equal(o.paper.Deadline){t.Fatal("resume reset deadline")}
+		t.Log("CASE=secure_resume PASS=1 TTL_MAX=300 HTTP_ADMIN_PROOF=0 NATURAL_5MIN_EXPIRY=UNVERIFIED PARSER_EXPIRY_PASS=1")
+		end:=time.Now().Add(-time.Minute);must(db.Model(&model.Exam{}).Where("id = ?",o.exam).Update("end_time",end).Error,"owned exam end")
+		existing,e:=svc.CreatePaper(ctx,o.participant);must(e,"existing after exam end");if existing.PaperID!=o.paper.PaperID||!existing.Deadline.Equal(o.paper.Deadline){t.Fatal("exam end reset")}
+		_,handled,e:=svc.TryRegisterCandidateIdentity(ctx,service.ManagementTraitsCandidateIdentityRequest{ExamID:o.exam,Name:"MTL after end"},"");negative(e,"end new admission");if !handled{t.Fatal("end legacy fallback")}
+		must(db.Model(&model.Exam{}).Where("id = ?",o.exam).Update("end_time",nil).Error,"owned end restore");t.Log("CASE=exam_end PASS=1 EXISTING_DEADLINE_UNCHANGED=1")
+		pending,handled,e:=svc.TryRegisterCandidateIdentity(ctx,service.ManagementTraitsCandidateIdentityRequest{ExamID:o.exam,Name:"MTL pending"},"");must(e,"pending identity");if !handled{t.Fatal("pending fallback")};pc:=parse(pending.ParticipantToken,service.ManagementTraitsRuntimeParticipantPurpose)
+		var refs int64;must(db.Model(&model.ManagementTraitsExamProfile{}).Where("bundle_id = ?",o.profile.BundleID).Count(&refs).Error,"owned bundle refs");if refs!=2{t.Fatal("unexpected owned bundle refs")}
+		must(db.Model(&model.ManagementTraitsDefinitionBundle{}).Where("id = ?",o.profile.BundleID).Update("status","retired").Error,"owned retired")
+		_,e=svc.FillAnswer(ctx,o.claims,o.paper.Questions[1].ID,o.paper.Questions[1].Options[0].ID);must(e,"retired existing fill");existing,e=svc.CreatePaper(ctx,o.participant);must(e,"retired existing create");if !existing.Deadline.Equal(o.paper.Deadline){t.Fatal("retired deadline")}
+		_,e=svc.CreatePaper(ctx,pc);negative(e,"retired new create");t.Log("CASE=retired PASS=1 FROZEN_CONTINUES=1 NEW_REJECTED=1")
+		must(db.Model(&model.ManagementTraitsDefinitionBundle{}).Where("id = ?",o.profile.BundleID).Update("status","revoked").Error,"owned revoked")
+		var answersBefore int64;must(db.Model(&model.ManagementTraitsPaperQuestionSnapshot{}).Where("paper_id = ? AND raw_answer IS NOT NULL",o.paper.PaperID).Count(&answersBefore).Error,"revoked before")
+		_,e=svc.FillAnswer(ctx,o.claims,o.paper.Questions[2].ID,o.paper.Questions[2].Options[0].ID);negative(e,"revoked fill");_,e=svc.IssueCandidateResume(ctx,o.exam,o.claims.ParticipantID,o.paper.PaperID);negative(e,"revoked resume")
+		called:=false;_,e=svc.GenerateTestReport(ctx,run.ID,1,filepath.Join(output,"private"),content,func(context.Context,service.ManagementTraitsTestReportData)([]byte,error){called=true;return nil,nil});negative(e,"revoked report");if called||count("el_mng_report_revision","run_id",run.ID)!=0{t.Fatal("revoked render or write")}
+		var answersAfter int64;must(db.Model(&model.ManagementTraitsPaperQuestionSnapshot{}).Where("paper_id = ? AND raw_answer IS NOT NULL",o.paper.PaperID).Count(&answersAfter).Error,"revoked after");if answersBefore!=answersAfter{t.Fatal("revoked answers changed")}
+		must(db.Model(&model.ManagementTraitsDefinitionBundle{}).Where("id = ?",o.profile.BundleID).Update("status","candidate-current-source").Error,"restore owned bundle");t.Log("CASE=revoked PASS=1 ANSWER_DELTA=0 RENDER_CALLS=0 REVISION_DELTA=0")
+		}
+		// Exact-paper failure trigger exists only in the disposable restore, with FK enabled.
+		candidateName="MTL atomic "+schema[len("mng_lifecycle_test_"):];a:=create("00202","candidate");candidateName="MTL synthetic";fill(a,140,3);expire(a);trigger:="mng_lifecycle_owned_failure";if _,e:=uuid.Parse(a.paper.PaperID);e!=nil{t.Fatal("failure PK")}
+		var triggerCount int64;must(db.Raw("SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name=?",trigger).Scan(&triggerCount).Error,"owned trigger present");if triggerCount!=1{t.Fatal("owned trigger missing")}
+		totals:=func()[]int64{out:=make([]int64,0,4);for _,table:=range []string{"el_mng_result_run","el_mng_result_dimension","el_mng_result_module","el_mng_runtime_receipt"}{var n int64;must(db.Table(table).Count(&n).Error,"atomic totals");out=append(out,n)};return out};beforeTotals:=totals()
+		facts:=func(o owned)string{var paper model.Paper;var snap model.ManagementTraitsPaperSnapshot;var profile model.ManagementTraitsExamProfile;var qs []model.ManagementTraitsPaperQuestionSnapshot;var pq []model.PaperQu;var buckets []model.PaperQuAnswer;var person struct{PaperID *string `gorm:"column:paper_id"`;ExamID *string `gorm:"column:exam_id"`;EndTime *time.Time `gorm:"column:end_time"`;CreateTime *time.Time `gorm:"column:create_time"`;UpdateTime *time.Time `gorm:"column:update_time"`};must(db.Where("id = ?",o.paper.PaperID).Take(&paper).Error,"atomic paper facts");must(db.Where("paper_id = ?",o.paper.PaperID).Take(&snap).Error,"atomic frozen facts");must(db.Where("exam_id = ?",o.exam).Take(&profile).Error,"atomic profile facts");must(db.Where("paper_id = ?",o.paper.PaperID).Order("id").Find(&qs).Error,"atomic answer facts");must(db.Where("paper_id = ?",o.paper.PaperID).Order("id").Find(&pq).Error,"atomic legacy facts");must(db.Where("paper_id = ?",o.paper.PaperID).Order("id").Find(&buckets).Error,"atomic bucket facts");must(db.Table("el_candidate").Select("paper_id,exam_id,end_time,create_time,update_time").Where("id = ?",o.claims.ParticipantID).Take(&person).Error,"atomic participant facts");b,e:=json.Marshal([]any{paper,snap,profile,qs,pq,buckets,person});must(e,"atomic facts digest");return sha(b)}
+		beforeFacts:=facts(a);var injectedErrno uint16;var injectedState [5]byte;var injectedHits int
+		atomicCtx,stopAtomic:=context.WithCancel(ctx);defer stopAtomic()
+		removeFailure:=trace.watch(func(c context.Context,query string,rows int64,e error){if c==atomicCtx&&strings.HasPrefix(query,"INSERT INTO `el_mng_result_module` "){var me *driver.MySQLError;if errors.As(e,&me){injectedErrno=me.Number;injectedState=me.SQLState;injectedHits++}}});defer removeFailure()
+		_,e=svc.Submit(atomicCtx,a.claims,"manual");negative(e,"forced module rollback");removeFailure();if injectedErrno!=1644||injectedState!=[5]byte{'4','5','0','0','0'}||injectedHits!=1{t.Fatal("actual owned trigger failure not observed")};must(db.Exec("DROP TRIGGER "+trigger).Error,"remove owned trigger")
+		afterTotals:=totals();for i:=range beforeTotals{if beforeTotals[i]!=afterTotals[i]{t.Fatal("atomic child residue")}}
+		if facts(a)!=beforeFacts{t.Fatal("rollback paper participant answers or frozen facts changed")}
+		if count("el_mng_result_run","paper_id",a.paper.PaperID)!=0{t.Fatal("rollback run residue")};var state int;must(db.Table("el_paper").Select("state").Where("id = ?",a.paper.PaperID).Scan(&state).Error,"rollback paper");if state!=1{t.Fatal("rollback paper changed")};var submitted int64;must(db.Table("el_mng_paper_question_snapshot").Where("paper_id = ? AND submitted_at IS NOT NULL",a.paper.PaperID).Count(&submitted).Error,"rollback questions");if submitted!=0{t.Fatal("rollback submitted rows")}
+		var directEnd sql.NullTime;must(pool.QueryRowContext(ctx,"SELECT end_time FROM el_candidate WHERE id = ?",a.claims.ParticipantID).Scan(&directEnd),"rollback participant independent nullable read")
+		var endTime *time.Time;endErr:=db.Table("el_candidate").Select("end_time").Where("id = ?",a.claims.ParticipantID).Scan(&endTime).Error
+		errType:=fmt.Sprintf("%T",endErr);if !regexp.MustCompile(`^(<nil>|\*errors\.errorString|\*fmt\.wrapError|\*mysql\.MySQLError)$`).MatchString(errType){errType="other"}
+		shape:="unclassified";if errType=="*fmt.wrapError"||errType=="*errors.errorString"{if regexp.MustCompile(`^sql: Scan error on column index 0, name "end_time": unsupported Scan, storing driver.Value type <nil> into type \*time.Time$`).MatchString(endErr.Error()){shape="sql_null_to_time"}}
+		t.Logf("CAUSE_STAGE=rollback_participant ERROR_TYPE=%s ERROR_CLASS=%s ERROR_SHAPE=%s SQL_NULL=%t",errType,classify(endErr),shape,!directEnd.Valid)
+		if shape!="sql_null_to_time"||directEnd.Valid{t.Fatal("original nullable scalar RED not reproduced")}
+		var ownerEnd struct{EndTime *time.Time `gorm:"column:end_time"`};must(db.Table("el_candidate").Select("end_time").Where("id = ?",a.claims.ParticipantID).Take(&ownerEnd).Error,"rollback participant nullable struct");if ownerEnd.EndTime!=nil{t.Fatal("rollback owner completed")}
+		r,e:=svc.Submit(ctx,a.claims,"manual");must(e,"post failure submit");atomicRun:=assertRun(a,r,140,true);if r.Reused||atomicRun.OverallScore==nil||atomicRun.OverallScore.String()!="50"{t.Fatal("complete atomic retry score")};afterRetryFacts:=facts(a);afterRetryTotals:=totals();again,e:=svc.Submit(ctx,a.claims,"manual");must(e,"atomic duplicate submit");if !again.Reused||again.RunID!=r.RunID||facts(a)!=afterRetryFacts{t.Fatal("atomic duplicate changed facts")};duplicateTotals:=totals();for i:=range afterRetryTotals{if duplicateTotals[i]!=afterRetryTotals[i]{t.Fatal("atomic duplicate increment")}}
+		t.Logf("CASE=failure_atomic PASS=1 MYSQL_ERRNO=%d SQLSTATE=45000 OBSERVED_MODULE_INSERTS=1 OBSERVER=preserved_logger_private_registry FAILED_RUNS=0 CHILD_DELTAS=0 PAPER_STATE=1 SUBMITTED_ROWS=0 OWNER_END_NULL=1 FACTS_SHA_UNCHANGED=%s POST_RETRY_RUN=1 DIM=13 MODULE=4 RECEIPT=1 COMPLETE=140 DUP_REUSED=1 DUP_DELTA=0 FK_ENABLED=1",injectedErrno,beforeFacts)
+		w:=create("00202","candidate");fill(w,140,3);window(w,8*time.Second)
+		var snapshot model.ManagementTraitsPaperSnapshot;must(db.Where("paper_id = ?",w.paper.PaperID).Take(&snapshot).Error,"offline original deadline");original:=*snapshot.LimitTime
+		binary,e:=os.Executable();must(e,"worker binary")
+		child:=func(expect string)*exec.Cmd{c:=exec.Command(binary,"-test.run","^TestManagementTraitsLifecycleRestoredStaging$","-test.v","-test.timeout","30s");c.Env=append(os.Environ(),"MNG_LIFECYCLE_WORKER_CHILD=1","MNG_LIFECYCLE_WORKER_PAPER="+w.paper.PaperID,"MNG_LIFECYCLE_WORKER_EXPECT="+expect);return c}
+		first:=child("pending");var firstLog bytes.Buffer;first.Stdout=&firstLog;first.Stderr=&firstLog;must(first.Start(),"first worker process");defer func(){if first.ProcessState==nil{_ = first.Process.Kill();_ = first.Wait()}}()
+		watch,stopWatch:=context.WithTimeout(ctx,10*time.Second);ticker:=time.NewTicker(100*time.Millisecond)
+	readyLoop: for {if b,e:=os.ReadFile(filepath.Join(output,"worker-ready"));e==nil&&string(b)=="UNEXPIRED_SCAN_PASS"{break readyLoop};select{case <-watch.Done():must(watch.Err(),"first worker readiness");case <-ticker.C:}}
+		ticker.Stop();stopWatch();pid1:=first.Process.Pid;must(first.Process.Kill(),"owned worker power loss");if e:=first.Wait();e==nil{t.Fatal("first worker not killed")};if count("el_mng_result_run","paper_id",w.paper.PaperID)!=0{t.Fatal("offline before expiry")}
+		must(os.WriteFile(filepath.Join(output,"worker-first.log"),firstLog.Bytes(),0600),"first worker evidence")
+		// Natural expiry of the established frozen deadline while the owned process is off.
+		until:=time.NewTimer(time.Until(original)+100*time.Millisecond);defer until.Stop();select{case <-until.C:case <-ctx.Done():must(ctx.Err(),"offline natural deadline")}
+		missing:=make([]owned,0,2);for _,n:=range []int{0,3}{m:=create("00202","candidate");fill(m,n,3);expire(m);missing=append(missing,m)}
+		second:=child("submitted");var secondLog bytes.Buffer;second.Stdout=&secondLog;second.Stderr=&secondLog;phase:=time.Now();secondErr:=second.Run()
+		must(os.WriteFile(filepath.Join(output,"worker-second.log"),secondLog.Bytes(),0600),"restarted worker evidence")
+		must(secondErr,"restarted worker process");if second.Process.Pid==pid1{t.Fatal("worker PID unchanged")}
+		var wr model.ManagementTraitsResultRun;must(db.Where("paper_id = ?",w.paper.PaperID).Take(&wr).Error,"worker stored run");assertRun(w,service.ManagementTraitsRuntimeSubmission{RunID:wr.ID,Answered:140,Complete:true},140,true);if wr.OverallScore==nil||wr.OverallScore.String()!="50"{t.Fatal("worker full score")}
+		var pendingExpiry int64;must(db.Raw("SELECT COUNT(*) FROM el_mng_paper_snapshot s INNER JOIN el_paper p ON p.id=s.paper_id WHERE s.source=? AND p.state=1 AND s.limit_time<=?","new_creation",time.Now()).Scan(&pendingExpiry).Error,"child complete sweep proof");if pendingExpiry!=0{t.Fatal("child did not finish missing samples")}
+		// A subsequent scan proves idempotence; it is not used to complete missing samples.
+		must(svc2.ScanExpiry(ctx,100),"repeat worker scan")
+		for i,m:=range missing{var mr model.ManagementTraitsResultRun;must(db.Where("paper_id = ?",m.paper.PaperID).Take(&mr).Error,"worker incomplete stored run");n:=0;if i==1{n=3};assertRun(m,service.ManagementTraitsRuntimeSubmission{RunID:mr.ID,Answered:n,Complete:false},n,false);t.Logf("CASE=worker_incomplete_%d PASS=1 OFFICIAL_NULL=1 REPORT_RENDER_CALLS=0",n)}
+		must(db.Where("paper_id = ?",w.paper.PaperID).Take(&snapshot).Error,"worker deadline after");if !snapshot.LimitTime.Equal(original){t.Fatal("worker reset deadline")}
+		must(svc2.ScanExpiry(ctx,100),"repeat worker scan");if count("el_mng_result_run","paper_id",w.paper.PaperID)!=1{t.Fatal("worker duplicate")}
+		t.Logf("CASE=offline_worker_process_restart PASS=1 CHILD_PID_BEFORE=%d CHILD_PID_AFTER=%d START_SCAN_MS=%d ORIGINAL_DEADLINE_UNIX=%d DEADLINE_UNCHANGED=1 ANSWERED=140 RUN=1 DIM=13 MODULE=4 RECEIPT=1 AUTO_REPORT=0 MAIN_SYSTEMD_RESTART=0",pid1,second.Process.Pid,time.Since(phase).Milliseconds(),original.Unix())
+		competition:=create("00201","candidate");fill(competition,140,3);expire(competition);workerCtx,stopWorker:=context.WithCancel(ctx);workerDone:=make(chan struct{});workerErrors:=make(chan error,1);start:=make(chan struct{});manualDone:=make(chan struct{});var manual service.ManagementTraitsRuntimeSubmission;var manualErr error
+		lock,e:=pool.BeginTx(ctx,nil);must(e,"race owned lock");defer lock.Rollback();var lockedID string;must(lock.QueryRowContext(ctx,"SELECT id FROM el_paper WHERE id=? FOR UPDATE",competition.paper.PaperID).Scan(&lockedID),"race owned PK lock");if lockedID!=competition.paper.PaperID{t.Fatal("race lock wrong owner")}
+		raceScan:=make(chan struct{});workerLocked:=make(chan struct{});var raceOnce,lockedOnce sync.Once
+		removeRace:=trace.watch(func(c context.Context,query string,rows int64,e error){if c!=workerCtx||e!=nil{return};if strings.HasPrefix(query,"SELECT s.paper_id, s.exam_id,"){raceOnce.Do(func(){close(raceScan)})};if strings.HasPrefix(query,"SELECT * FROM `el_paper` ")&&strings.HasSuffix(query," FOR UPDATE")&&rows==1{lockedOnce.Do(func(){close(workerLocked)})}});defer removeRace()
+		go func(){defer close(workerDone);<-start;svc.RunExpiry(workerCtx,time.Hour,100,func(e error){select{case workerErrors<-e:default:}})}()
+		defer func(){stopWorker();<-workerDone}()
+		go func(){defer close(manualDone);<-start;manual,manualErr=svc2.SubmitParticipant(ctx,competition.claims,"manual")}();close(start)
+		select{case <-raceScan:case <-ctx.Done():must(ctx.Err(),"actual Worker race query not observed")};must(lock.Commit(),"release race owned PK lock")
+		select{case <-manualDone:case <-ctx.Done():must(ctx.Err(),"manual worker race wait")};must(manualErr,"manual actual RunExpiry race")
+		select{case <-workerLocked:case <-ctx.Done():must(ctx.Err(),"actual Worker paper lock not observed")}
+		// Acquiring the same exact PK after the observed Worker lock proves its
+		// transaction has finished before cancellation; no timer-based inference.
+		barrier,e:=pool.BeginTx(ctx,nil);must(e,"worker completion barrier");defer barrier.Rollback();must(barrier.QueryRowContext(ctx,"SELECT id FROM el_paper WHERE id=? FOR UPDATE",competition.paper.PaperID).Scan(&lockedID),"worker finished transaction barrier");must(barrier.Commit(),"worker completion barrier release")
+		observe,stopObserve:=context.WithTimeout(ctx,15*time.Second);tick:=time.NewTicker(100*time.Millisecond)
+		for count("el_mng_result_run","paper_id",competition.paper.PaperID)!=1{select{case <-observe.Done():must(observe.Err(),"actual RunExpiry race observation");case <-tick.C:}};tick.Stop();stopObserve();stopWorker();<-workerDone
+		select{case e:=<-workerErrors:must(e,"actual RunExpiry race callback");default:}
+		assertRun(competition,manual,140,true);var cr model.ManagementTraitsRuntimeReceipt;must(db.Where("run_id = ?",manual.RunID).Take(&cr).Error,"actual race receipt");if cr.SubmitType!="timeout"{t.Fatal("actual race not timeout")}
+		must(svc.ScanExpiry(ctx,100),"cancelled worker restart scan");duplicate,e:=svc2.SubmitParticipant(ctx,competition.claims,"manual");must(e,"actual race duplicate");if !duplicate.Reused||duplicate.RunID!=manual.RunID{t.Fatal("actual race different run")};assertRun(competition,duplicate,140,true)
+		if count("el_mng_report_revision","run_id",wr.ID)!=0||count("el_mng_report_revision","run_id",manual.RunID)!=0{t.Fatal("worker automatic report")}
+		t.Log("CASE=worker_manual_expiry_race PASS=1 ACTUAL_RUNEXPIRY=1 OBSERVED_WORKER_PK_LOCK=1 WORKER_TX_FINISHED_BEFORE_CANCEL=1 INDEPENDENT_POOLS=2 RUN=1 DIM=13 MODULE=4 RECEIPT=1 TIMEOUT=1 CANCEL_JOIN=1 DUP_REUSED=1 MAIN_HTTP=UNVERIFIED")
+		t.Logf("REMAINING_SERVICE_INTEGRATION_PASS ELAPSED_MS=%d HTTP_UI=UNVERIFIED DATA_SHA_INDEPENDENT=UNVERIFIED",time.Since(began).Milliseconds());return
+	}
+	var pdfRows []map[string]any
+	for i,tc:=range []struct{code,kind string;mode int}{{"00201","candidate",3},{"00201","tester",1},{"00202","candidate",5},{"00202","tester",0}} {
+		o:=create(tc.code,tc.kind);fill(o,140,tc.mode)
+		var r service.ManagementTraitsRuntimeSubmission
+		if i==3 { var wg sync.WaitGroup; results:=make([]service.ManagementTraitsRuntimeSubmission,2); errs:=make([]error,2);start:=make(chan struct{});for j:=0;j<2;j++{wg.Add(1);go func(j int){defer wg.Done();<-start;results[j],errs[j]=svc.SubmitParticipant(ctx,o.claims,"manual")}(j)};close(start);wg.Wait();must(errs[0],"concurrent first");must(errs[1],"concurrent second");if results[0].RunID!=results[1].RunID || results[0].Reused==results[1].Reused {t.Fatal("concurrent single run")};r=results[0]
+		} else { var e error;r,e=svc.SubmitParticipant(ctx,o.claims,"manual");must(e,"full submit") }
+		run:=assertRun(o,r,140,true);if tc.mode>0 && (run.OverallScore==nil||run.OverallScore.String()!=fmt.Sprint((tc.mode-1)*25)){t.Fatal("known score")}
+		again,e:=svc.SubmitParticipant(ctx,o.claims,"manual");must(e,"repeat");if !again.Reused||again.RunID!=r.RunID {t.Fatal("repeat changed run")}
+		name:=tc.code+"-"+tc.kind;var rendered []byte
+		report,e:=svc.GenerateTestReport(ctx,r.RunID,1,filepath.Join(output,"private"),content,func(c context.Context,d service.ManagementTraitsTestReportData)([]byte,error){b,e:=renderManagementTraitsTestWord(template,d);if e!=nil{return nil,e};rendered=b;return libreofficepdf.NewClient(os.Getenv("LIBREOFFICE_PATH")).Convert(c,"mng-test-report.docx",b)});must(e,"server LO actual report")
+		for j:=0;j<2;j++ { got,pdf,e:=svc.ReadTestReportPDF(ctx,report.ID,1,filepath.Join(output,"private"),content);must(e,"service view-download read");if got.FileSHA!=report.FileSHA||sha(pdf)!=report.FileSHA||int64(len(pdf))!=report.FileBytes||!bytes.HasPrefix(pdf,[]byte("%PDF-")){t.Fatal("three SHA mismatch")};if j==0 {must(os.WriteFile(filepath.Join(output,name+".pdf"),pdf,0600),"synthetic evidence PDF")} }
+		file,e:=os.ReadFile(filepath.Join(output,"private",report.FileKey));must(e,"private file");if sha(file)!=report.FileSHA{t.Fatal("private SHA")}
+		must(os.WriteFile(filepath.Join(output,name+".docx"),rendered,0600),"render evidence")
+		var dims []model.ManagementTraitsResultDimension;var modules []model.ManagementTraitsResultModule;var questions []model.ManagementTraitsPaperQuestionSnapshot
+		must(db.Where("run_id = ?",run.ID).Order("display_order").Find(&dims).Error,"dimension facts");must(db.Where("run_id = ?",run.ID).Order("display_order").Find(&modules).Error,"module facts");must(db.Where("paper_id = ?",run.PaperID).Order("v_number").Find(&questions).Error,"raw facts")
+		pdfRows=append(pdfRows,map[string]any{"name":name,"run":run,"dimensions":dims,"modules":modules,"questions":questions,"report":report,"threeSHA":true,"http":false})
+		fmt.Printf("RESTORED_PDF=%s BYTES=%d SHA256=%s SERVICE_NOT_HTTP=1\n",name,report.FileBytes,report.FileSHA)
+	}
+	b,e:=json.MarshalIndent(pdfRows,"","  ");must(e,"evidence JSON");must(os.WriteFile(filepath.Join(output,"reports.json"),b,0600),"evidence receipt")
+	t.Log("RESTORED_FOUR_PDF_560_SAVE_4_RUN_52_DIM_16_MODULE_4_RECEIPT_PASS")
+	for _,n:=range []int{0,3,140} {
+		o:=create("00201","candidate");fill(o,n,3);expire(o)
+		var r service.ManagementTraitsRuntimeSubmission
+		if n==140 { var wg sync.WaitGroup;results:=make([]service.ManagementTraitsRuntimeSubmission,2);errs:=make([]error,2);start:=make(chan struct{});for j:=0;j<2;j++ {wg.Add(1);go func(j int){defer wg.Done();<-start;results[j],errs[j]=svc.SubmitParticipant(ctx,o.claims,"manual")}(j)};close(start);wg.Wait();must(errs[0],"expiry submit first connection");must(errs[1],"expiry submit second connection");if results[0].RunID!=results[1].RunID||results[0].Reused==results[1].Reused {t.Fatal("expiry concurrent duplicate")};r=results[0]
+		} else {var e error;r,e=svc.SubmitParticipant(ctx,o.claims,"manual");must(e,"trusted timeout")}
+		run:=assertRun(o,r,n,n==140);var receipt model.ManagementTraitsRuntimeReceipt;must(db.Where("run_id = ?",r.RunID).Take(&receipt).Error,"receipt");if receipt.SubmitType!="timeout"||receipt.UserTimeSeconds<1500{t.Fatal("trusted timeout receipt")};if n==140 && run.OverallScore.String()!="50"{t.Fatal("timeout changed complete score")};fmt.Printf("RESTORED_EXPIRY_ANSWERED=%d STATUS=%s OFFICIAL_NULL=%t NO_AUTO_PDF=1 CONCURRENT=%t\n",n,run.Status,n<140,n==140)
+	}
+	o:=create("00201","candidate");fill(o,1,3)
+	resume,e:=svc.IssueCandidateResume(ctx,o.exam,o.claims.ParticipantID,o.paper.PaperID);must(e,"resume");rc:=parse(resume.ParticipantToken,service.ManagementTraitsRuntimePaperPurpose);if rc.ExpiresAt-time.Now().Unix()>300||rc.PaperID!=o.paper.PaperID {t.Fatal("resume TTL binding")}
+	if _,e:=svc.IssueCandidateResume(ctx,o.exam,uuid.NewString(),o.paper.PaperID);e==nil{t.Fatal("foreign resume")}
+	end:=time.Now().Add(-time.Minute);must(db.Model(&model.Exam{}).Where("id = ?",o.exam).Update("end_time",end).Error,"own exam end")
+	newOwner,e:=svc.CreatePaper(ctx,o.participant);must(e,"existing exam-end resume");if !newOwner.Deadline.Equal(o.paper.Deadline){t.Fatal("end reset deadline")}
+	_,handled,e:=svc.TryRegisterCandidateIdentity(ctx,service.ManagementTraitsCandidateIdentityRequest{ExamID:o.exam,Name:"MTL new after end"},"");if e==nil||!handled{t.Fatal("end admitted new start")}
+	must(db.Model(&model.Exam{}).Where("id = ?",o.exam).Update("end_time",nil).Error,"restore own exam end")
+	pending,handled,e:=svc.TryRegisterCandidateIdentity(ctx,service.ManagementTraitsCandidateIdentityRequest{ExamID:o.exam,Name:"MTL pending retired"},"");must(e,"pending identity");if !handled{t.Fatal("pending legacy fallback")};pendingClaims:=parse(pending.ParticipantToken,service.ManagementTraitsRuntimeParticipantPurpose)
+	must(db.Model(&model.ManagementTraitsDefinitionBundle{}).Where("id = ?",o.profile.BundleID).Update("status","retired").Error,"own bundle retired")
+	_,e=svc.FillAnswer(ctx,o.claims,o.paper.Questions[1].ID,o.paper.Questions[1].Options[0].ID);must(e,"retired existing save")
+	if _,e:=svc.CreatePaper(ctx,pendingClaims);e==nil{t.Fatal("retired new paper admitted")}
+	_,handled,e=svc.TryRegisterCandidateIdentity(ctx,service.ManagementTraitsCandidateIdentityRequest{ExamID:o.exam,Name:"MTL new retired"},"");if e==nil||!handled{t.Fatal("retired admission")}
+	must(db.Model(&model.ManagementTraitsDefinitionBundle{}).Where("id = ?",o.profile.BundleID).Update("status","revoked").Error,"own revoke")
+	if _,e:=svc.FillAnswer(ctx,o.claims,o.paper.Questions[2].ID,o.paper.Questions[2].Options[0].ID);e==nil{t.Fatal("revoked save")};if _,e:=svc.IssueCandidateResume(ctx,o.exam,o.claims.ParticipantID,o.paper.PaperID);e==nil{t.Fatal("revoked resume")}
+	called:=false;_,e=svc.GenerateTestReport(ctx,fmt.Sprint(pdfRows[0]["report"].(model.ManagementTraitsReportRevision).RunID),1,filepath.Join(output,"private"),content,func(context.Context,service.ManagementTraitsTestReportData)([]byte,error){called=true;return nil,nil});if e==nil||called{t.Fatal("revoked report")}
+	must(db.Model(&model.ManagementTraitsDefinitionBundle{}).Where("id = ?",o.profile.BundleID).Update("status","candidate-current-source").Error,"restore owned bundle")
+	t.Log("RESTORED_RESUME_300S_BINDING_END_EXISTING_RETIRED_REVOKED_PASS; UI_NOT_TESTED")
+	w:=create("00202","candidate");expire(w)
+	workerCtx,stop:=context.WithCancel(ctx);var workerErr error;workerDone:=make(chan struct{})
+	go func(){defer close(workerDone);svc.RunExpiry(workerCtx,time.Hour,100,func(e error){workerErr=e});}()
+	// Finite observation only; no sleep or unbounded polling.
+	deadlineCtx,done:=context.WithTimeout(ctx,15*time.Second);defer done()
+	var found model.ManagementTraitsResultRun
+	for attempts:=0;attempts<100 && deadlineCtx.Err()==nil;attempts++ { if db.WithContext(deadlineCtx).Where("paper_id = ?",w.paper.PaperID).Take(&found).Error==nil {break} }
+	stop();<-workerDone;if found.ID==""||workerErr!=nil{t.Fatal("restored worker immediate scan not observed")}
+	assertRun(w,service.ManagementTraitsRuntimeSubmission{RunID:found.ID,Answered:0,Complete:false},0,false)
+	t.Log("RESTORED_OFFLINE_WORKER_STARTUP_PASS; ACTUAL_SYSTEMD_SECOND_RESTART_SKIPPED_NO_HTTP_SESSION")
+}

@@ -1,0 +1,37 @@
+package main
+
+import (
+ "net/http/httptest"
+ "strings"
+ "testing"
+ "github.com/gin-gonic/gin"
+ "github.com/talent-assessment/refactored/internal/config"
+ "github.com/talent-assessment/refactored/internal/handler"
+ "github.com/talent-assessment/refactored/internal/middleware"
+ "github.com/talent-assessment/refactored/internal/service"
+)
+
+// MT-DEPLOY-PROBE: actual registered handlers and JWT middleware, no DB/secret.
+func TestBugDeploymentRegisteredAuthenticationProtocol(t *testing.T) {
+ gin.SetMode(gin.TestMode)
+ cfg:=&config.Config{}
+ cfg.Jwt.Header="Authorization"
+ cfg.Jwt.Secret="synthetic-deployment-test-only"
+ r:=gin.New()
+ r.Use(middleware.JWT(cfg,service.NewAuthService(cfg,nil,nil)))
+ handler.NewManagementTraitsRuntimeHandler(nil,cfg).RegisterRoutes(r.Group("/exam/api/management-traits"))
+ for _,tc:=range []struct{name,path,body string; want int}{
+  {"empty_binding","/participant/paper-detail",`{}`,400},
+  {"create_auth","/participant/create-paper",`{"examId":"deployment-invalid"}`,401},
+  {"detail_auth","/participant/paper-detail",`{"paperId":"deployment-invalid"}`,401},
+  {"fill_auth","/participant/fill-answer",`{"paperId":"deployment-invalid","paperQuestionId":"deployment-invalid","optionId":"deployment-invalid"}`,401},
+  {"submit_auth","/participant/submit",`{"paperId":"deployment-invalid","submitType":"manual"}`,401},
+  {"freeze_auth","/profile/freeze",`{"examId":"deployment-invalid"}`,401},
+  {"results_auth","/results/list",`{"examId":"deployment-invalid"}`,401},
+ } { t.Run(tc.name,func(t *testing.T){
+  req:=httptest.NewRequest("POST","/exam/api/management-traits"+tc.path,strings.NewReader(tc.body))
+  req.Header.Set("Content-Type","application/json")
+  w:=httptest.NewRecorder();r.ServeHTTP(w,req)
+  if w.Code!=tc.want {t.Fatalf("HTTP=%d want=%d",w.Code,tc.want)}
+ }) }
+}

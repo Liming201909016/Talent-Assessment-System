@@ -357,14 +357,14 @@ func (h *MbtiHandler) Submit(c *gin.Context) {
 	// FB-011: 增加 panic recover，防止后台 goroutine panic 影响整体进程
 	// FB-005: reportHandler 未注入时记录 ERROR（部署配置问题），不让前端误以为报告会自动生成
 	if h.reportHandler != nil {
-		go func() {
+		managementTraitsLegacyBackground(c, func() {
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("mbti report goroutine panic", "paperId", b.PaperID, "panic", r)
 				}
 			}()
 			h.reportHandler.GenerateReportByPaperID(b.PaperID)
-		}()
+		})
 	} else {
 		slog.Error("mbti.submit: reportHandler not injected, report will NOT be generated",
 			"paperId", b.PaperID, "mbtiType", mbtiType)

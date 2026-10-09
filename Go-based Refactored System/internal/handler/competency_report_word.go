@@ -59,6 +59,20 @@ var (
 	phase1RadarMaximum           = regexp.MustCompile(`<c:max val="[^"]*"/>`)
 	phase1RadarMajorUnit         = regexp.MustCompile(`<c:majorUnit val="[^"]*"/>`)
 	phase1RadarMajorGridlines    = regexp.MustCompile(`(?s)<c:majorGridlines(?:>.*?</c:majorGridlines>|\s*/>)`)
+	phase1GroupChartCategory     = regexp.MustCompile(`(?s)(<c:cat>.*?<c:strCache>).*?(</c:strCache>.*?</c:cat>)`)
+	phase1GroupChartSeriesLabels = regexp.MustCompile(`(?s)<c:dLbls>.*?</c:dLbls>`)
+	phase1RadarCategoryAxis      = regexp.MustCompile(`(?s)<c:catAx>.*?</c:catAx>`)
+	phase1RadarDelete            = regexp.MustCompile(`<c:delete val="[^"]*"/>`)
+	phase1RadarLabels            = regexp.MustCompile(`(?s)<c:dLbls>.*?</c:dLbls>`)
+	phase1ChartPointLabel        = regexp.MustCompile(`(?s)<c:dLbl>.*?</c:dLbl>`)
+	phase1ChartLabelText         = regexp.MustCompile(`(?s)<c:tx>.*?</c:tx>`)
+	phase1ChartNumberFormat      = regexp.MustCompile(`<c:numFmt\b[^>]*/>`)
+	phase1ChartShowLegendKey     = regexp.MustCompile(`<c:showLegendKey\b[^>]*/>`)
+	phase1ChartShowCategoryName  = regexp.MustCompile(`<c:showCatName\b[^>]*/>`)
+	phase1ChartShowSeriesName    = regexp.MustCompile(`<c:showSerName\b[^>]*/>`)
+	phase1ChartShowPercent       = regexp.MustCompile(`<c:showPercent\b[^>]*/>`)
+	phase1ExternalRelationship   = regexp.MustCompile(`(?s)<Relationship\b[^>]*\bTargetMode="External"[^>]*/>`)
+	phase1ExternalChartData      = regexp.MustCompile(`(?s)<c:externalData\b.*?</c:externalData>|<c:externalData\b[^>]*/>`)
 )
 
 var phase1DoughnutTitlePositions = map[int][2]string{
@@ -93,6 +107,7 @@ type phase1DocumentConverter interface {
 
 type phase1WordReportRenderer struct {
 	templatePath     string
+	v2TemplatePath   string
 	converter        phase1DocumentConverter
 	timeout          time.Duration
 	fallbackChromium bool
@@ -134,7 +149,7 @@ func newPhase1WordReportRenderer(cfg *config.Config) *phase1WordReportRenderer {
 		timeout = 90 * time.Second
 	}
 	_, calibrateLabels := converter.(*libreofficepdf.Client)
-	return &phase1WordReportRenderer{templatePath: cfg.Phase1WordReport.TemplatePath, converter: converter, timeout: timeout, fallbackChromium: cfg.Phase1WordReport.FallbackChromium, calibrateLabels: calibrateLabels}
+	return &phase1WordReportRenderer{templatePath: cfg.Phase1WordReport.TemplatePath, v2TemplatePath: cfg.Phase1WordReport.V2TemplatePath, converter: converter, timeout: timeout, fallbackChromium: cfg.Phase1WordReport.FallbackChromium, calibrateLabels: calibrateLabels}
 }
 
 func (r *phase1WordReportRenderer) Render(ctx context.Context, paperID string, data map[string]any) ([]byte, error) {
@@ -290,7 +305,7 @@ func buildPhase1WordTemplateData(data map[string]any) (map[string]string, map[st
 	tokens["{{__validity.status}}"] = strings.TrimSpace(payload.Validity.Status)
 	charts := make(map[string][]float64, 12)
 	groupScores := make([]float64, 0, 2)
-	for _, code := range []string{"general_ability", "psychological_quality"} {
+	for _, code := range []string{"psychological_quality", "general_ability"} {
 		group := groupsByCode[code]
 		score := group.GroupScore.InexactFloat64()
 		groupScores = append(groupScores, score)
@@ -337,9 +352,13 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 	chartValuesByPart := make(map[string][]float64, len(charts))
 	doughnutChartParts := make(map[string]int, 10)
 	radarChartPart := ""
+	groupOverviewChartPart := ""
 	if len(businessChartParts) == 0 {
 		for index, chart := range phase1TemplateChartRegistry() {
 			chartValuesByPart[chart.LegacyPart] = charts[chart.Key]
+			if chart.Key == "chart.group.overview" {
+				groupOverviewChartPart = chart.LegacyPart
+			}
 			if chart.Key == "chart.dimension.radar" {
 				radarChartPart = chart.LegacyPart
 			}
@@ -351,6 +370,9 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 		for index, chart := range phase1TemplateChartRegistry() {
 			part := businessChartParts[chart.Key]
 			chartValuesByPart[part] = charts[chart.Key]
+			if chart.Key == "chart.group.overview" {
+				groupOverviewChartPart = part
+			}
 			if chart.Key == "chart.dimension.radar" {
 				radarChartPart = part
 			}
@@ -405,6 +427,11 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 			if err != nil {
 				return nil, err
 			}
+		} else if strings.HasPrefix(file.Name, "word/footer") && strings.HasSuffix(file.Name, ".xml") {
+			body, err = normalizePhase1PageNumberFooter(body)
+			if err != nil {
+				return nil, fmt.Errorf("更新一期Word报告页码失败：%s", file.Name)
+			}
 		} else if file.Name == phase1ChartWorkbookPath {
 			body, err = replacePhase1EmbeddedChartWorkbook(body, charts)
 			if err != nil {
@@ -420,6 +447,16 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 				if err != nil {
 					return nil, fmt.Errorf("更新一期Word报告雷达图网格失败：%s", file.Name)
 				}
+				body, err = normalizePhase1RadarLabels(body)
+				if err != nil {
+					return nil, fmt.Errorf("更新一期Word报告雷达图标签失败：%s", file.Name)
+				}
+			}
+			if file.Name == groupOverviewChartPart {
+				body, err = normalizePhase1GroupOverviewChart(body, values)
+				if err != nil {
+					return nil, fmt.Errorf("更新一期Word报告一级维度图表失败：%s：%v", file.Name, err)
+				}
 			}
 			if chartIndex, ok := doughnutChartParts[file.Name]; ok {
 				body, err = normalizePhase1DoughnutChartLabel(body, chartIndex, values[0])
@@ -427,6 +464,9 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 					return nil, fmt.Errorf("更新一期Word报告环形图格式失败：%s", file.Name)
 				}
 			}
+			body = removePhase1ChartExternalData(body)
+		} else if strings.HasPrefix(file.Name, "word/charts/_rels/") && strings.HasSuffix(file.Name, ".rels") {
+			body = removePhase1ChartExternalRelationships(body)
 		}
 		method := uint16(zip.Deflate)
 		if strings.HasSuffix(file.Name, "/") || len(body) == 0 {
@@ -444,6 +484,191 @@ func renderPhase1WordTemplate(template []byte, tokens map[string]string, charts 
 		return nil, errors.New("完成一期Word报告文件失败")
 	}
 	return output.Bytes(), nil
+}
+
+func removePhase1ChartExternalRelationships(relationships []byte) []byte {
+	return phase1ExternalRelationship.ReplaceAll(relationships, nil)
+}
+
+func removePhase1ChartExternalData(chart []byte) []byte {
+	return phase1ExternalChartData.ReplaceAll(chart, nil)
+}
+
+func normalizePhase1PageNumberFooter(footer []byte) ([]byte, error) {
+	content := string(footer)
+	upper := strings.ToUpper(content)
+	if !strings.Contains(upper, "NUMPAGES") {
+		return footer, nil
+	}
+	for strings.Contains(upper, "NUMPAGES") {
+		instruction := strings.Index(upper, "NUMPAGES")
+		beginMarker := strings.LastIndex(upper[:instruction], `W:FLDCHARTYPE="BEGIN"`)
+		if beginMarker < 0 {
+			return nil, errors.New("总页数字段起点无效")
+		}
+		fieldStart := lastPhase1WordRunStart(upper[:beginMarker])
+		endMarkerOffset := strings.Index(upper[instruction:], `W:FLDCHARTYPE="END"`)
+		if fieldStart < 0 || endMarkerOffset < 0 {
+			return nil, errors.New("总页数字段结构无效")
+		}
+		endMarker := instruction + endMarkerOffset
+		fieldEndOffset := strings.Index(upper[endMarker:], "</W:R>")
+		if fieldEndOffset < 0 {
+			return nil, errors.New("总页数字段终点无效")
+		}
+		fieldEnd := endMarker + fieldEndOffset + len("</w:r>")
+		removeStart := fieldStart
+		previousRunEnd := strings.LastIndex(upper[:fieldStart], "</W:R>")
+		if previousRunEnd >= 0 {
+			previousRunStart := lastPhase1WordRunStart(upper[:previousRunEnd])
+			if previousRunStart >= 0 {
+				separatorRun := content[previousRunStart : previousRunEnd+len("</w:r>")]
+				textMatches := wordTextPattern.FindAllStringSubmatch(separatorRun, -1)
+				if len(textMatches) == 1 && strings.TrimSpace(textMatches[0][2]) == "/" {
+					removeStart = previousRunStart
+				}
+			}
+		}
+		content = content[:removeStart] + content[fieldEnd:]
+		upper = strings.ToUpper(content)
+	}
+	if !strings.Contains(upper, ">PAGE<") && !strings.Contains(upper, "> PAGE <") {
+		return nil, errors.New("当前页字段PAGE不存在")
+	}
+	return []byte(content), nil
+}
+
+func lastPhase1WordRunStart(content string) int {
+	withAttributes := strings.LastIndex(content, "<W:R ")
+	withoutAttributes := strings.LastIndex(content, "<W:R>")
+	if withoutAttributes > withAttributes {
+		return withoutAttributes
+	}
+	return withAttributes
+}
+
+func normalizePhase1GroupOverviewChart(chart []byte, values []float64) ([]byte, error) {
+	if len(values) != 2 {
+		return nil, fmt.Errorf("一级维度分数数量=%d", len(values))
+	}
+	if !bytes.Contains(chart, []byte("pie3DChart")) {
+		return chart, nil
+	}
+	content := string(chart)
+	if !phase1GroupChartCategory.MatchString(content) {
+		return nil, errors.New("一级维度饼图分类缓存不存在")
+	}
+	categories := `<c:ptCount val="2"/><c:pt idx="0"><c:v>心理素养</c:v></c:pt><c:pt idx="1"><c:v>通用能力</c:v></c:pt>`
+	content = phase1GroupChartCategory.ReplaceAllString(content, `${1}`+categories+`${2}`)
+	if phase1GroupChartSeriesLabels.MatchString(content) {
+		content = phase1GroupChartSeriesLabels.ReplaceAllStringFunc(content, func(labels string) string {
+			return string(normalizePhase1ChartDataLabels([]byte(labels), true, true))
+		})
+	} else {
+		seriesEnd := strings.Index(content, "</c:ser>")
+		if seriesEnd < 0 {
+			return nil, errors.New("一级维度饼图数据系列不存在")
+		}
+		labels := normalizePhase1ChartDataLabels([]byte(`<c:dLbls/>`), true, false)
+		content = content[:seriesEnd] + string(labels) + content[seriesEnd:]
+	}
+	return []byte(content), nil
+}
+
+func normalizePhase1ChartDataLabels(labels []byte, visible, removeManualText bool) []byte {
+	if bytes.Equal(labels, []byte(`<c:dLbls/>`)) {
+		labels = []byte(`<c:dLbls></c:dLbls>`)
+	}
+	if removeManualText {
+		labels = phase1ChartPointLabel.ReplaceAllFunc(labels, func(label []byte) []byte {
+			return phase1ChartLabelText.ReplaceAll(label, nil)
+		})
+	}
+	labels = setPhase1ChartLabelElement(labels, phase1ChartNumberFormat, `<c:numFmt formatCode="0.00" sourceLinked="0"/>`)
+	labels = setPhase1ChartLabelElement(labels, phase1ChartShowLegendKey, `<c:showLegendKey val="0"/>`)
+	showValue := `<c:showVal val="0"/>`
+	if visible {
+		showValue = `<c:showVal val="1"/>`
+	}
+	labels = setPhase1ChartLabelElement(labels, phase1ChartShowValue, showValue)
+	labels = setPhase1ChartLabelElement(labels, phase1ChartShowCategoryName, `<c:showCatName val="0"/>`)
+	labels = setPhase1ChartLabelElement(labels, phase1ChartShowSeriesName, `<c:showSerName val="0"/>`)
+	labels = setPhase1ChartLabelElement(labels, phase1ChartShowPercent, `<c:showPercent val="0"/>`)
+	return labels
+}
+
+func setPhase1ChartLabelElement(labels []byte, pattern *regexp.Regexp, element string) []byte {
+	if pattern.Match(labels) {
+		return pattern.ReplaceAll(labels, []byte(element))
+	}
+	searchAt := 0
+	if pointLabelEnd := bytes.LastIndex(labels, []byte(`</c:dLbl>`)); pointLabelEnd >= 0 {
+		searchAt = pointLabelEnd + len(`</c:dLbl>`)
+	}
+	anchors := [][]byte{[]byte(`</c:dLbls>`)}
+	switch {
+	case strings.HasPrefix(element, `<c:numFmt`):
+		anchors = append(anchors, []byte(`<c:spPr`), []byte(`<c:txPr`), []byte(`<c:dLblPos`), []byte(`<c:showLegendKey`), []byte(`<c:showVal`), []byte(`<c:extLst`))
+	case strings.HasPrefix(element, `<c:showLegendKey`):
+		anchors = append(anchors, []byte(`<c:showVal`), []byte(`<c:showCatName`), []byte(`<c:showSerName`), []byte(`<c:showPercent`), []byte(`<c:showBubbleSize`), []byte(`<c:showLeaderLines`), []byte(`<c:extLst`))
+	case strings.HasPrefix(element, `<c:showVal`):
+		anchors = append(anchors, []byte(`<c:showCatName`), []byte(`<c:showSerName`), []byte(`<c:showPercent`), []byte(`<c:showBubbleSize`), []byte(`<c:showLeaderLines`), []byte(`<c:extLst`))
+	case strings.HasPrefix(element, `<c:showCatName`):
+		anchors = append(anchors, []byte(`<c:showSerName`), []byte(`<c:showPercent`), []byte(`<c:showBubbleSize`), []byte(`<c:showLeaderLines`), []byte(`<c:extLst`))
+	case strings.HasPrefix(element, `<c:showSerName`):
+		anchors = append(anchors, []byte(`<c:showPercent`), []byte(`<c:showBubbleSize`), []byte(`<c:showLeaderLines`), []byte(`<c:extLst`))
+	case strings.HasPrefix(element, `<c:showPercent`):
+		anchors = append(anchors, []byte(`<c:showBubbleSize`), []byte(`<c:showLeaderLines`), []byte(`<c:extLst`))
+	}
+	insertAt := len(labels)
+	for _, anchor := range anchors {
+		if offset := bytes.Index(labels[searchAt:], anchor); offset >= 0 && searchAt+offset < insertAt {
+			insertAt = searchAt + offset
+		}
+	}
+	if insertAt == len(labels) {
+		return labels
+	}
+	result := make([]byte, 0, len(labels)+len(element))
+	result = append(result, labels[:insertAt]...)
+	result = append(result, element...)
+	result = append(result, labels[insertAt:]...)
+	return result
+}
+
+func normalizePhase1RadarLabels(chart []byte) ([]byte, error) {
+	if !bytes.Contains(chart, []byte("<c:radarChart>")) {
+		return nil, errors.New("雷达图结构无效")
+	}
+	content := string(chart)
+	axes := phase1RadarCategoryAxis.FindAllString(content, -1)
+	if len(axes) == 0 {
+		return nil, errors.New("雷达图分类轴不存在")
+	}
+	for _, axis := range axes {
+		normalized := axis
+		if phase1RadarDelete.MatchString(normalized) {
+			normalized = phase1RadarDelete.ReplaceAllString(normalized, `<c:delete val="0"/>`)
+		} else {
+			normalized = strings.Replace(normalized, "<c:catAx>", `<c:catAx><c:delete val="0"/>`, 1)
+		}
+		content = strings.Replace(content, axis, normalized, 1)
+	}
+	matches := phase1RadarLabels.FindAllStringIndex(content, -1)
+	if len(matches) == 0 {
+		return nil, errors.New("雷达图数据标签不存在")
+	}
+	var rebuilt strings.Builder
+	last := 0
+	for index, match := range matches {
+		rebuilt.WriteString(content[last:match[0]])
+		labels := normalizePhase1ChartDataLabels([]byte(content[match[0]:match[1]]), index == 0, false)
+		rebuilt.Write(labels)
+		last = match[1]
+	}
+	rebuilt.WriteString(content[last:])
+	content = rebuilt.String()
+	return []byte(content), nil
 }
 
 func normalizePhase1RadarGrid(chart []byte) ([]byte, error) {
@@ -574,6 +799,22 @@ func replacePhase1EmbeddedChartWorkbook(workbook []byte, charts map[string][]flo
 		if legacyWorkbook {
 			sheet, cell = "Sheet1", fmt.Sprintf("B%d", index+2)
 		}
+		groupCode, groupName := "group.psychological_quality", "心理素养"
+		if index == 1 {
+			groupCode, groupName = "group.general_ability", "通用能力"
+		}
+		if legacyWorkbook {
+			if err := book.SetCellValue(sheet, fmt.Sprintf("A%d", index+2), groupName); err != nil {
+				return nil, errors.New("更新一期Word内嵌一级维度分类失败")
+			}
+		} else {
+			if err := book.SetCellValue(sheet, fmt.Sprintf("A%d", index+2), groupCode); err != nil {
+				return nil, errors.New("更新一期Word内嵌一级维度业务键失败")
+			}
+			if err := book.SetCellValue(sheet, fmt.Sprintf("B%d", index+2), groupName); err != nil {
+				return nil, errors.New("更新一期Word内嵌一级维度分类失败")
+			}
+		}
 		if err := book.SetCellValue(sheet, cell, value); err != nil {
 			return nil, errors.New("更新一期Word内嵌一级维度数据失败")
 		}
@@ -673,7 +914,12 @@ func filterPhase1WordProfileTable(document []byte, requiredFields string) ([]byt
 		"participant.telephone": "telephone", "participant.affiliation": "affiliation", "participant.post": "post",
 	}
 	content := string(document)
-	profileAt := strings.Index(content, `w:val="participant.name"`)
+	profileAt := -1
+	for tag := range tagToField {
+		if index := strings.Index(content, `w:val="`+tag+`"`); index >= 0 && (profileAt < 0 || index < profileAt) {
+			profileAt = index
+		}
+	}
 	if profileAt < 0 {
 		return nil, errors.New("一期Word报告模板缺少个人信息表")
 	}
@@ -686,41 +932,68 @@ func filterPhase1WordProfileTable(document []byte, requiredFields string) ([]byt
 	table := content[tableStart:tableEnd]
 	rowPattern := regexp.MustCompile(`(?s)<w:tr\b.*?</w:tr>`)
 	cellPattern := regexp.MustCompile(`(?s)<w:tc\b.*?</w:tc>`)
+	gridSpanPattern := regexp.MustCompile(`<w:gridSpan\b[^>]*/>`)
 	rows := rowPattern.FindAllStringIndex(table, -1)
-	for index := len(rows) - 1; index >= 0; index-- {
-		bounds := rows[index]
+	participantStart := -1
+	participantEnd := -1
+	rowPrefix := ""
+	nameCell := ""
+	otherCells := make([]string, 0, 5)
+	for _, bounds := range rows {
 		row := table[bounds[0]:bounds[1]]
 		participantRow := false
-		keptCells := make([]string, 0, 2)
 		for _, cellBounds := range cellPattern.FindAllStringIndex(row, -1) {
 			cell := row[cellBounds[0]:cellBounds[1]]
-			keep := true
-			participantCell := false
-			for tag, field := range tagToField {
+			participantTag := ""
+			field := ""
+			for tag, mappedField := range tagToField {
 				if strings.Contains(cell, `w:val="`+tag+`"`) {
 					participantRow = true
-					participantCell = true
-					keep = configured[field]
+					participantTag = tag
+					field = mappedField
 					break
 				}
 			}
-			if participantCell && keep {
-				keptCells = append(keptCells, cell)
+			if participantTag == "" || !configured[field] {
+				continue
+			}
+			if participantTag == "participant.name" {
+				nameCell = cell
+			} else {
+				otherCells = append(otherCells, cell)
 			}
 		}
 		if !participantRow {
 			continue
 		}
-		if len(keptCells) == 0 {
-			table = table[:bounds[0]] + table[bounds[1]:]
-			continue
+		if participantStart < 0 {
+			participantStart = bounds[0]
+			rowPrefix = row[:strings.Index(row, ">")+1]
 		}
-		if len(keptCells) == 1 && !strings.Contains(keptCells[0], "<w:gridSpan") {
-			keptCells[0] = strings.Replace(keptCells[0], "</w:tcPr>", `<w:gridSpan w:val="2"/></w:tcPr>`, 1)
+		participantEnd = bounds[1]
+	}
+	compactRows := make([]string, 0, 1+(len(otherCells)+1)/2)
+	if nameCell != "" {
+		if gridSpanPattern.MatchString(nameCell) {
+			nameCell = gridSpanPattern.ReplaceAllString(nameCell, `<w:gridSpan w:val="2"/>`)
+		} else {
+			nameCell = strings.Replace(nameCell, "</w:tcPr>", `<w:gridSpan w:val="2"/></w:tcPr>`, 1)
 		}
-		rowStartEnd := strings.Index(row, ">") + 1
-		row = row[:rowStartEnd] + strings.Join(keptCells, "") + "</w:tr>"
-		table = table[:bounds[0]] + row + table[bounds[1]:]
+		compactRows = append(compactRows, rowPrefix+nameCell+"</w:tr>")
+	}
+	for index := 0; index < len(otherCells); index += 2 {
+		end := index + 2
+		if end > len(otherCells) {
+			end = len(otherCells)
+		}
+		cells := make([]string, 0, end-index)
+		for _, cell := range otherCells[index:end] {
+			cells = append(cells, gridSpanPattern.ReplaceAllString(cell, ""))
+		}
+		compactRows = append(compactRows, rowPrefix+strings.Join(cells, "")+"</w:tr>")
+	}
+	if participantStart >= 0 {
+		table = table[:participantStart] + strings.Join(compactRows, "") + table[participantEnd:]
 	}
 	return []byte(content[:tableStart] + table + content[tableEnd:]), nil
 }

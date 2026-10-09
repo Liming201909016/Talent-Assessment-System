@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/config"
 	"github.com/talent-assessment/refactored/internal/model"
+	"github.com/talent-assessment/refactored/internal/service"
 )
 
 func TestBugFB045_ParticipantCannotClaimTimeout(t *testing.T) {
@@ -173,11 +175,50 @@ func TestCompetencyRuntimeRoutes(t *testing.T) {
 		`POST("/submit", competencyRuntimeH.Submit)`,
 		`POST("/paging", competencyRuntimeH.ResultsPaging)`,
 		`POST("/detail", competencyRuntimeH.ResultDetail)`,
+		`POST("/recompute-v2", competencyRuntimeH.RecomputePhase1V2)`,
 		`GET("/competency/internal/report-data", competencyRuntimeH.InternalReportData)`,
 	} {
 		if !strings.Contains(src, required) {
 			t.Errorf("router missing %q", required)
 		}
+	}
+}
+
+func TestBugFB184_HistoricalRecomputeRequiresAdministratorAndRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &CompetencyRuntimeHandler{cfg: &config.Config{}}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("loginUser", &model.LoginUser{UserID: 99, Permissions: []string{"exam:list"}})
+		c.Next()
+	})
+	router.POST("/recompute-v2", h.RecomputePhase1V2)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/recompute-v2", bytes.NewBufferString(`{"paperId":"paper-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestBugFB185E_ResultRunErrorsDoNotExposeDatabaseDetails
+// 对应：docs/regression-tests.md #FB-185E
+func TestBugFB185E_ResultRunErrorsDoNotExposeDatabaseDetails(t *testing.T) {
+	internal := errors.New("Error 1146: table el_competency_result_run doesn't exist; SELECT * FROM el_competency_result_run")
+	err := errors.Join(service.ErrPhase1V2ResultRunUnavailable, internal)
+	message := competencyRuntimeErrorMessage(err)
+	if message != service.ErrPhase1V2ResultRunUnavailable.Error() {
+		t.Fatalf("public message=%q", message)
+	}
+	for _, secret := range []string{"1146", "el_competency_result_run", "SELECT"} {
+		if strings.Contains(message, secret) {
+			t.Fatalf("public message leaked %q: %s", secret, message)
+		}
+	}
+	reportGenerate := extractFunctionBody(t, readSourceFile(t, "competency_report.go"), "func (h *CompetencyReportHandler) Generate(")
+	if !strings.Contains(reportGenerate, "competencyRuntimeErrorMessage") {
+		t.Fatal("v2 report generation bypasses the stable result-run error mapper")
 	}
 }
 

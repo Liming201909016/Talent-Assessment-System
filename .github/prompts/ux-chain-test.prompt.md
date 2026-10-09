@@ -179,7 +179,7 @@ const operations = await page.evaluate(() => {
 
 ## 实施提示
 
-如果 Puppeteer 脚本未实现自动枚举，可参考 `scripts/test/screenshot-chain-test.js` 现有框架，扩展添加：
+如果浏览器脚本未实现自动枚举，可参考 `scripts/test/competency-mobile-ui-test.js` 的 Playwright 响应式断言框架，扩展添加：
 - `getPageOperations(page)` — 枚举所有操作项
 - `analyzeUXDensity(page)` — 计算密度指标
 - `analyzeColorPalette(page)` — 提取使用的颜色列表

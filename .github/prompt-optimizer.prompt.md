@@ -151,7 +151,7 @@ tools:
 - exam/detail 返回扁平结构（含 repoList[], departIds[]）
 
 ## 验证标准
-- chain-batch.js 中 exam 模块 CRUD 测试仍通过
+- Go handler 全量测试与相关前端 Vitest 回归仍通过
 - 新增 API 可通过 curl 验证
 
 ## 注意事项

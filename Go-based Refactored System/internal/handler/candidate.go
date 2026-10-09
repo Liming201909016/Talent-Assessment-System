@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/config"
+	"github.com/talent-assessment/refactored/internal/service"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"gorm.io/gorm"
 )
@@ -22,12 +23,13 @@ import (
 // CandidateHandler 对齐 Java CandidateController：/exam/api/candidate/*
 // 用于开放考试（is_open=1）的考生管理，与 tester（封闭考试）平行。
 type CandidateHandler struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db                      *gorm.DB
+	cfg                     *config.Config
+	managementTraitsRuntime *service.ManagementTraitsRuntimeService
 }
 
-func NewCandidateHandler(db *gorm.DB, cfg *config.Config) *CandidateHandler {
-	return &CandidateHandler{db: db, cfg: cfg}
+func NewCandidateHandler(db *gorm.DB, cfg *config.Config, runtimeServices ...*service.ManagementTraitsRuntimeService) *CandidateHandler {
+	return &CandidateHandler{db: db, cfg: cfg, managementTraitsRuntime: managementTraitsIdentityService(db, cfg, runtimeServices...)}
 }
 
 // Candidate 对齐 el_candidate
@@ -59,6 +61,9 @@ func (Candidate) TableName() string { return "el_candidate" }
 
 // POST /exam/api/candidate/save
 func (h *CandidateHandler) Save(c *gin.Context) {
+	if h.TryManagementTraitsCandidateSave(c) {
+		return
+	}
 	var b struct {
 		ID          string      `json:"id"`
 		ExamID      string      `json:"examId"`
@@ -635,8 +640,8 @@ func (h *CandidateHandler) PdfPersistence(c *gin.Context) {
 		response.RestErr(c, "PDF文件保存失败")
 		return
 	}
-	// 异步压缩 PDF（ghostscript），不阻塞响应
-	go compressPDF(saved)
+	// 保持在请求冻结 gate 内完成压缩，避免响应后继续覆盖受保护文件。
+	compressPDF(saved)
 	one := 1
 	now := time.Now()
 	ca.PdfPath = &saved

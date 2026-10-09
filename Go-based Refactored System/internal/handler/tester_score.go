@@ -486,8 +486,8 @@ func (h *TesterHandler) PdfPersistence(c *gin.Context) {
 		response.AjaxErr(c, "pdf存储失败")
 		return
 	}
-	// 异步压缩 PDF（ghostscript），不阻塞响应
-	go compressPDF(saved)
+	// 保持在请求冻结 gate 内完成压缩，避免响应后继续覆盖受保护文件。
+	compressPDF(saved)
 
 	te.PdfPath = &saved
 	one := 1
@@ -552,6 +552,9 @@ func (h *TesterHandler) LoginForm(c *gin.Context) {
 	examID := b.ExamID
 	if examID == "" && te.ExamID != nil {
 		examID = *te.ExamID
+	}
+	if h.TryManagementTraitsTesterLogin(c, examID, te, b.Password) {
+		return
 	}
 	if examID != "" {
 		var examState int

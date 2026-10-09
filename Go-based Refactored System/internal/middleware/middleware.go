@@ -106,6 +106,11 @@ func IsAnonymousMethod(method, path string) bool {
 	}
 	if method == "POST" {
 		switch path {
+		case "/exam/api/management-traits/participant/create-paper",
+			"/exam/api/management-traits/participant/paper-detail",
+			"/exam/api/management-traits/participant/fill-answer",
+			"/exam/api/management-traits/participant/submit":
+			return true
 		case "/exam/api/competency/participant/create-paper",
 			"/exam/api/competency/participant/paper-detail",
 			"/exam/api/competency/participant/fill-answer",

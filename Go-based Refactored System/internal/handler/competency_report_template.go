@@ -24,6 +24,7 @@ import (
 )
 
 const phase1WordTemplateFileName = "competency-phase1-report.docx"
+const phase1V2WordTemplateFileName = "competency-phase1-report-v2.docx"
 
 type phase1WordTemplateContract struct {
 	SchemaVersion     string `json:"schemaVersion"`
@@ -71,6 +72,124 @@ func (h *CompetencyReportHandler) phase1WordTemplatePath() (string, error) {
 		return "", errors.New("一期Word报告模板路径无效")
 	}
 	return filepath.Clean(path), nil
+}
+
+func (h *CompetencyReportHandler) phase1V2WordTemplatePath() (string, error) {
+	if h == nil || h.examH == nil || h.examH.cfg == nil {
+		return "", errors.New("一期v2 Word报告模板未配置")
+	}
+	path := strings.TrimSpace(h.examH.cfg.Phase1WordReport.V2TemplatePath)
+	if path == "" || !strings.EqualFold(filepath.Ext(path), ".docx") {
+		return "", errors.New("一期v2 Word报告模板路径无效")
+	}
+	return filepath.Clean(path), nil
+}
+
+func (h *CompetencyReportHandler) Phase1V2TemplateInfo(c *gin.Context) {
+	if _, ok := h.templateIdentity(c); !ok {
+		return
+	}
+	path, err := h.phase1V2WordTemplatePath()
+	if err != nil {
+		response.RestErr(c, err.Error())
+		return
+	}
+	h.templateMu.RLock()
+	defer h.templateMu.RUnlock()
+	info, err := readPhase1V2WordTemplateInfo(path)
+	if err != nil {
+		response.RestErr(c, err.Error())
+		return
+	}
+	response.Rest(c, info)
+}
+
+func (h *CompetencyReportHandler) DownloadPhase1V2Template(c *gin.Context) {
+	if _, ok := h.templateIdentity(c); !ok {
+		return
+	}
+	path, err := h.phase1V2WordTemplatePath()
+	if err != nil {
+		response.RestErr(c, err.Error())
+		return
+	}
+	h.templateMu.RLock()
+	defer h.templateMu.RUnlock()
+	file, err := os.Open(path)
+	if err != nil {
+		response.RestErr(c, "一期v2 Word报告模板不存在")
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || info.IsDir() {
+		response.RestErr(c, "读取一期v2 Word报告模板失败")
+		return
+	}
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+	c.Header("Content-Disposition", "attachment; filename="+phase1V2WordTemplateFileName+"; filename*=UTF-8''"+encodeRFC5987FileName(phase1V2WordTemplateFileName))
+	c.Header("Content-Length", fmt.Sprintf("%d", info.Size()))
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	_, _ = io.Copy(c.Writer, file)
+}
+
+func (h *CompetencyReportHandler) UploadPhase1V2Template(c *gin.Context) {
+	if _, ok := h.templateIdentity(c); !ok {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPhase1WordTemplateBytes+(1<<20))
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		response.RestErr(c, "请选择一期v2 Word报告模板")
+		return
+	}
+	if !strings.EqualFold(filepath.Ext(fileHeader.Filename), ".docx") || fileHeader.Size <= 0 || fileHeader.Size > maxPhase1WordTemplateBytes {
+		response.RestErr(c, "只支持20MB以内的.docx文件")
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		response.RestErr(c, "读取上传模板失败")
+		return
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, maxPhase1WordTemplateBytes+1))
+	file.Close()
+	if readErr != nil || len(data) == 0 || len(data) > maxPhase1WordTemplateBytes {
+		response.RestErr(c, "读取上传模板失败")
+		return
+	}
+	data, removedExternalArtifacts, err := sanitizePhase1WordTemplateUpload(data)
+	if err != nil {
+		response.RestErr(c, "清理模板外部链接失败")
+		return
+	}
+	contract, err := validatePhase1V2WordTemplateUpload(data)
+	if err != nil {
+		response.RestErr(c, "v2模板校验失败："+err.Error())
+		return
+	}
+	path, err := h.phase1V2WordTemplatePath()
+	if err != nil {
+		response.RestErr(c, err.Error())
+		return
+	}
+	h.templateMu.Lock()
+	backup, err := installPhase1WordTemplate(path, data, time.Now())
+	h.templateMu.Unlock()
+	if err != nil {
+		response.RestErr(c, "保存v2模板失败")
+		return
+	}
+	info, err := readPhase1V2WordTemplateInfo(path)
+	if err != nil {
+		response.RestErr(c, "读取已保存v2模板失败")
+		return
+	}
+	info.phase1WordTemplateContract = contract
+	response.Rest(c, gin.H{"template": info, "backupFile": filepath.Base(backup), "removedExternalArtifacts": removedExternalArtifacts})
 }
 
 func (h *CompetencyReportHandler) Phase1TemplateInfo(c *gin.Context) {
@@ -155,6 +274,11 @@ func (h *CompetencyReportHandler) UploadPhase1Template(c *gin.Context) {
 		response.RestErr(c, "读取上传模板失败")
 		return
 	}
+	data, removedExternalArtifacts, err := sanitizePhase1WordTemplateUpload(data)
+	if err != nil {
+		response.RestErr(c, "清理模板外部链接失败")
+		return
+	}
 	contract, err := validatePhase1WordTemplateUpload(data)
 	if err != nil {
 		response.RestErr(c, "模板校验失败："+err.Error())
@@ -178,7 +302,7 @@ func (h *CompetencyReportHandler) UploadPhase1Template(c *gin.Context) {
 		return
 	}
 	info.phase1WordTemplateContract = contract
-	response.Rest(c, gin.H{"template": info, "backupFile": filepath.Base(backup)})
+	response.Rest(c, gin.H{"template": info, "backupFile": filepath.Base(backup), "removedExternalArtifacts": removedExternalArtifacts})
 }
 
 func readPhase1WordTemplateInfo(path string) (phase1WordTemplateInfo, error) {
@@ -207,6 +331,126 @@ func readPhase1WordTemplateInfo(path string) (phase1WordTemplateInfo, error) {
 	info.Valid = true
 	info.phase1WordTemplateContract = contract
 	return info, nil
+}
+
+func readPhase1V2WordTemplateInfo(path string) (phase1WordTemplateInfo, error) {
+	info := phase1WordTemplateInfo{FileName: phase1V2WordTemplateFileName}
+	stat, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return info, nil
+	}
+	if err != nil || stat.IsDir() {
+		return info, errors.New("读取一期v2 Word报告模板失败")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return info, errors.New("读取一期v2 Word报告模板失败")
+	}
+	digest := sha256.Sum256(data)
+	info.Exists = true
+	info.Size = stat.Size()
+	info.ModTime = stat.ModTime().Format("2006-01-02 15:04:05")
+	info.SHA256 = hex.EncodeToString(digest[:])
+	contract, validationErr := validatePhase1V2WordTemplateUpload(data)
+	if validationErr != nil {
+		info.ValidationError = validationErr.Error()
+		return info, nil
+	}
+	info.Valid = true
+	info.phase1WordTemplateContract = contract
+	return info, nil
+}
+
+func validatePhase1V2WordTemplateUpload(data []byte) (phase1WordTemplateContract, error) {
+	contract := phase1WordTemplateContract{}
+	if len(data) == 0 || len(data) > maxPhase1WordTemplateBytes {
+		return contract, errors.New("模板文件大小无效")
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return contract, errors.New("DOCX文件结构无效")
+	}
+	parts := make(map[string][]byte, len(reader.File))
+	for _, file := range reader.File {
+		rc, openErr := file.Open()
+		if openErr != nil {
+			return contract, errors.New("读取DOCX内容失败")
+		}
+		body, readErr := io.ReadAll(io.LimitReader(rc, maxPhase1WordTemplateBytes+1))
+		rc.Close()
+		if readErr != nil || len(body) > maxPhase1WordTemplateBytes {
+			return contract, errors.New("读取DOCX内容失败")
+		}
+		parts[file.Name] = body
+	}
+	for name, body := range parts {
+		if strings.HasSuffix(name, ".rels") && bytes.Contains(body, []byte(`TargetMode="External"`)) {
+			return contract, fmt.Errorf("模板包含外部关系：%s", name)
+		}
+	}
+	expectedFields := phase1V2WordFieldKeys()
+	knownFields := make(map[string]bool, len(expectedFields))
+	for _, key := range expectedFields {
+		knownFields[key] = true
+	}
+	seenFields := make(map[string]bool, len(expectedFields))
+	controls := 0
+	for name, body := range parts {
+		if name != "word/document.xml" && !(strings.HasPrefix(name, "word/header") && strings.HasSuffix(name, ".xml")) {
+			continue
+		}
+		for _, match := range wordContentControlTagPattern.FindAllSubmatch(body, -1) {
+			key := string(match[1])
+			if !knownFields[key] {
+				return contract, fmt.Errorf("模板包含未支持的v2内容控件Tag：%s", key)
+			}
+			seenFields[key] = true
+			controls++
+		}
+	}
+	for _, key := range expectedFields {
+		if !seenFields[key] {
+			return contract, fmt.Errorf("缺少v2内容控件Tag：%s", key)
+		}
+	}
+	chartParts, err := resolvePhase1V2BusinessChartParts(parts)
+	if err != nil {
+		return contract, err
+	}
+	chartValues := make(map[string][][]float64, len(chartParts))
+	for _, key := range phase1V2WordChartKeys() {
+		switch key {
+		case "chart.overall.score":
+			chartValues[key] = [][]float64{{0, 0}}
+		case "chart.dimension.comparison":
+			chartValues[key] = [][]float64{make([]float64, 10), make([]float64, 10)}
+		default:
+			chartValues[key] = [][]float64{{0, 0}}
+		}
+	}
+	if err := validatePhase1V2WordCharts(chartParts, chartValues); err != nil {
+		return contract, err
+	}
+	for key, part := range chartParts {
+		if _, err := replacePhase1V2ChartSeriesValues(parts[part], chartValues[key]); err != nil {
+			return contract, fmt.Errorf("v2图表数据区域无效：%s：%w", key, err)
+		}
+	}
+	if err := validatePhase1PageNumberFields(parts); err != nil {
+		return contract, err
+	}
+	contract.SchemaVersion = "competency-phase1-report-template-v2"
+	contract.ContentControls = controls
+	contract.RegisteredFields = len(expectedFields)
+	contract.UsedFields = len(seenFields)
+	contract.Charts = len(chartParts)
+	contract.BusinessCharts = len(chartParts)
+	contract.ExternalLinks = 0
+	contract.VisibleTokens = len(wordTemplateTokenPattern.FindAll(parts["word/document.xml"], -1))
+	if contract.VisibleTokens != 0 {
+		return contract, errors.New("v2模板存在可见占位符")
+	}
+	return contract, nil
 }
 
 func validatePhase1WordTemplateUpload(data []byte) (phase1WordTemplateContract, error) {
@@ -311,15 +555,13 @@ func validatePhase1WordTemplateUpload(data []byte) (phase1WordTemplateContract, 
 			return contract, err
 		}
 	}
+	if err := validatePhase1ChartRelationships(parts); err != nil {
+		return contract, err
+	}
+	if err := validatePhase1PageNumberFields(parts); err != nil {
+		return contract, err
+	}
 	externalLinks := 0
-	for name, body := range parts {
-		if strings.HasPrefix(name, "word/charts/_rels/") {
-			externalLinks += strings.Count(string(body), `TargetMode="External"`)
-		}
-	}
-	if contract.SchemaVersion == phase1WordTemplateSchemaV2 && externalLinks != 0 {
-		return contract, errors.New("V2模板不得包含外部Excel链接")
-	}
 	contract.ContentControls = len(tags)
 	contract.RegisteredFields = len(registry)
 	contract.UsedFields = len(seen)
@@ -331,6 +573,79 @@ func validatePhase1WordTemplateUpload(data []byte) (phase1WordTemplateContract, 
 	contract.ExternalLinks = externalLinks
 	contract.VisibleTokens = len(visibleTokens)
 	return contract, nil
+}
+
+func validatePhase1ChartRelationships(parts map[string][]byte) error {
+	for name, body := range parts {
+		if strings.HasPrefix(name, "word/charts/_rels/") && strings.Contains(string(body), `TargetMode="External"`) {
+			return errors.New("模板不得包含外部Excel链接")
+		}
+	}
+	return nil
+}
+
+func sanitizePhase1WordTemplateUpload(data []byte) ([]byte, int, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, 0, errors.New("DOCX文件结构无效")
+	}
+	output := new(bytes.Buffer)
+	writer := zip.NewWriter(output)
+	removed := 0
+	for _, file := range reader.File {
+		rc, err := file.Open()
+		if err != nil {
+			_ = writer.Close()
+			return nil, 0, errors.New("读取DOCX文件失败")
+		}
+		body, readErr := io.ReadAll(io.LimitReader(rc, maxPhase1WordTemplateBytes+1))
+		rc.Close()
+		if readErr != nil || len(body) > maxPhase1WordTemplateBytes {
+			_ = writer.Close()
+			return nil, 0, errors.New("DOCX文件内容无效")
+		}
+		if strings.HasPrefix(file.Name, "word/charts/_rels/") && strings.HasSuffix(file.Name, ".rels") {
+			before := len(phase1ExternalRelationship.FindAll(body, -1))
+			body = removePhase1ChartExternalRelationships(body)
+			removed += before
+		} else if strings.HasPrefix(file.Name, "word/charts/chart") && strings.HasSuffix(file.Name, ".xml") {
+			before := len(phase1ExternalChartData.FindAll(body, -1))
+			body = removePhase1ChartExternalData(body)
+			removed += before
+		}
+		method := uint16(zip.Deflate)
+		if strings.HasSuffix(file.Name, "/") || len(body) == 0 {
+			method = zip.Store
+		}
+		entry, err := writer.CreateHeader(&zip.FileHeader{Name: file.Name, Method: method})
+		if err != nil {
+			_ = writer.Close()
+			return nil, 0, errors.New("重建DOCX文件失败")
+		}
+		if _, err := entry.Write(body); err != nil {
+			_ = writer.Close()
+			return nil, 0, errors.New("写入DOCX文件失败")
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, 0, errors.New("完成DOCX文件失败")
+	}
+	if output.Len() == 0 || output.Len() > maxPhase1WordTemplateBytes {
+		return nil, 0, errors.New("清理后的DOCX文件大小无效")
+	}
+	if removed == 0 {
+		return data, 0, nil
+	}
+	return output.Bytes(), removed, nil
+}
+
+func validatePhase1PageNumberFields(parts map[string][]byte) error {
+	for name, body := range parts {
+		if strings.HasPrefix(name, "word/footer") && strings.HasSuffix(name, ".xml") && strings.Contains(strings.ToUpper(string(body)), "NUMPAGES") {
+			return errors.New("模板页脚不得包含总页数字段NUMPAGES，请仅保留当前页PAGE")
+		}
+	}
+	return nil
 }
 
 func validatePhase1V2ContentTypes(contentTypes []byte) error {
@@ -418,7 +733,7 @@ func installPhase1WordTemplate(target string, data []byte, now time.Time) (strin
 	if err := os.MkdirAll(backupDir, 0o700); err != nil {
 		return "", err
 	}
-	backup := filepath.Join(backupDir, phase1WordTemplateFileName+"."+now.Format("20060102_150405_000")+".bak")
+	backup := filepath.Join(backupDir, filepath.Base(target)+"."+now.Format("20060102_150405_000")+".bak")
 	var current []byte
 	if existing, err := os.ReadFile(target); err == nil {
 		current = append([]byte(nil), existing...)

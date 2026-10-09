@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/talent-assessment/refactored/internal/config"
 	"github.com/talent-assessment/refactored/internal/model"
+	"github.com/talent-assessment/refactored/internal/service"
 	"github.com/talent-assessment/refactored/pkg/response"
 	"gorm.io/gorm"
 )
@@ -16,12 +17,30 @@ import (
 // TesterHandler 对应 /exam/api/tester/*
 // 基于 el_tester 单表（替代 Java 的 el_tester_profile + el_tester_exam 双表设计）
 type TesterHandler struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db                      *gorm.DB
+	cfg                     *config.Config
+	managementTraitsRuntime *service.ManagementTraitsRuntimeService
 }
 
-func NewTesterHandler(db *gorm.DB, cfg *config.Config) *TesterHandler {
-	return &TesterHandler{db: db, cfg: cfg}
+func NewTesterHandler(db *gorm.DB, cfg *config.Config, runtimeServices ...*service.ManagementTraitsRuntimeService) *TesterHandler {
+	return &TesterHandler{db: db, cfg: cfg, managementTraitsRuntime: managementTraitsIdentityService(db, cfg, runtimeServices...)}
+}
+
+func applyTesterListIdentityFilters(db *gorm.DB, tableAlias, telephone, stuFlag string) *gorm.DB {
+	prefix := ""
+	if tableAlias != "" {
+		prefix = tableAlias + "."
+	}
+	if telephone != "" {
+		db = db.Where(prefix+"telephone = ?", telephone)
+	}
+	switch stuFlag {
+	case "0":
+		db = db.Where(prefix+"stu_flag = ?", 0)
+	case "1":
+		db = db.Where(prefix+"stu_flag = ?", 1)
+	}
+	return db
 }
 
 // GET /exam/api/tester (RuoYi TableDataInfo)
@@ -36,6 +55,8 @@ func (h *TesterHandler) List(c *gin.Context) {
 	pageSize = capPageSize(pageSize)
 	name := c.Query("name")
 	idNumber := c.Query("idNumber")
+	telephone := strings.TrimSpace(c.Query("telephone"))
+	stuFlag := strings.TrimSpace(c.Query("stuFlag"))
 	examID := c.Query("examId")
 	examStatus := c.Query("examStatus") // 0=未测评 1=进行中 2=已完成
 
@@ -49,6 +70,7 @@ func (h *TesterHandler) List(c *gin.Context) {
 	if examID != "" {
 		q = q.Where("exam_id = ?", examID)
 	}
+	q = applyTesterListIdentityFilters(q, "", telephone, stuFlag)
 	switch examStatus {
 	case "0":
 		q = q.Where("paper_id IS NULL")
@@ -106,6 +128,7 @@ func (h *TesterHandler) List(c *gin.Context) {
 			if examID != "" {
 				db = db.Where("t.exam_id = ?", examID)
 			}
+			db = applyTesterListIdentityFilters(db, "t", telephone, stuFlag)
 			switch examStatus {
 			case "0":
 				db = db.Where("t.paper_id IS NULL")

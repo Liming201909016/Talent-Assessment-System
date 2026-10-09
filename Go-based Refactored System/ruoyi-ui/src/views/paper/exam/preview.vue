@@ -1,5 +1,6 @@
 <template>
   <div class="app-container"  style="width:100%; margin: 0px auto">
+    <el-alert v-if="managementTraitsMode" title="TEST · 管理特质，仅供测试，不可作为人才决策依据" type="warning" :closable="false" />
     <el-dialog
 
       :show-close="false"
@@ -31,7 +32,7 @@
         <el-card class="pre-exam">
 
           <div><strong>测评名称：</strong>{{ detailData.title }}</div>
-          <div><strong>测评时长：</strong>{{detailData.totalTime}}分钟</div>
+          <div><strong>测评时长：</strong>{{ managementTraitsMode ? 25 : detailData.totalTime }}分钟</div>
 <!--          <div><strong>试卷总分：</strong>{{ detailData.totalScore }}分</div>-->
 <!--          <div><strong>及格分数：</strong>{{ detailData.qualifyScore }}分</div>-->
 <!--          <div><strong>测评描述：</strong>{{ detailData.content }}</div>-->
@@ -64,6 +65,8 @@ import {updateData} from "@/api/candidate/candidate";
 import th from "element-ui/src/locale/lang/th";
 import {getTesterByIdNumber, updateTester} from "@/api/tester/tester";
 import { createCompetencyPaper } from '@/api/competency'
+import { managementTraitsIntent, managementTraitsParticipantToken, createManagementTraitsPaper, rememberManagementTraitsPaper, clearManagementTraitsTokens } from '@/api/managementTraits'
+import { classifyManagementTraitsExam, isManagementTraitsProduct } from '@/utils/managementTraitsProduct'
 
 const desc1 = '本份问卷每道题目均由一对语句构成，请从每对语句中选择一个与您个人情况更相吻合或您更赞同的一种说法。每道题的不同选项之间并没有好坏、正误之分，只需您如实作答。<br><span style="color:red;">请注意，本次测验共计90道题目，每道题目都必须回答。如果您对题目中的两个语句都赞同或都不赞同，就请选择您相对而言更可接受的说法。</span>'
 const desc2 = '在进行测验时，请仔细阅读每一个陈述，并根据自己的真实感受和经历，选择最符合您情况的选项。每道题的不同选项之间并没有好坏、正误之分，只需诚实地反映您的当前状态和感受。<br><span style="color:red;">请注意，本次测验共计140道题目，每道题目都必须回答，您必须且只能选择一个符合选项。</span>'
@@ -105,13 +108,21 @@ export default {
   },
 
   computed: {
+    managementTraitsMode() { return managementTraitsIntent(this.$route) || !!managementTraitsParticipantToken(this.examId) },
     canStart() {
+      if (this.managementTraitsMode) return !!managementTraitsParticipantToken(this.examId)
+    if (isManagementTraitsProduct(this.repoCode) || isManagementTraitsProduct(this.detailData.repoCode)) {
+      if (classifyManagementTraitsExam(this.detailData, this.examId) !== 'LEGACY002') return false
+    }
       return !(this.detailData.assessmentType === 'competency' && Number(this.detailData.publishStatus) !== 1)
     },
     startDisabledReason() {
+      if (this.managementTraitsMode) return this.canStart ? '' : '管理特质认证已失效，请返回重新登录或填写信息。'
+    if (!this.canStart && (isManagementTraitsProduct(this.repoCode) || isManagementTraitsProduct(this.detailData.repoCode))) return '新版草稿尚未冻结或身份状态未确认，请等待管理员冻结并从专用入口登记。'
       return this.canStart ? '' : '该胜任力测评尚未发布，请联系管理员先执行“发布并冻结题目”。'
     },
     displayDesc() {
+      if (this.managementTraitsMode) return 'TEST · 管理特质。共140题，每题五个选项，只能选择一项。按真实情况作答；保存成功后进入下一题。时长25分钟，服务器20分钟时提示；刷新或重登保持原卷和截止时间。未到期必须答完全部题目；到期由服务器判定完成状态。仅供测试，不可作为人才决策依据。'
       if (this.detailData.assessmentType === 'competency') {
         return competencyDesc
       }
@@ -134,6 +145,10 @@ export default {
     this.testerId = this.$route.params.id
     this.stuFlag = this.$route.params.stuFlag || 0
     this.repoCode = this.$route.params.repoCode || ''
+    if (this.managementTraitsMode) {
+      this.detailData = { title: '管理特质 TEST', totalTime: 25 }
+      return
+    }
     this.getTesterInfo()
     this.fetchData()
   },
@@ -145,12 +160,14 @@ export default {
     },
 
     getTesterInfo() {
+      if (this.managementTraitsMode) return
       getTesterByIdNumber(this.testerId, this.examId).then(response => {
         this.testerInfo = response.data
       }).catch(() => {})
     },
 
     fetchData() {
+      if (this.managementTraitsMode) return
       fetchDetail(this.postForm.examId).then(response => {
         this.detailData = response.data
         console.log(this.detailData)
@@ -183,6 +200,23 @@ export default {
         return
       }
       this.loading = true
+
+      if (this.managementTraitsMode) {
+        try {
+          const response = await createManagementTraitsPaper(this.examId, managementTraitsParticipantToken(this.examId))
+          const data = response.data
+          if (!data || !data.paperId || data.examId !== this.examId || ![1, 2].includes(data.state)) throw new Error('管理特质试卷响应无效，请重试。')
+          rememberManagementTraitsPaper(data)
+          if (data.state === 2) {
+            clearManagementTraitsTokens()
+            this.$router.replace({ name: 'ExamThankYou' })
+          } else {
+            this.$router.replace({ name: 'ManagementTraitsExam', params: { paperId: data.paperId } })
+          }
+        } catch (error) { this.$message.error(error.message || '开始测评失败，请重试。') }
+        finally { this.loading = false }
+        return
+      }
 
       if (this.detailData.assessmentType === 'competency') {
         const participantToken = sessionStorage.getItem('competencyParticipantToken') || ''
@@ -263,6 +297,7 @@ export default {
       })
     },
     toExam(response){
+      if (this.managementTraitsMode) return
       if (response.code === 0) {
         this.loading = false
         const repoCode = this.repoCode || ''
@@ -281,6 +316,7 @@ export default {
       this.dialogVisible1 = false
     },
     async closeDialog() {
+      if (this.managementTraitsMode) return this.handleCreate()
 
       this.loading = true
 
@@ -318,6 +354,10 @@ export default {
     },
 
     handleBack() {
+      if (this.managementTraitsMode) {
+        this.$router.go(-1)
+        return
+      }
       this.$router.push({ name: 'candidateInfo', params: { examId: this.postForm.examId, testerId: this.testerId }})
     }
 

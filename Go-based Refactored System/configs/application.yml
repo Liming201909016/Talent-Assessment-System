@@ -1,6 +1,10 @@
 # 默认配置，环境变量或 configs/application-<env>.yml 可覆盖
 server:
+  # 空值或0.0.0.0保持原有全接口监听；本地隔离测试可显式设127.0.0.1
+  host: ""
   port: 8092
+  # 仅APP_ENV精确为local且host为loopback时允许开启，否则启动失败
+  disableBackgroundWorkers: false
 
 # 数据源：新数据库服务器 20.200.136.133（通过 SSH 隧道 23306）
 mysql:

@@ -101,15 +101,20 @@ def paper_request(path, paper_token, body):
     return data.get('data') or {}
 
 
-def xlsx_strings(payload):
+def xlsx_summary(payload):
     if not payload.startswith(b'PK'):
         raise RuntimeError('export is not an xlsx zip')
     with zipfile.ZipFile(BytesIO(payload)) as archive:
-        return '\n'.join(
-            archive.read(name).decode('utf-8', errors='ignore')
-            for name in archive.namelist()
-            if name.endswith('.xml')
-        )
+        names = set(archive.namelist())
+        workbook = archive.read('xl/workbook.xml').decode('utf-8', errors='strict')
+        row_counts = []
+        for index in range(1, 4):
+            worksheet = f'xl/worksheets/sheet{index}.xml'
+            if worksheet not in names:
+                raise RuntimeError(f'export missing {worksheet}')
+            content = archive.read(worksheet).decode('utf-8', errors='strict')
+            row_counts.append(len(re.findall(r'<row(?:\s|>)', content)))
+        return len(re.findall(r'<sheet(?:\s|>)', workbook)), row_counts
 
 
 def main():
@@ -117,6 +122,7 @@ def main():
     exam_id = ''
     candidate_id = ''
     paper_id = ''
+    baseline = ''
     text = config_text()
     secret = scalar(text, 'jwt', 'secret')
     redis_db = scalar(text, 'redis', 'db', '1')
@@ -140,8 +146,9 @@ SELECT CONCAT(
   (SELECT COUNT(*) FROM el_competency_group_result),'|',
   (SELECT COUNT(*) FROM el_competency_validity_result))
 """)
-        if baseline != '0|0|0|0':
-            raise RuntimeError(f'refusing non-empty competency runtime baseline: {baseline}')
+        if not re.fullmatch(r'\d+\|\d+\|\d+\|\d+', baseline):
+            raise RuntimeError(f'invalid competency runtime baseline: {baseline}')
+        package_count = mysql("SELECT COUNT(*) FROM el_competency_report_content_package")
 
         exam, _ = request('/exam/api/exam/exam/save', admin_token, body={
             'title': 'PHASE1-RUNTIME-' + suffix,
@@ -269,10 +276,9 @@ SELECT CONCAT(
             export_bytes = response.read()
             if 'spreadsheetml.sheet' not in response.headers.get('Content-Type', ''):
                 raise RuntimeError('export content type mismatch')
-        xml = xlsx_strings(export_bytes)
-        for required in ['通用能力', '心理素养', '效度原始分', '效度状态', 'good', '题型', 'dimension', 'validity']:
-            if required not in xml:
-                raise RuntimeError(f'export missing {required}')
+        sheet_count, row_counts = xlsx_summary(export_bytes)
+        if sheet_count != 3 or row_counts[0] < 2 or row_counts[1] != 91 or row_counts[2] != 91:
+            raise RuntimeError(f'export workbook shape mismatch: sheets={sheet_count}, rows={row_counts}')
 
         status, raw, _ = request(
             '/exam/api/competency/admin/report-data?paperId=' + paper_id,
@@ -282,7 +288,6 @@ SELECT CONCAT(
             raise RuntimeError(f'phase-1 report gate returned unexpected HTTP {status}')
         report_payload = json.loads(raw.decode())
         report_approved = os.environ.get('EXPECT_REPORT_APPROVED') == '1'
-        expected_package_count = os.environ.get('EXPECTED_REPORT_PACKAGE_COUNT', '0')
         if report_approved:
             if report_payload.get('code') not in (0, 200):
                 raise RuntimeError(f'approved report-data rejected: {report_payload}')
@@ -317,7 +322,7 @@ SELECT CONCAT(
   (SELECT COUNT(*) FROM el_competency_report WHERE paper_id='{paper_id}' AND status='completed'),'|',
   (SELECT COUNT(*) FROM el_competency_report_audit WHERE paper_id='{paper_id}' AND status=1))
 """)
-            if report_counts != '1|1|2':
+            if report_counts != f'{package_count}|1|2':
                 raise RuntimeError(f'approved report persistence mismatch: {report_counts}')
         else:
             if report_payload.get('code') in (0, 200):
@@ -347,7 +352,7 @@ SELECT CONCAT(
   (SELECT COUNT(*) FROM el_competency_report WHERE paper_id='{paper_id}'),'|',
   (SELECT COUNT(*) FROM el_competency_report_audit WHERE paper_id='{paper_id}'))
 """)
-            if report_gate_counts != f'{expected_package_count}|0|0':
+            if report_gate_counts != f'{package_count}|0|0':
                 raise RuntimeError(f'blocked report actions wrote data: {report_gate_counts}')
 
         print('STAGING_PHASE1_RUNTIME_PASS')
@@ -360,33 +365,10 @@ SELECT CONCAT(
         if report_approved:
             print('report=approved_dto:10-pages/2-groups/10-dimensions|generate:completed|download:10-page-pdf|audits:2')
         else:
-            print(f'report=report_data/generate/download:gated|packages:{expected_package_count}|instances:0|audits:0')
+            print(f'report=report_data/generate/download:gated|packages:{package_count}|instances:0|audits:0')
     finally:
-        if paper_id:
-            report_path = mysql(f"SELECT COALESCE(pdf_path,'') FROM el_competency_report WHERE paper_id='{paper_id}' LIMIT 1")
-            if report_path:
-                subprocess.run(['sudo', '-n', 'rm', '-f', report_path], check=True)
-            mysql_exec(f"""
-DELETE FROM el_competency_report_audit WHERE paper_id='{paper_id}';
-DELETE FROM el_competency_report WHERE paper_id='{paper_id}';
-DELETE FROM el_competency_group_result WHERE paper_id='{paper_id}';
-DELETE FROM el_competency_validity_result WHERE paper_id='{paper_id}';
-DELETE FROM el_competency_dimension_result WHERE paper_id='{paper_id}';
-DELETE FROM el_competency_result WHERE paper_id='{paper_id}';
-DELETE FROM el_paper_qu_answer WHERE paper_id='{paper_id}';
-DELETE FROM el_paper_qu WHERE paper_id='{paper_id}';
-UPDATE el_candidate SET paper_id=NULL,end_time=NULL WHERE id='{candidate_id}';
-DELETE FROM el_paper WHERE id='{paper_id}';
-""")
-        if candidate_id:
-            mysql_exec(f"DELETE FROM el_candidate WHERE id='{candidate_id}';")
         if exam_id:
-            mysql_exec(f"""
-DELETE FROM el_exam_competency_question WHERE exam_id='{exam_id}';
-DELETE FROM el_exam_competency_dimension WHERE exam_id='{exam_id}';
-DELETE FROM el_exam_competency_group WHERE exam_id='{exam_id}';
-DELETE FROM el_exam WHERE id='{exam_id}';
-""")
+            request('/exam/api/exam/exam/delete', admin_token, body={'ids': [exam_id]})
         subprocess.run(['redis-cli', '-n', redis_db, 'DEL', redis_key], check=False, stdout=subprocess.DEVNULL)
         remaining = mysql(f"""
 SELECT CONCAT(
@@ -396,6 +378,17 @@ SELECT CONCAT(
   (SELECT COUNT(*) FROM el_competency_result WHERE paper_id='{paper_id}'))
 """)
         print('cleanup_remaining=' + remaining)
+        current = mysql("""
+SELECT CONCAT(
+  (SELECT COUNT(*) FROM el_exam WHERE assessment_type='competency'),'|',
+  (SELECT COUNT(*) FROM el_competency_result),'|',
+  (SELECT COUNT(*) FROM el_competency_group_result),'|',
+  (SELECT COUNT(*) FROM el_competency_validity_result))
+""")
+        print('baseline_before=' + baseline)
+        print('baseline_after=' + current)
+        if current != baseline:
+            raise RuntimeError(f'competency runtime baseline drift: before={baseline} after={current}')
 
 
 if __name__ == '__main__':

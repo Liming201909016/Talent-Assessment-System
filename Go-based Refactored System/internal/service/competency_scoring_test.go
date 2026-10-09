@@ -320,6 +320,279 @@ func TestCalculatePhase1CompetencyResult_RejectsMalformedOrMixedInput(t *testing
 	}
 }
 
+// TestBugFB175_Phase1V2UsesExactPercentageScores
+// Corresponds to docs/regression-tests.md FB-175.
+func TestBugFB175_Phase1V2UsesExactPercentageScores(t *testing.T) {
+	sums := []int{30, 28, 34, 24, 32, 26, 28, 33, 33, 30}
+	inputs := phase1V2InputsFromV1Sums(sums)
+	result, err := CalculatePhase1V2CompetencyResultFromV1(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsComplete || result.TotalQuestionCount != 80 || result.AnsweredQuestionCount != 80 || result.EffectiveDimensionCount != 10 {
+		t.Fatalf("v2 counts=%+v", result)
+	}
+	wantScores := [][2]int64{{275, 4}, {125, 2}, {325, 4}, {50, 1}, {75, 1}, {225, 4}, {125, 2}, {625, 8}, {625, 8}, {275, 4}}
+	dimensions := Phase1V2Dimensions()
+	for index, dimension := range result.Dimensions {
+		if dimension.DimensionID != dimensions[index].ID || dimension.StableKey != dimensions[index].StableKey ||
+			dimension.DisplayCode != dimensions[index].DisplayCode || dimension.DisplayOrder != index+1 || dimension.ScoreSum != sums[index] {
+			t.Fatalf("dimension[%d]=%+v", index, dimension)
+		}
+		assertRat(t, dimension.Score, wantScores[index][0], wantScores[index][1])
+	}
+	assertRat(t, result.OverallScore, 545, 8)
+	if result.OverallLevel != CompetencyPhase1V2LevelQualified {
+		t.Fatalf("overall level=%q", result.OverallLevel)
+	}
+
+	for left, right := 0, len(inputs)-1; left < right; left, right = left+1, right-1 {
+		inputs[left], inputs[right] = inputs[right], inputs[left]
+	}
+	reordered, err := CalculatePhase1V2CompetencyResultFromV1(inputs)
+	if err != nil || !reflect.DeepEqual(result, reordered) {
+		t.Fatalf("row order changed result: error=%v\noriginal=%+v\nreordered=%+v", err, result, reordered)
+	}
+}
+
+func TestBugFB175_Phase1V2LevelBoundaries(t *testing.T) {
+	tests := []struct {
+		numerator, denominator int64
+		want                   string
+		wantErr                bool
+	}{
+		{0, 1, CompetencyPhase1V2LevelInsufficient, false},
+		{999, 100, CompetencyPhase1V2LevelInsufficient, false},
+		{10, 1, CompetencyPhase1V2LevelWeak, false},
+		{2999, 100, CompetencyPhase1V2LevelWeak, false},
+		{30, 1, CompetencyPhase1V2LevelQualified, false},
+		{6999, 100, CompetencyPhase1V2LevelQualified, false},
+		{70, 1, CompetencyPhase1V2LevelGood, false},
+		{8999, 100, CompetencyPhase1V2LevelGood, false},
+		{90, 1, CompetencyPhase1V2LevelExcellent, false},
+		{100, 1, CompetencyPhase1V2LevelExcellent, false},
+		{-1, 100, "", true},
+		{10001, 100, "", true},
+	}
+	for _, test := range tests {
+		score := big.NewRat(test.numerator, test.denominator)
+		got, err := Phase1V2LevelForScore(score)
+		if (err != nil) != test.wantErr || got != test.want {
+			t.Fatalf("score=%s level=%q error=%v want=%q wantErr=%v", score, got, err, test.want, test.wantErr)
+		}
+	}
+}
+
+func TestBugFB175_Phase1V2IncompleteHasNoFormalScore(t *testing.T) {
+	inputs := phase1V2InputsFromV1Sums([]int{30, 28, 34, 24, 32, 26, 28, 33, 33, 30})
+	inputs[0].Answered = false
+	result, err := CalculatePhase1V2CompetencyResultFromV1(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsComplete || result.OverallScore != nil || result.OverallLevel != "" || result.Dimensions[0].Score != nil || result.Dimensions[0].Level != "" {
+		t.Fatalf("incomplete v2 result exposes formal score=%+v", result)
+	}
+	if result.Dimensions[1].Score == nil || !result.Dimensions[1].IsComplete {
+		t.Fatalf("independently complete dimension lost score=%+v", result.Dimensions[1])
+	}
+}
+
+func TestBugFB175_Phase1V2RejectsMalformedInput(t *testing.T) {
+	valid := phase1V2InputsFromV1Sums([]int{30, 28, 34, 24, 32, 26, 28, 33, 33, 30})
+	tests := []struct {
+		name   string
+		mutate func([]CompetencyScoreInput) []CompetencyScoreInput
+	}{
+		{"missing row", func(rows []CompetencyScoreInput) []CompetencyScoreInput { return rows[:79] }},
+		{"validity row", func(rows []CompetencyScoreInput) []CompetencyScoreInput {
+			rows[0].QuestionType = CompetencyQuestionTypeValidity
+			return rows
+		}},
+		{"unknown dimension", func(rows []CompetencyScoreInput) []CompetencyScoreInput { rows[0].DimensionID = "unknown"; return rows }},
+		{"wrong legacy order", func(rows []CompetencyScoreInput) []CompetencyScoreInput { rows[0].DisplayOrder = 10; return rows }},
+		{"score below range", func(rows []CompetencyScoreInput) []CompetencyScoreInput { rows[0].FinalScore = 0; return rows }},
+		{"score above range", func(rows []CompetencyScoreInput) []CompetencyScoreInput { rows[0].FinalScore = 6; return rows }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rows := append([]CompetencyScoreInput(nil), valid...)
+			if _, err := CalculatePhase1V2CompetencyResultFromV1(test.mutate(rows)); err == nil {
+				t.Fatal("invalid v2 scoring input must be rejected")
+			}
+		})
+	}
+}
+
+func phase1V2InputsFromV1Sums(sums []int) []CompetencyScoreInput {
+	legacyIDs := []string{
+		"competency-a1-01", "competency-a1-03", "competency-a1-02", "competency-b1-04", "competency-a1-04",
+		"competency-a1-05", "competency-b1-05", "competency-b1-02", "competency-b1-03", "competency-b1-01",
+	}
+	legacyOrders := map[string]int{
+		"competency-a1-01": 1, "competency-a1-02": 2, "competency-a1-03": 3, "competency-a1-04": 4, "competency-a1-05": 5,
+		"competency-b1-01": 6, "competency-b1-02": 7, "competency-b1-03": 8, "competency-b1-04": 9, "competency-b1-05": 10,
+	}
+	rows := make([]CompetencyScoreInput, 0, 80)
+	for index, id := range legacyIDs {
+		remaining := sums[index]
+		for question := 0; question < 8; question++ {
+			questionsLeft := 8 - question
+			score := remaining / questionsLeft
+			if remaining%questionsLeft != 0 {
+				score++
+			}
+			rows = append(rows, CompetencyScoreInput{DimensionID: id, DisplayOrder: legacyOrders[id], QuestionType: CompetencyQuestionTypeDimension, Answered: true, FinalScore: score})
+			remaining -= score
+		}
+	}
+	return rows
+}
+
+// TestBugFB176_Phase1V2ModulesUseExactMeansAndNorms
+// Corresponds to docs/regression-tests.md FB-176.
+func TestBugFB176_Phase1V2ModulesUseExactMeansAndNorms(t *testing.T) {
+	scoreResult, err := CalculatePhase1V2CompetencyResultFromV1(phase1V2InputsFromV1Sums([]int{30, 28, 34, 24, 32, 26, 28, 33, 33, 30}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	modules, err := CalculatePhase1V2ModuleResults(scoreResult.Dimensions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		code, name, comparison string
+		order, count           int
+		scoreNum, scoreDen     int64
+		normNum, normDen       int64
+	}{
+		{CompetencyPhase1V2ModuleTask, "任务管理类", CompetencyPhase1V2ComparisonAboveNorm, 1, 5, 135, 2, 58, 1},
+		{CompetencyPhase1V2ModuleInterpersonal, "人际管理类", CompetencyPhase1V2ComparisonAboveNorm, 2, 2, 475, 8, 215, 4},
+		{CompetencyPhase1V2ModuleSelf, "自我管理类", CompetencyPhase1V2ComparisonStandout, 3, 3, 75, 1, 60, 1},
+	}
+	if len(modules) != len(want) {
+		t.Fatalf("modules=%d want=%d", len(modules), len(want))
+	}
+	for index, expected := range want {
+		actual := modules[index]
+		if actual.ModuleCode != expected.code || actual.ModuleName != expected.name || actual.DisplayOrder != expected.order ||
+			actual.TotalDimensionCount != expected.count || actual.EffectiveDimensionCount != expected.count || !actual.IsComplete ||
+			actual.ComparisonCode != expected.comparison {
+			t.Fatalf("module[%d]=%+v", index, actual)
+		}
+		assertRat(t, actual.Score, expected.scoreNum, expected.scoreDen)
+		assertRat(t, actual.NormScore, expected.normNum, expected.normDen)
+		level, levelErr := Phase1V2LevelForScore(actual.Score)
+		if levelErr != nil || actual.Level != level {
+			t.Fatalf("module[%d] level=%q error=%v want=%q", index, actual.Level, levelErr, level)
+		}
+	}
+
+	overall, err := Phase1V2OverallNormComparison(scoreResult.OverallScore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRat(t, overall.NormScore, 231, 4)
+	if overall.ComparisonCode != CompetencyPhase1V2ComparisonAboveNorm {
+		t.Fatalf("overall comparison=%+v", overall)
+	}
+
+	for left, right := 0, len(scoreResult.Dimensions)-1; left < right; left, right = left+1, right-1 {
+		scoreResult.Dimensions[left], scoreResult.Dimensions[right] = scoreResult.Dimensions[right], scoreResult.Dimensions[left]
+	}
+	reordered, err := CalculatePhase1V2ModuleResults(scoreResult.Dimensions)
+	if err != nil || !reflect.DeepEqual(modules, reordered) {
+		t.Fatalf("dimension order changed modules: error=%v\noriginal=%+v\nreordered=%+v", err, modules, reordered)
+	}
+}
+
+func TestBugFB176_Phase1V2NormComparisonBoundaries(t *testing.T) {
+	tests := []struct {
+		name, module, want string
+		numerator          int64
+	}{
+		{"task below", CompetencyPhase1V2ModuleTask, CompetencyPhase1V2ComparisonBelowNorm, 5599},
+		{"task equal", CompetencyPhase1V2ModuleTask, CompetencyPhase1V2ComparisonAtNorm, 5600},
+		{"task above", CompetencyPhase1V2ModuleTask, CompetencyPhase1V2ComparisonAboveNorm, 6000},
+		{"task standout", CompetencyPhase1V2ModuleTask, CompetencyPhase1V2ComparisonStandout, 7500},
+		{"interpersonal below", CompetencyPhase1V2ModuleInterpersonal, CompetencyPhase1V2ComparisonBelowNorm, 4999},
+		{"interpersonal equal", CompetencyPhase1V2ModuleInterpersonal, CompetencyPhase1V2ComparisonAtNorm, 5000},
+		{"interpersonal above", CompetencyPhase1V2ModuleInterpersonal, CompetencyPhase1V2ComparisonAboveNorm, 5600},
+		{"interpersonal standout", CompetencyPhase1V2ModuleInterpersonal, CompetencyPhase1V2ComparisonStandout, 7000},
+		{"self below", CompetencyPhase1V2ModuleSelf, CompetencyPhase1V2ComparisonBelowNorm, 5799},
+		{"self equal", CompetencyPhase1V2ModuleSelf, CompetencyPhase1V2ComparisonAtNorm, 5800},
+		{"self above", CompetencyPhase1V2ModuleSelf, CompetencyPhase1V2ComparisonAboveNorm, 6300},
+		{"self standout", CompetencyPhase1V2ModuleSelf, CompetencyPhase1V2ComparisonStandout, 7500},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := Phase1V2ModuleNormComparison(test.module, big.NewRat(test.numerator, 100))
+			if err != nil || got.ComparisonCode != test.want {
+				t.Fatalf("comparison=%+v error=%v want=%q", got, err, test.want)
+			}
+		})
+	}
+	for _, test := range []struct {
+		numerator int64
+		want      string
+	}{{5499, CompetencyPhase1V2ComparisonBelowNorm}, {5500, CompetencyPhase1V2ComparisonAtNorm}, {6300, CompetencyPhase1V2ComparisonAboveNorm}, {7000, CompetencyPhase1V2ComparisonSuperior}} {
+		got, err := Phase1V2OverallNormComparison(big.NewRat(test.numerator, 100))
+		if err != nil || got.ComparisonCode != test.want {
+			t.Fatalf("overall %d comparison=%+v error=%v want=%q", test.numerator, got, err, test.want)
+		}
+	}
+	if _, err := Phase1V2ModuleNormComparison("unknown", big.NewRat(50, 1)); err == nil {
+		t.Fatal("unknown module must be rejected")
+	}
+	if _, err := Phase1V2OverallNormComparison(nil); err == nil {
+		t.Fatal("nil overall score must be rejected")
+	}
+}
+
+func TestBugFB176_Phase1V2IncompleteAndMalformedModules(t *testing.T) {
+	scoreResult, err := CalculatePhase1V2CompetencyResultFromV1(phase1V2InputsFromV1Sums([]int{30, 28, 34, 24, 32, 26, 28, 33, 33, 30}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	incomplete := append([]Phase1V2DimensionScore(nil), scoreResult.Dimensions...)
+	incomplete[0].AnsweredQuestionCount = 7
+	incomplete[0].Score = nil
+	incomplete[0].Level = ""
+	incomplete[0].IsComplete = false
+	modules, err := CalculatePhase1V2ModuleResults(incomplete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modules[0].IsComplete || modules[0].Score != nil || modules[0].Level != "" || modules[0].ComparisonCode != "" || modules[0].EffectiveDimensionCount != 4 {
+		t.Fatalf("incomplete task module exposes formal output=%+v", modules[0])
+	}
+	if !modules[1].IsComplete || !modules[2].IsComplete {
+		t.Fatalf("independent modules became incomplete=%+v", modules)
+	}
+
+	for name, mutate := range map[string]func([]Phase1V2DimensionScore) []Phase1V2DimensionScore{
+		"missing":     func(rows []Phase1V2DimensionScore) []Phase1V2DimensionScore { return rows[:9] },
+		"duplicate":   func(rows []Phase1V2DimensionScore) []Phase1V2DimensionScore { rows[9] = rows[0]; return rows },
+		"wrong order": func(rows []Phase1V2DimensionScore) []Phase1V2DimensionScore { rows[0].DisplayOrder = 10; return rows },
+		"wrong module": func(rows []Phase1V2DimensionScore) []Phase1V2DimensionScore {
+			rows[0].ModuleCode = CompetencyPhase1V2ModuleSelf
+			return rows
+		},
+		"complete nil score": func(rows []Phase1V2DimensionScore) []Phase1V2DimensionScore { rows[0].Score = nil; return rows },
+		"score level mismatch": func(rows []Phase1V2DimensionScore) []Phase1V2DimensionScore {
+			rows[0].Level = CompetencyPhase1V2LevelExcellent
+			return rows
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rows := append([]Phase1V2DimensionScore(nil), scoreResult.Dimensions...)
+			if _, err := CalculatePhase1V2ModuleResults(mutate(rows)); err == nil {
+				t.Fatal("malformed module input must be rejected")
+			}
+		})
+	}
+}
+
 func TestCalculatePhase1GroupResults_ExactScoresAndOrder(t *testing.T) {
 	profile := NormalizePhase1CompetencyConfiguration()
 	dimensions := make([]CompetencyDimensionScore, 0, 10)

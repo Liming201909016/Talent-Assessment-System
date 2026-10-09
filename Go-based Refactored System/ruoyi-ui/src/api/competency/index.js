@@ -88,6 +88,37 @@ export function uploadPhase1WordTemplate(file) {
   })
 }
 
+export function fetchPhase1V2WordTemplate() {
+  return request({ url: '/exam/api/competency/reports/template-v2', method: 'get' })
+}
+
+export async function downloadPhase1V2WordTemplate() {
+  const blob = await request({ url: '/exam/api/competency/reports/template-v2/download', method: 'get', responseType: 'blob' })
+  const contentType = (blob.type || '').toLowerCase()
+  if (contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) return blob
+  let message = '下载胜任力v2模板失败'
+  try {
+    const payload = JSON.parse(await readBlobText(blob))
+    message = payload.msg || message
+  } catch (error) {
+    // Keep the controlled fallback for a non-DOCX response that is not JSON.
+  }
+  throw new Error(message)
+}
+
+export function uploadPhase1V2WordTemplate(file) {
+  const data = new FormData()
+  data.append('file', file)
+  return request({
+    url: '/exam/api/competency/reports/template-v2/upload',
+    method: 'post',
+    data,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    rejectWithBusinessMessage: true,
+    timeout: 120000
+  })
+}
+
 function readBlobText(blob) {
   if (typeof blob.text === 'function') return blob.text()
   return new Promise((resolve, reject) => {
@@ -108,6 +139,25 @@ export async function downloadCompetencyReport(paperId) {
     message = payload.msg || message
   } catch (error) {
     // Keep the controlled fallback for a non-PDF response that is not JSON.
+  }
+  throw new Error(message)
+}
+
+export async function downloadCompetencyReportsArchive(paperIds) {
+  const blob = await request({
+    url: '/exam/api/competency/reports/batch-download',
+    method: 'post',
+    data: { paperIds },
+    responseType: 'blob'
+  })
+  if ((blob.type || '').toLowerCase().includes('application/zip')) return blob
+
+  let message = '批量下载胜任力报告失败'
+  try {
+    const payload = JSON.parse(await readBlobText(blob))
+    message = payload.msg || message
+  } catch (error) {
+    // Keep the controlled fallback for a non-ZIP response that is not JSON.
   }
   throw new Error(message)
 }

@@ -178,13 +178,15 @@ scripts/ 下应排除：
 ## 六、项目记忆（AI 经验记录）
 
 ### 文件位置
-docs/project-memory.md — AI 和开发者共同维护的项目经验记录。
+docs/project-status.md — 当前有效状态、技术决策和P0/P1/P2遗漏事项的唯一入口。
+
+docs/project-memory.md — AI 和开发者共同维护的完整时间线、失败证据和纠正历史。
 
 ### 核心机制：读 → 执行 → 验证 → 回写
 
 每次任务执行遵循以下循环：
 
-第一步【读取】：开始任何任务前，先完整读取 docs/project-memory.md，基于已有记录制定执行计划，跳过已验证的内容
+第一步【读取】：开始任何任务前先完整读取 docs/project-status.md；再按本次模块、日期或编号只读取 docs/project-memory.md 的相关段落。仅在做全项目审计、记忆整理或无法定位历史事实时才完整读取 project-memory.md。不得用较早历史状态覆盖 project-status.md。
 
 第二步【执行】：基于记忆中的已知信息执行任务，减少不必要的重复验证
 
@@ -196,6 +198,8 @@ docs/project-memory.md — AI 和开发者共同维护的项目经验记录。
 - 补充：对已有记录增加细节或补充说明
 - 完成：将进行中的条目更新为已完成
 
+如果本次改变了当前环境、产品状态、技术决策或遗漏事项，必须同步更新 docs/project-status.md；纯过程失败只写project-memory.md，不污染当前状态入口。
+
 ### 纠正记录格式
 
 当纠正旧记录时，不要删除原记录，而是追加纠正说明：
@@ -204,7 +208,7 @@ docs/project-memory.md — AI 和开发者共同维护的项目经验记录。
 [纠正 - 日期] 上述内容有误。实际情况：xxx。发现原因：xxx
 
 ### 优先级
-- docs/project-memory.md 中的记录优先于 AI 自身的推测
+- docs/project-status.md 当前状态优先于 docs/project-memory.md 历史记录，二者均优先于 AI 自身推测
 - 如果记忆与实际执行结果冲突，以实际结果为准，并立即回写纠正
 - 如果记忆中没有相关信息，正常执行后将结论写入记忆
 

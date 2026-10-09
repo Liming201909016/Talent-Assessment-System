@@ -105,9 +105,6 @@
       <el-table-column v-if="query.sortBy === 'dimensionScore'" label="所选维度分" prop="sortDimensionScore" width="120" align="center">
         <template slot-scope="scope">{{ formatScore(scope.row.sortDimensionScore) }}</template>
       </el-table-column>
-      <el-table-column label="评价均值" prop="evaluationAverage" width="100" align="center">
-        <template slot-scope="scope">{{ formatScore(scope.row.evaluationAverage) }}</template>
-      </el-table-column>
       <el-table-column label="提交方式" width="90" align="center">
         <template slot-scope="scope">{{ scope.row.submitType === 'timeout' ? '到时提交' : '手工提交' }}</template>
       </el-table-column>
@@ -198,7 +195,7 @@
 
 <script>
 import { fetchDetail } from '@/api/exam/exam'
-import { downloadCompetencyReport, fetchCompetencyResults, fetchCompetencyResultDetail, generateCompetencyReport } from '@/api/competency'
+import { downloadCompetencyReport, downloadCompetencyReportsArchive, fetchCompetencyResults, fetchCompetencyResultDetail, generateCompetencyReport } from '@/api/competency'
 import { saveAs } from 'file-saver'
 
 export default {
@@ -328,6 +325,13 @@ export default {
     reportDownloadFileName(row) {
       return `${row.participantName || '受测者'}-${row.paperId}-胜任力临时测试报告.pdf`
     },
+    reportArchiveFileName() {
+      const title = (this.examTitle || '胜任力测评').replace(/[\\/:*?"<>|]/g, '_')
+      const now = new Date()
+      const stamp = [now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map(value => String(value).padStart(2, '0')).join('')
+      return `${title}-${stamp}-报告.zip`
+    },
     async batchGenerateReports() {
       if (!this.selectedRows.length || this.reportLoading) return
       const targetRows = this.selectedRows.filter(this.isReportSelectable).slice()
@@ -362,22 +366,13 @@ export default {
       if (!targetRows.length) return
       this.reportLoading = true
       this.reportAction = 'download'
-      let succeeded = 0
       try {
-        for (let index = 0; index < targetRows.length; index++) {
-          const row = targetRows[index]
-          this.reportProgress = `正在下载测评报告（${index + 1}/${targetRows.length}）`
-          try {
-            const blob = await downloadCompetencyReport(row.paperId)
-            saveAs(blob, this.reportDownloadFileName(row))
-            succeeded++
-          } catch (error) {
-            // Continue so one missing report does not block other downloads.
-          }
-        }
-        const failed = targetRows.length - succeeded
-        if (failed === 0) this.$message.success(`批量下载完成，共${succeeded}份`)
-        else this.$message.warning(`批量下载完成：成功${succeeded}份，失败${failed}份；失败项请先生成报告`)
+        this.reportProgress = `正在打包测评报告（共${targetRows.length}份）`
+        const blob = await downloadCompetencyReportsArchive(targetRows.map(row => row.paperId))
+        saveAs(blob, this.reportArchiveFileName())
+        this.$message.success(`批量下载完成，共${targetRows.length}份，已打包为ZIP`)
+      } catch (error) {
+        this.$message.error(error.message || '批量下载胜任力报告失败')
       } finally {
         this.reportLoading = false
         this.reportAction = ''

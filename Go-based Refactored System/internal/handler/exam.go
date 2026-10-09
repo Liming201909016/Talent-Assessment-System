@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,9 +22,10 @@ import (
 
 // ExamHandler 对应 /exam/api/exam/exam/*
 type ExamHandler struct {
-	db      *gorm.DB
-	cfg     *config.Config
-	pdfPool *pdfgen.Pool // 可为 nil（pdfgen.enabled=false 时）
+	db                              *gorm.DB
+	cfg                             *config.Config
+	pdfPool                         *pdfgen.Pool // 可为 nil（pdfgen.enabled=false 时）
+	managementTraitsRuntimeDisabled bool
 
 	// R4: 全局熔断 - 连续失败超阈值则在冷却窗口内不重试
 	cbMu              sync.Mutex
@@ -48,6 +50,10 @@ func NewExamHandler(db *gorm.DB, cfg *config.Config) *ExamHandler {
 	// 导出会因 el_tester 缺列而沉默失败。
 	ensureTesterMbtiColumns(db)
 	return h
+}
+
+func (h *ExamHandler) DisableManagementTraitsTestRuntime() {
+	h.managementTraitsRuntimeDisabled = true
 }
 
 // ensurePdfPartialColumn 幂等 ALTER TABLE 添加 pdf_partial 列。
@@ -304,9 +310,12 @@ func (h *ExamHandler) Detail(c *gin.Context) {
 		repoIDs = append(repoIDs, r.RepoID)
 	}
 	var repoCode string
-	h.db.Table("el_exam_repo AS er").
+	if err := h.db.Table("el_exam_repo AS er").
 		Joins("INNER JOIN el_repo AS rp ON rp.id = er.repo_id").
-		Where("er.exam_id = ?", id).Limit(1).Pluck("rp.code", &repoCode)
+		Where("er.exam_id = ?", id).Limit(1).Pluck("rp.code", &repoCode).Error; err != nil {
+		response.RestErr(c, "测评身份配置读取失败，请重试或联系管理员")
+		return
+	}
 	dimensionIDs := make([]string, 0)
 	dimensions := make([]model.ExamCompetencyDimension, 0)
 	if e.AssessmentType == service.AssessmentTypeCompetency {
@@ -319,6 +328,29 @@ func (h *ExamHandler) Detail(c *gin.Context) {
 		}
 		for _, dimension := range dimensions {
 			dimensionIDs = append(dimensionIDs, dimension.DimensionID)
+		}
+	}
+	managementTraitsFrozen := false
+	managementTraitsLifecycle := "legacy"
+	requiredFields := e.RequiredFields
+	if !h.managementTraitsRuntimeDisabled && e.AssessmentType == service.AssessmentTypeLegacy && e.ScoringMode == service.ScoringModeLegacy && service.IsManagementTraitsProduct(repoCode) {
+		lifecycle, err := service.ManagementTraitsExamLifecycle(c.Request.Context(), h.db, id)
+		if err != nil || (service.ClassifyManagementTraitsProduct(repoCode) == service.ManagementTraitsNew005 && lifecycle == "legacy") {
+			response.RestErr(c, "管理特质身份配置读取失败，请重试或联系管理员")
+			return
+		}
+		managementTraitsLifecycle = lifecycle
+		if lifecycle == "frozen" {
+			profile, err := managementTraitsIdentityService(h.db, h.cfg).ProfileDetail(c.Request.Context(), id)
+			var fields struct {
+				RequiredFields []string `json:"requiredFields"`
+			}
+			if err != nil || json.Unmarshal([]byte(profile.FieldContract), &fields) != nil {
+				response.RestErr(c, "管理特质身份配置读取失败，请重试或联系管理员")
+				return
+			}
+			requiredFields = strings.Join(fields.RequiredFields, ",")
+			managementTraitsFrozen = true
 		}
 	}
 	// 对齐 Java ExamSaveReqDTO：扁平字段 + repoList + departIds
@@ -339,8 +371,11 @@ func (h *ExamHandler) Detail(c *gin.Context) {
 		"createTime": e.CreateTime, "updateTime": e.UpdateTime,
 		"totalScore": e.TotalScore, "totalTime": e.TotalTime,
 		"qualifyScore": e.QualifyScore, "pdfPath": e.PdfPath,
-		"requiredFields": e.RequiredFields,
-		"repoList":       reposOut, "departIds": departs,
+		"requiredFields":                requiredFields,
+		"managementTraitsProfileFrozen": managementTraitsFrozen,
+		"isManagementTraits":            managementTraitsLifecycle != "legacy",
+		"managementTraitsLifecycle":     managementTraitsLifecycle,
+		"repoList":                      reposOut, "departIds": departs,
 		"repoCode": repoCode, "repoIds": repoIDs,
 		"dimensionIds": dimensionIDs, "competencyDimensions": dimensions,
 		"stuFlag": e.StuFlag,
@@ -414,6 +449,15 @@ func (h *ExamHandler) Save(c *gin.Context) {
 		slog.Info("exam-save: unmarshal error", "value", err)
 		response.RestErr(c, "参数错误")
 		return
+	}
+	var managementTraitsRequested *bool
+	if value, exists := rawMap["managementTraitsTestOnly"]; exists {
+		flag, ok := value.(bool)
+		if !ok {
+			managementTraitsRuntimeHTTPError(c, 400, "managementTraitsTestOnly必须为布尔值")
+			return
+		}
+		managementTraitsRequested = &flag
 	}
 	if body.AssessmentType == "" {
 		body.AssessmentType = service.AssessmentTypeLegacy
@@ -562,6 +606,7 @@ func (h *ExamHandler) Save(c *gin.Context) {
 	}
 
 	now := time.Now()
+	var managementTraitsDraft *model.ManagementTraitsExamDraft
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		isNew := exam.ID == ""
 		var original model.Exam
@@ -619,6 +664,14 @@ func (h *ExamHandler) Save(c *gin.Context) {
 				exam.PublishedAt = original.PublishedAt
 				exam.PublishedBy = original.PublishedBy
 			}
+		}
+		var draftErr error
+		managementTraitsDraft, draftErr = service.PrepareManagementTraitsDraft(c.Request.Context(), tx, exam, body.RepoList, isNew, managementTraitsRequested)
+		if draftErr != nil {
+			return draftErr
+		}
+		if managementTraitsDraft != nil && !managementTraitsRuntimeAdmin(c, "management-traits:profile:freeze") {
+			return service.ErrManagementTraitsDraftPolicy
 		}
 		if isCompetency && !wasPublishedCompetency {
 			if err := tx.Where("id IN ? AND status = ?", body.DimensionIDs, 0).
@@ -722,14 +775,39 @@ func (h *ExamHandler) Save(c *gin.Context) {
 			}
 		}
 
-		return nil
+		return service.PersistManagementTraitsDraft(tx, managementTraitsDraft, isNew)
 	})
 	if err != nil {
+		if c.IsAborted() {
+			return
+		}
+		if errors.Is(err, service.ErrManagementTraitsDraftPolicy) {
+			managementTraitsRuntimeHTTPError(c, 400, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrManagementTraitsDraftClosed) {
+			managementTraitsRuntimeHTTPError(c, 503, err.Error())
+			return
+		}
+		if managementTraitsDraft != nil {
+			managementTraitsRuntimeHTTPError(c, 409, "管理特质草稿保存失败，事务未完成，请重试")
+			return
+		}
 		if err == gorm.ErrDuplicatedKey {
 			response.RestErr(c, "不能选择重复的题库！")
 			return
 		}
 		response.RestErr(c, err.Error())
+		return
+	}
+	if managementTraitsDraft != nil {
+		data, _ := json.Marshal(exam)
+		var result map[string]any
+		_ = json.Unmarshal(data, &result)
+		result["isManagementTraits"] = true
+		result["managementTraitsLifecycle"] = "draft"
+		result["managementTraitsProfileFrozen"] = false
+		response.Rest(c, result)
 		return
 	}
 	response.Rest(c, exam)
@@ -829,8 +907,39 @@ func deleteCompetencyExamChain(tx *gorm.DB, examIDs []string) error {
 		if err := tx.Exec("DELETE FROM el_competency_report_audit WHERE paper_id IN ?", paperIDs).Error; err != nil {
 			return err
 		}
+		if tx.Migrator().HasTable("el_competency_report_current") {
+			if err := tx.Exec("DELETE FROM el_competency_report_current WHERE paper_id IN ?", paperIDs).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Exec("DELETE FROM el_competency_report WHERE paper_id IN ?", paperIDs).Error; err != nil {
 			return err
+		}
+		hasResultRunTable := tx.Migrator().HasTable("el_competency_result_run")
+		if hasResultRunTable && tx.Migrator().HasTable("el_competency_result_run_validity") {
+			if err := tx.Exec("DELETE FROM el_competency_result_run_validity WHERE result_run_id IN (SELECT id FROM el_competency_result_run WHERE paper_id IN ?)", paperIDs).Error; err != nil {
+				return err
+			}
+		}
+		if hasResultRunTable && tx.Migrator().HasTable("el_competency_result_run_module") {
+			if err := tx.Exec("DELETE FROM el_competency_result_run_module WHERE result_run_id IN (SELECT id FROM el_competency_result_run WHERE paper_id IN ?)", paperIDs).Error; err != nil {
+				return err
+			}
+		}
+		if hasResultRunTable && tx.Migrator().HasTable("el_competency_result_run_dimension") {
+			if err := tx.Exec("DELETE FROM el_competency_result_run_dimension WHERE result_run_id IN (SELECT id FROM el_competency_result_run WHERE paper_id IN ?)", paperIDs).Error; err != nil {
+				return err
+			}
+		}
+		if hasResultRunTable && tx.Migrator().HasTable("el_competency_result_run_overall") {
+			if err := tx.Exec("DELETE FROM el_competency_result_run_overall WHERE result_run_id IN (SELECT id FROM el_competency_result_run WHERE paper_id IN ?)", paperIDs).Error; err != nil {
+				return err
+			}
+		}
+		if hasResultRunTable {
+			if err := tx.Exec("DELETE FROM el_competency_result_run WHERE paper_id IN ?", paperIDs).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Exec("DELETE FROM el_competency_group_result WHERE paper_id IN ?", paperIDs).Error; err != nil {
 			return err

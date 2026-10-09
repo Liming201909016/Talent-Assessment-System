@@ -40,7 +40,7 @@
         align="center"
       >
         <template slot-scope="scope">
-          {{ scope.row.stuFlag == 1 ? (scope.row.repoCode.startsWith("002") ? "基层员工版" : "学生版") : (scope.row.repoCode.startsWith("002") ? "管理干部版" : "职场版") }}
+          {{ managementTraitsVersionLabel(scope.row) }}
         </template>
       </el-table-column>
 
@@ -129,13 +129,16 @@
         fixed="right"
       >
         <template slot-scope="scope">
-          <el-button type="warning" size="mini" @click="handleExamDetail(scope.row)">详情</el-button>
+          <el-button type="warning" size="mini" :disabled="traitsEntryLoading" @click="handleExamDetail(scope.row)">详情</el-button>
           <el-dropdown size="mini" trigger="click" @command="cmd => handleCommand(cmd, scope.row)" style="margin-left:8px">
             <el-button size="mini" type="info">更多<i class="el-icon-arrow-down el-icon--right"></i></el-button>
             <el-dropdown-menu slot="dropdown">
               <el-dropdown-item command="edit" icon="el-icon-edit">修改</el-dropdown-item>
               <el-dropdown-item v-if="scope.row.assessmentType === 'competency'" command="competencyResults" icon="el-icon-data-analysis">胜任力结果</el-dropdown-item>
               <el-dropdown-item v-else command="papers" icon="el-icon-document">测试记录</el-dropdown-item>
+              <el-dropdown-item v-if="scope.row.assessmentType !== 'competency' && isManagementTraitsProduct(scope.row.repoCode) && canManageTraits" command="managementTraitsResults" icon="el-icon-view">TEST 结果（显式）</el-dropdown-item>
+              <el-dropdown-item v-if="canManageTraits && isManagementTraitsProduct(scope.row.repoCode) && scope.row.state === 1" command="enableManagementTraits" icon="el-icon-video-play">启用 TEST 测评</el-dropdown-item>
+              <el-dropdown-item v-if="canManageTraits && isManagementTraitsProduct(scope.row.repoCode) && scope.row.state === 0" command="disableManagementTraits" icon="el-icon-video-pause">禁用 TEST 测评</el-dropdown-item>
               <el-dropdown-item command="export" icon="el-icon-download">导出汇总</el-dropdown-item>
               <el-dropdown-item command="exportAnswers" icon="el-icon-document-copy">导出原始答题</el-dropdown-item>
               <el-dropdown-item v-if="scope.row.assessmentType !== 'competency'" command="stats" icon="el-icon-data-analysis">统计</el-dropdown-item>
@@ -154,6 +157,8 @@
 import DataTable from '@/components/DataTable'
 import PieChart from "@/views/exam/exam/components/PieChart.vue";
 import { fetchList } from '@/api/qu/repo'
+import { canManageManagementTraits, fetchManagementTraitsProfile, managementTraitsExamKnown, setManagementTraitsExamState } from '@/api/managementTraits'
+import { isManagementTraitsProduct } from '@/utils/managementTraitsProduct'
 
 export default {
   name: 'ListExam',
@@ -162,6 +167,7 @@ export default {
     return {
 
       flag: false,
+      traitsEntryLoading: false,
       listQuery: {
         current: 1,
         size: 20,
@@ -209,7 +215,32 @@ export default {
     // })
   },
 
+  computed: { canManageTraits() { return canManageManagementTraits(this.$store) } },
   methods: {
+    isManagementTraitsProduct,
+    managementTraitsVersionLabel(row) {
+      if (row.repoCode === '00501') return '基层员工新版'
+      if (row.repoCode === '00502') return '干部新版'
+      if (isManagementTraitsProduct(row.repoCode)) return row.stuFlag == 1 ? '基层员工版' : '管理干部版'
+      return row.stuFlag == 1 ? '学生版' : '职场版'
+    },
+    async routeManagementTraits(row) {
+      const code = row.repoCode || (row.repoList && row.repoList[0] && row.repoList[0].repoCode) || ''
+      if (row.assessmentType === 'competency' || !managementTraitsExamKnown(row.id) || !canManageManagementTraits(this.$store)) return false
+      if (this.traitsEntryLoading) return true
+      this.traitsEntryLoading = true
+      try {
+        const response = await fetchManagementTraitsProfile(row.id)
+        if (!response || !Object.prototype.hasOwnProperty.call(response, 'data') || response.data === undefined) throw new Error('profile响应无效。')
+        if (response.data === null) return false
+        if (response.data.examId !== row.id || !response.data.frozenAt) throw new Error('profile身份或冻结状态无效。')
+        await this.$router.push({ name: 'ManagementTraitsResults', params: { examId: row.id } })
+        return true
+      } catch (err) {
+        this.$message.error(`002入口探测失败：${err.message || err}；已停止操作，请重试。`)
+        return true
+      } finally { this.traitsEntryLoading = false }
+    },
     getRepoList() {
       fetchList({}).then(response => {
         this.repoOptions = response.data
@@ -232,6 +263,9 @@ export default {
 
     handleCommand(cmd, row) {
       if (cmd === 'edit') this.handleUpdateExam(row.id)
+      else if (cmd === 'managementTraitsResults' && this.canManageTraits) this.$router.push({ name: 'ManagementTraitsResults', params: { examId: row.id } })
+      else if (cmd === 'enableManagementTraits') return this.setManagementTraitsState(row, 0)
+      else if (cmd === 'disableManagementTraits') return this.setManagementTraitsState(row, 1)
       else if (cmd === 'competencyResults') this.handleCompetencyResults(row)
       else if (cmd === 'papers') this.handlePaperList(row)
       else if (cmd === 'export') this.handleExportRawData(row)
@@ -239,24 +273,48 @@ export default {
       else if (cmd === 'stats') this.handleStatistics(row)
     },
 
+    async setManagementTraitsState(row, state) {
+      if (!this.canManageTraits || !row || !isManagementTraitsProduct(row.repoCode) || ![0, 1].includes(state) || ![0, 1].includes(row.state) || row.state === state || this.traitsEntryLoading) return
+      const action = state === 0 ? '启用' : '禁用'
+      try {
+        await this.$confirm(`确定${action}「${row.title || row.repoCode}」TEST 测评？`, `${action} TEST 测评`, {
+          confirmButtonText: action,
+          cancelButtonText: '取消',
+          type: state === 0 ? 'warning' : 'info'
+        })
+        this.traitsEntryLoading = true
+        const response = await setManagementTraitsExamState(row.id, state)
+        if (!response || !response.data || response.data.examId !== row.id || response.data.state !== state) throw new Error('状态响应与请求不一致')
+        this.$message.success(`${action}成功`)
+        if (this.$refs.pagingTable && this.$refs.pagingTable.getList) this.$refs.pagingTable.getList()
+      } catch (error) {
+        if (error !== 'cancel' && error !== 'close') this.$message.error(`${action}失败：${error.message || error}`)
+      } finally {
+        this.traitsEntryLoading = false
+      }
+    },
+
     handleCompetencyResults(row) {
       this.$router.push({ name: 'CompetencyResults', params: { examId: row.id }})
     },
 
-    handlePaperList(row) {
+    async handlePaperList(row) {
+      if (await this.routeManagementTraits(row)) return
       this.$router.push({ name: 'ListPaper', params: { examId: row.id }})
     },
 
-    handleStatistics(row) {
+    async handleStatistics(row) {
+      if (await this.routeManagementTraits(row)) return
       this.$router.push({ name: 'StatisticsExam', params: { examId: row.id, title: row.title, state: row.state, isOpen: row.isOpen }})
     },
 
-    handleExamDetail(row) {
+    async handleExamDetail(row) {
       console.log(row)
       if (row.assessmentType === 'competency') {
         this.$router.push({ name: 'CompetencyResults', params: { examId: row.id }})
         return
       }
+      if (await this.routeManagementTraits(row)) return
       this.$router.push({ name: 'ListExamUser', params: { examId: row.id, isOpen: row.isOpen, title: row.title, stuFlag: row.stuFlag}})
     },
 
@@ -264,7 +322,8 @@ export default {
       this.$router.push({ name: 'UpdateExam', params: { id: examId }})
     },
 
-    handleExportRawData(row) {
+    async handleExportRawData(row) {
+      if (await this.routeManagementTraits(row)) return
       const competency = row.assessmentType === 'competency'
       const message = competency ? '确定导出「' + row.title + '」的结果汇总、逐题明细和题目字典？' : '确定导出「' + row.title + '」的原始数据？'
       const fileName = competency ? row.title + '-胜任力结果明细.xlsx' : row.title + '-原始数据.xlsx'
@@ -277,7 +336,8 @@ export default {
       }).catch(() => {})
     },
 
-    handleExportRawAnswers(row) {
+    async handleExportRawAnswers(row) {
+      if (await this.routeManagementTraits(row)) return
       const competency = row.assessmentType === 'competency'
       const message = competency ? '确定导出「' + row.title + '」的结果汇总、逐题明细和题目字典？' : '确定导出「' + row.title + '」全体考生的逐题答题原始记录？数据可能较大。'
       const fileName = competency ? row.title + '-胜任力结果明细.xlsx' : row.title + '-原始答题记录.xlsx'

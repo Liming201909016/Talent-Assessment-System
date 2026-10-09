@@ -1,5 +1,29 @@
 # Runtime Validation Report
 
+> **历史报告提示（2026-10-09）**：本文件主体记录2026-07至2026-10-01的特定验收批次，其中`PARTIAL/FAIL`只代表当时版本和范围。当前项目状态统一读取[project-status.md](project-status.md)；最新00401、MBTI、00501/00502 staging范围结论已由2026-10-09后续真实验证覆盖。历史失败仍保留作回归来源，不删除、不反向改写为当时PASS。
+
+## 2026-10-01 FB-198部署后完整复测
+
+### 结论
+
+**总体为PARTIAL PASS：FB-198业务变更与核心构建、单测、浏览器、真实PDF和环境健康全部通过；完整测试发现1项活动模板视觉契约失败。**
+
+| 范围 | 结果 | 证据 |
+|---|---|---|
+| Go全量 | PASS | `go test ./... -v -count=1`退出0；FB-198测试通过 |
+| Go构建 | PASS | Windows build退出0；staging Linux后端SHA=`ee4566e7...` |
+| 前端Vitest | PASS | 26文件、165项全部通过 |
+| 前端production build | PASS WITH WARNINGS | 构建成功；仅asset/entrypoint体积2类既有warning |
+| 当前题本/身份契约 | PASS | `COMPETENCY_PHASE1_CONVERTER_CONTRACT_TEST_PASS`、`COMPETENCY_PHASE1_IDENTITY_TEST_PASS` |
+| 参与者浏览器回归 | PASS | 390/768/1440响应式、答案保存/刷新、认证/交卷门禁3/3通过；API为浏览器route mock，未写staging数据 |
+| 260915模板契约 | PASS | 75控件/58唯一Tag/12图表/0外链 |
+| v2重算验证器契约 | PASS | `COMPETENCY_V2_RECOMPUTE_CONTRACT_TEST_PASS` |
+| FB-198真实报告 | PASS | 优势自律性/成就导向/计划执行，待发展敬业奉献/逻辑思维；五段全文匹配DB；A4 10页、DB/文件/SHA一致 |
+| 活动v2模板视觉层级契约 | **FAIL** | 本地模板和精确下载的staging模板均在`test_fb194_overview_visual_hierarchy`失败；真实概览环图中心显示`60.94`，缺少契约要求的`总体得分`标签 |
+| Staging终验 | PASS | talent-assessment/nginx/mysql active；内外health正常；关键错误0、Nginx 5xx=0、短时会话0、临时文件0 |
+
+旧工作区任务“Full Regression (7 suites)”已过期：其引用的`chain-batch.js`、`business-rules-test.js`、`exam-fields-test.js`、`requirement-tests.js`、`browser-e2e-v2.js`、`exam-form-candidate-test.js`、`screenshot-chain-test.js`在活动测试目录均不存在，7项均为`MODULE_NOT_FOUND`。本轮改用当前受维护的Go/Vitest、`scripts/test/package.json`契约入口、3条参与者Playwright及v2模板/报告门禁；没有把失效旧任务记作业务失败。
+
 **Generated**: 2026-07-26T10:45:00+08:00  
 **Target**: staging `http://20.200.136.133` — 胜任力答题页 UI / 移动端适配
 

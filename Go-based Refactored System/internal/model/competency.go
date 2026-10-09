@@ -175,6 +175,150 @@ type CompetencyValidityResult struct {
 
 func (CompetencyValidityResult) TableName() string { return "el_competency_validity_result" }
 
+// CompetencyResultRun identifies one immutable scoring-version result for a paper.
+// Existing paper-keyed result models remain the compatibility source for v1.
+type CompetencyResultRun struct {
+	ID                     string     `gorm:"column:id;primaryKey" json:"id"`
+	PaperID                string     `gorm:"column:paper_id" json:"paperId"`
+	ExamID                 string     `gorm:"column:exam_id" json:"examId"`
+	ProductVersion         string     `gorm:"column:product_version" json:"productVersion"`
+	ScoringVersion         string     `gorm:"column:scoring_version" json:"scoringVersion"`
+	ContentVersion         string     `gorm:"column:content_version" json:"contentVersion"`
+	ReportTemplateVersion  string     `gorm:"column:report_template_version" json:"reportTemplateVersion"`
+	ReportAudience         string     `gorm:"column:report_audience" json:"reportAudience"`
+	ParticipantType        string     `gorm:"column:participant_type" json:"participantType"`
+	ParticipantID          string     `gorm:"column:participant_id" json:"participantId"`
+	ParticipantName        string     `gorm:"column:participant_name" json:"participantName"`
+	ParticipantTelephone   string     `gorm:"column:participant_telephone" json:"participantTelephone"`
+	ParticipantAge         *int       `gorm:"column:participant_age" json:"participantAge"`
+	ParticipantGender      string     `gorm:"column:participant_gender" json:"participantGender"`
+	ParticipantAffiliation string     `gorm:"column:participant_affiliation" json:"participantAffiliation"`
+	ParticipantPost        string     `gorm:"column:participant_post" json:"participantPost"`
+	ParticipantDegree      string     `gorm:"column:participant_degree" json:"participantDegree"`
+	ParticipantMajor       string     `gorm:"column:participant_major" json:"participantMajor"`
+	Source                 string     `gorm:"column:source" json:"source"`
+	Status                 string     `gorm:"column:status" json:"status"`
+	ErrorMessage           string     `gorm:"column:error_message" json:"errorMessage"`
+	CreatedBy              *int64     `gorm:"column:created_by" json:"createdBy"`
+	CompletedAt            *time.Time `gorm:"column:completed_at" json:"completedAt"`
+	CreateTime             *time.Time `gorm:"column:create_time" json:"createTime"`
+	UpdateTime             *time.Time `gorm:"column:update_time" json:"updateTime"`
+}
+
+func (CompetencyResultRun) TableName() string { return "el_competency_result_run" }
+
+type CompetencyResultRunOverall struct {
+	ResultRunID                    string           `gorm:"column:result_run_id;primaryKey" json:"resultRunId"`
+	TotalQuestionCount             int              `gorm:"column:total_question_count" json:"totalQuestionCount"`
+	AnsweredQuestionCount          int              `gorm:"column:answered_question_count" json:"answeredQuestionCount"`
+	DimensionQuestionCount         int              `gorm:"column:dimension_question_count" json:"dimensionQuestionCount"`
+	AnsweredDimensionQuestionCount int              `gorm:"column:answered_dimension_question_count" json:"answeredDimensionQuestionCount"`
+	EffectiveDimensionCount        int              `gorm:"column:effective_dimension_count" json:"effectiveDimensionCount"`
+	OverallScore                   *decimal.Decimal `gorm:"column:overall_score;type:decimal(18,6)" json:"overallScore"`
+	LevelCode                      *string          `gorm:"column:level_code" json:"levelCode"`
+	NormScore                      *decimal.Decimal `gorm:"column:norm_score;type:decimal(18,6)" json:"normScore"`
+	NormComparisonCode             *string          `gorm:"column:norm_comparison_code" json:"normComparisonCode"`
+	IsComplete                     int8             `gorm:"column:is_complete" json:"isComplete"`
+	SubmitType                     string           `gorm:"column:submit_type" json:"submitType"`
+	SubmittedAt                    *time.Time       `gorm:"column:submitted_at" json:"submittedAt"`
+	UserTime                       int              `gorm:"column:user_time" json:"userTime"`
+	CreateTime                     *time.Time       `gorm:"column:create_time" json:"createTime"`
+	UpdateTime                     *time.Time       `gorm:"column:update_time" json:"updateTime"`
+}
+
+func (CompetencyResultRunOverall) TableName() string {
+	return "el_competency_result_run_overall"
+}
+
+type CompetencyResultRunModule struct {
+	ID                      string           `gorm:"column:id;primaryKey" json:"id"`
+	ResultRunID             string           `gorm:"column:result_run_id" json:"resultRunId"`
+	ModuleID                string           `gorm:"column:module_id" json:"moduleId"`
+	ModuleCode              string           `gorm:"column:module_code" json:"moduleCode"`
+	ModuleName              string           `gorm:"column:module_name" json:"moduleName"`
+	DisplayOrder            int              `gorm:"column:display_order" json:"displayOrder"`
+	TotalDimensionCount     int              `gorm:"column:total_dimension_count" json:"totalDimensionCount"`
+	EffectiveDimensionCount int              `gorm:"column:effective_dimension_count" json:"effectiveDimensionCount"`
+	ModuleScore             *decimal.Decimal `gorm:"column:module_score;type:decimal(18,6)" json:"moduleScore"`
+	LevelCode               *string          `gorm:"column:level_code" json:"levelCode"`
+	NormScore               *decimal.Decimal `gorm:"column:norm_score;type:decimal(18,6)" json:"normScore"`
+	NormComparisonCode      *string          `gorm:"column:norm_comparison_code" json:"normComparisonCode"`
+	IsComplete              int8             `gorm:"column:is_complete" json:"isComplete"`
+	CreateTime              *time.Time       `gorm:"column:create_time" json:"createTime"`
+}
+
+func (CompetencyResultRunModule) TableName() string {
+	return "el_competency_result_run_module"
+}
+
+type CompetencyResultRunDimension struct {
+	ID                    string           `gorm:"column:id;primaryKey" json:"id"`
+	ResultRunID           string           `gorm:"column:result_run_id" json:"resultRunId"`
+	DimensionID           string           `gorm:"column:dimension_id" json:"dimensionId"`
+	DimensionCode         string           `gorm:"column:dimension_code" json:"dimensionCode"`
+	DimensionName         string           `gorm:"column:dimension_name" json:"dimensionName"`
+	DisplayOrder          int              `gorm:"column:display_order" json:"displayOrder"`
+	TotalQuestionCount    int              `gorm:"column:total_question_count" json:"totalQuestionCount"`
+	AnsweredQuestionCount int              `gorm:"column:answered_question_count" json:"answeredQuestionCount"`
+	ScoreSum              int              `gorm:"column:score_sum" json:"scoreSum"`
+	DimensionScore        *decimal.Decimal `gorm:"column:dimension_score;type:decimal(18,6)" json:"dimensionScore"`
+	LevelCode             *string          `gorm:"column:level_code" json:"levelCode"`
+	NormScore             *decimal.Decimal `gorm:"column:norm_score;type:decimal(18,6)" json:"normScore"`
+	IsComplete            int8             `gorm:"column:is_complete" json:"isComplete"`
+	CreateTime            *time.Time       `gorm:"column:create_time" json:"createTime"`
+}
+
+func (CompetencyResultRunDimension) TableName() string {
+	return "el_competency_result_run_dimension"
+}
+
+type CompetencyResultRunValidity struct {
+	ResultRunID           string           `gorm:"column:result_run_id;primaryKey" json:"resultRunId"`
+	TotalQuestionCount    int              `gorm:"column:total_question_count" json:"totalQuestionCount"`
+	AnsweredQuestionCount int              `gorm:"column:answered_question_count" json:"answeredQuestionCount"`
+	ValidityScore         *decimal.Decimal `gorm:"column:validity_score;type:decimal(18,6)" json:"validityScore"`
+	ValidityStatus        *string          `gorm:"column:validity_status" json:"validityStatus"`
+	IsComplete            int8             `gorm:"column:is_complete" json:"isComplete"`
+	CreateTime            *time.Time       `gorm:"column:create_time" json:"createTime"`
+	UpdateTime            *time.Time       `gorm:"column:update_time" json:"updateTime"`
+}
+
+func (CompetencyResultRunValidity) TableName() string {
+	return "el_competency_result_run_validity"
+}
+
+// CompetencyVersionDimension stores immutable semantic identities and
+// version-scoped display metadata without changing the v1 dimension master.
+type CompetencyVersionDimension struct {
+	ID             string     `gorm:"column:id;primaryKey" json:"id"`
+	ProductVersion string     `gorm:"column:product_version" json:"productVersion"`
+	StableKey      string     `gorm:"column:stable_key" json:"stableKey"`
+	DisplayCode    string     `gorm:"column:display_code" json:"displayCode"`
+	Name           string     `gorm:"column:name" json:"name"`
+	ModuleCode     string     `gorm:"column:module_code" json:"moduleCode"`
+	DisplayOrder   int        `gorm:"column:display_order" json:"displayOrder"`
+	CreateTime     *time.Time `gorm:"column:create_time" json:"createTime"`
+}
+
+func (CompetencyVersionDimension) TableName() string {
+	return "el_competency_version_dimension"
+}
+
+// CompetencyDimensionMapping maps frozen source-answer dimension identities
+// to semantic identities in a target product version.
+type CompetencyDimensionMapping struct {
+	ID                   string     `gorm:"column:id;primaryKey" json:"id"`
+	SourceProductVersion string     `gorm:"column:source_product_version" json:"sourceProductVersion"`
+	SourceDimensionID    string     `gorm:"column:source_dimension_id" json:"sourceDimensionId"`
+	TargetProductVersion string     `gorm:"column:target_product_version" json:"targetProductVersion"`
+	TargetDimensionID    string     `gorm:"column:target_dimension_id" json:"targetDimensionId"`
+	CreateTime           *time.Time `gorm:"column:create_time" json:"createTime"`
+}
+
+func (CompetencyDimensionMapping) TableName() string {
+	return "el_competency_dimension_mapping"
+}
+
 type CompetencyReportText struct {
 	ID             string     `gorm:"column:id;primaryKey" json:"id"`
 	ContentVersion string     `gorm:"column:content_version" json:"contentVersion"`
@@ -222,6 +366,7 @@ type CompetencyReport struct {
 	ID              string     `gorm:"column:id;primaryKey" json:"id"`
 	PaperID         string     `gorm:"column:paper_id" json:"paperId"`
 	ExamID          string     `gorm:"column:exam_id" json:"examId"`
+	ResultRunID     *string    `gorm:"column:result_run_id" json:"resultRunId,omitempty"`
 	Audience        string     `gorm:"column:audience" json:"audience"`
 	ContentVersion  string     `gorm:"column:content_version" json:"contentVersion"`
 	TemplateVersion string     `gorm:"column:template_version" json:"templateVersion"`
@@ -239,6 +384,20 @@ type CompetencyReport struct {
 }
 
 func (CompetencyReport) TableName() string { return "el_competency_report" }
+
+// CompetencyReportCurrent selects one current report for a paper and audience
+// without replacing or deleting any versioned report instance.
+type CompetencyReportCurrent struct {
+	PaperID    string     `gorm:"column:paper_id;primaryKey" json:"paperId"`
+	Audience   string     `gorm:"column:audience;primaryKey" json:"audience"`
+	ReportID   string     `gorm:"column:report_id" json:"reportId"`
+	CreateTime *time.Time `gorm:"column:create_time" json:"createTime"`
+	UpdateTime *time.Time `gorm:"column:update_time" json:"updateTime"`
+}
+
+func (CompetencyReportCurrent) TableName() string {
+	return "el_competency_report_current"
+}
 
 type CompetencyReportAudit struct {
 	ID           string     `gorm:"column:id;primaryKey" json:"id"`

@@ -1,6 +1,58 @@
 # 业务链定义
 
+## 2026-10-09 Chain-MT005-PRODUCTION-VISIBILITY-ACTIVATION（local GREEN / production待演练）
+
+显式`production/production`环境声明→注册005 TEST runtime→迁移包导入保留`[TEST-保留]`标签的两个测评并适配为`state=1`可见禁用→管理员经专用JWT保护的管理特质状态操作选择单个已冻结005→仅允许`1↔0`或同值幂等→事务锁定exam/profile并核唯一005 repo和005 product version→条件UPDATE state→客户决定是否开放参与。匿名/普通权限、002/非005、未冻结、2/3状态、非法/重复/额外字段均拒绝；旧通用state API继续被legacy guard保护，不新增第三个环境或功能开关。代码及sqlmock GREEN，production MySQL5.7恢复副本和真实UI仍待验。
+
+## 2026-10-09 Chain-MT005-QUESTION-BANK-CONTENT（staging GREEN）
+
+00501 fresh创建→写入正式显示名“管理特质测验基层员工新版”→从00201复制140题/700选项且题干不覆盖；00502 fresh创建→写入正式显示名“管理特质测验干部新版”→从00202复制140题/700选项→仅在复制时将V67/V96替换为用户确认的管理版文案→事务内核验两个名称、两套140/700及两题精确文本。两条创建定义本地合同GREEN；staging现有005已原位更新并核验各140/700及V67/V96，002源数据receipt及冻结历史保持。production包已生成但未执行。
+
+## 2026-10-09 Chain-MT005-SHARED-TEMPLATE-MANAGEMENT（staging GREEN）
+
+管理员进入既有报告模板页→页面只展示一张“00501 / 00502 共用报告模板”卡片→读取当前文件元数据与实际SHA→下载DOCX→选择兼容DOCX并二次确认→后端在写盘前完成大小、ZIP/OPC、零外链、零宏/嵌入对象及90控件/6业务图/5数值标签渲染契约校验→备份旧文件并同目录原子替换→刷新卡片。新TEST与reissue报告持久化当前实际模板SHA；历史报告只接受当前模板或服务器自动备份的SHA并读取原PDF，不重渲染。显式production双环境声明时同一TEST路由可注册；staging真实管理员页面、元数据、下载、同文件上传、备份和报告模板SHA均已验收，production尚未部署/验收。
+
+## 2026-10-08 Chain-MT005-REPORT 双产品客户模板报告（local E2E）
+
+00501/00502真实题库fixture→管理员UI新建保存→独立freeze→开放synthetic登记→准备/开卷→140次raw3 UI保存（00501中途reload）→manual submit→管理结果13维4模块/50.00→独立reissue资格→生成/重复复用→查看→原生下载→DB原DataSnapshot字节SHA、PDF SHA/bytes、audit及九页客户内容/六图独立oracle→exact cleanup。两个产品全链GREEN；旧report/current/pdf_path不写，旧报告及generic PDF路由保持503。最终瞬态exam/person/paper/run/report/audit/runtime PDF全0，005 fixture和draft/reissue schema及本地四服务保留；只local副本，不代表正式批准/远端部署。
+
+## 2026-10-08 Chain-MT005 独立新版产品／002完整保留（local slice）
+
+最新政策替代下方“新建002必须新版”的旧政策，历史证据不删除。普通00201/00202新建走原表单/Save；00501基层、00502干部仅从真实题库列表选择，不插入假选项。真实server repo code→单140题25分钟合法字段→exam/link/draft同TX→预先准备封闭人员→另行freeze按实际repo ID读140/700源→005独立product/question namespace→共享精确评分/TEST客户模板/新版身份与结果链。005缺表或无明确持久状态关闭，不回旧链。
+
+已有002draft只能编辑原002产品；已冻结002从原可信profile/source恢复，旧hash/结果/PDF不迁移、不重算。普通002无法显式opt-in新链，提示使用005；旧配置改005拒绝、必须新建。本文不授权注册真实005、复制题目、执行SQL、生成真人报告或发版；本轮实际验证与剩余盲区见后续本地收口报告。
+
+## 2026-10-07 Chain-MT01 新建必选新版草稿（local GREEN）
+
+[政策纠正] 下方旧“可取消TEST勾选”仅历史，不再用于新002。新建必须server真实002→同TX exam/link/独立draft→管理员可精确预先准备tester→另行freeze真实source/profile/bundle/marker frozen→原专属身份/开卷链。取消freeze保留draft且participant登记/start拒绝，历史legacy无sidecar不自动转换。公开DTO明确三态；旧详情draft回编辑，不旧报告回退。Go6272/frontend435/build-vet0仅local，DDL/远端0，独立review和staging migration/统一发行需后续门禁。[完整矩阵/消费方/测试](management-traits-new-draft-local-20261007.md)。
+
 > 本文件是跨页面、API、数据库验收链的索引。具体条件分支见 [business-branches.md](business-branches.md)。
+
+## 2026-10-06T14:29Z Chain-MT01 单freeze切片恢复，正式交付仍NO-GO
+
+本地实际SFC250ms保存延迟证明测试连续确认错误复用“提示”框，有效RED1；三轮后用户另批一次最小driver修正，等待同exam保存响应及精确“确认冻结 TEST”标题，原夹具GREEN0。单cc784正常auth/default-clear-reselect/保存取消/独立freeze200、SQLfrozen25/paper0/hash有效、finally/final0及旧465-source-config-schema-cache-PID同。产品源无改，无发版/restart/生产操作。
+
+完整四UI/自然0-3-140/20min/自然5minexpiry/expired409/四native-Python仍未完；当前新建默认TEST不能交付正式production报告，正式方案未确认/未实施是P0，不仅签字欠项。[本轮证据](management-traits-default-staging-result-20261006.md)、[生产准入与回滚](management-traits-production-readiness-20261006.md)。
+
+## 2026-10-06T14:06Z Chain-MT01 新有界续验最终PARTIAL
+
+仅测试两既有C区脚本各3次修改，actual RED→GREEN/相关202pass，不产品源修改/部署/restart/历史迁移。单00202满分报告/native独立匹配通过；完整新批四140UI+3partial/三manual/三报告五阶段/native3通过，但自然/续答Promise Error细cause未留，不能沿最后active标签归为下载失败。两零答探针都在freeze Timeout停止，最后未开卷，预算耗尽不第四修正。
+
+四批exactcleanup/final0，14:06fresh7roots0/11-private0/旧465/393/source/config/schema/cache/PID17552同，原集成getInfo200/admin但homefalse/当前页保留、ownedprocess0。自然0/3/140及20min/自然5minexpiry/expired409/全四native-Python仍❌未完成，mainrace/formal-prod边界保持；publicationcompleted/diagnoseblocked/natural未完/cleanupcompleted/active0。[本轮真实闭环及剩余阻断](management-traits-default-staging-result-20261006.md)。
+
+## 2026-10-06 Chain-MT01 staging限定纠正
+
+新default已仅前端staging发布，393公网SHA/backup/release/final0，backend/PID不动/restart0。首批四正常default创建/人员准备/独立freeze、三个140UI保存、两manual、一native通过；第二report步骤中止/cause未证，精确cleanup0。最终独立窗口首页原15minwait超时、未认证/业务0；自然3例/native4/独立oracle/新增续答及clear-reselect未完成，链整体仍PARTIAL/BLOCKED，不把下方本地六case或旧UF050当本批全部PASS。[完整证据和停止边界](management-traits-default-staging-result-20261006.md)。
+
+## Chain-MT01：002新建默认新版、历史保留（本地已实现，TEST）
+
+1. 管理员新建，选择单一合法00201/00202物理题库140单选后默认勾选TEST，可取消；历史编辑不自动切换。
+2. 保留个人字段子集，以原Save保存25分钟配置；封闭人员在任何profile冻结前通过精确draft作用域预先登记。
+3. 管理员另行确认freeze；取消保留draft，成功后配置只读，独立TEST入口只走真实冻结/快照身份链。
+4. 参与者登记/登录→准备→开卷→保存/同卷恢复→可信提交；管理员既有候选续答、结果、显式TEST生成/查看/下载不改。
+5. 历史评分/PDF保留，不因新建默认迁移或重算；00401/MBTI不在本链变化范围。
+
+本轮SFC81/全前端385/六本地真实Chromium配置case通过，API均localmock；新default未发布staging，新四完整UI/native待后续独立批准scope。fullUI启动器inspect保留模式已修，仅旧清理四PK真实只读0，不替完整E2E。[完整实施与证据](management-traits-new-default-local-20261006.md)。
 
 ## Chain-L01：传统测评（001/002/003）
 
@@ -108,3 +160,50 @@
 **不变量**：本链只授权staging；production不执行。009不直接删除测评、试卷、人员、结果或报告实例，也不导入90题或创建新的评分/报告文案。
 
 **执行证据（2026-08-10）**：`20.200.136.133` staging 已按上述顺序完成。备份目录为`/opt/talent-assessment/backups/phase1_ab_reset_20260810_141544`；整链删除9个胜任力测评并逐一核验7个PDF消失；009首次`apply_reset=1`、第二次`apply_reset=0`；最终marker=1、A/B维度10、D/源题/旧文案/运行依赖/PDF均0，传统十组数据签名不变。部署后真实Nginx API返回10维和空00401题库，Chromium验证维度表10行、题库0行、下拉10项且API/控制台错误均0；服务恢复active，production未修改。
+
+## Chain-C10：胜任力一期v2并行结果与报告（建设中）
+
+1. 基于旧答卷冻结的v1维度身份显式映射到十个v2语义维度。
+2. 以精确有理数计算十维百分制、三模块及总体，不做中间舍入。
+3. 使用固定常模区间生成模块/总体比较码，并按稳定同分规则选择模块、优势、待发展及总体建议维度。
+4. 按v2内容版本、基层员工受众、内容类型、语义身份和等级/比较码精确匹配规则文案。
+5. DTO冻结`result_run_id`及四类v2版本，只在展示边界执行两位HALF_UP。
+6. 独立value-only Word渲染器填充正文/页眉控件及12个语义图表的数字字面量，不覆盖客户样式。
+7. 报告运行时读取已完成的准确v2 run并交叉校验总体、模块、维度、常模和效度，适配58字段/12图表后使用独立value-only模板转换；完成元数据与paper+audience当前指针同事务提交，单份下载按指针解析。未应用011～013时自动保持原v1 SQL路径。
+8. FB-184已新增单卷历史重算及新完成答卷的v2 result_run写入：从冻结90题输入构建run、overall、3模块、10维和效度，使用paper行锁及`paper_id+scoring_version`幂等；011五表全缺失时保持v1兼容。该能力尚未执行真实数据库写入。
+9. 2026-09-19复审确认FB-185发布阻断：非基层受众与跨exam快照未失败关闭；提交事务内逐请求执行约20次结构探测；原子回滚、并发幂等、损坏run和完整结构签名仍只有静态/源码断言，没有可执行数据库证据。修复并复审前不执行011～013或staging重算。
+10. 后续仍待导入并批准v2规则文案、真实MySQL首次/重复迁移、单卷与并发重算、真实报告验收；完成后才能解除v2执行门禁。批量下载的当前指针切换留待独立切片。
+
+**FB-185A修复（2026-09-19）**：v2 run构建现已只接受基层员工受众；历史答案加载由已锁paper传入exam_id，并在题目快照和维度快照两个JOIN上同时约束同一exam。其余FB-185结构探测、事务行为测试、并发、run完整性、时长冻结及错误映射问题仍未关闭。
+
+**FB-185B修复（2026-09-19）**：持久化模块必须满足`module_id == module_code == 固定模块码`；run来源统一限制为`submission/historical_recompute`并接入创建、幂等复用和正式读取。历史重算允许复用由新答卷提交创建的合法run，且保留其原始source、不执行改写。其余事务回滚、完整Schema签名、热路径结构探测和真实并发仍未关闭。
+
+**FB-185C～H本地加固（2026-09-19）**：真实writer的子表失败回滚和合法run零写入复用已用sqlmock执行；结构检查改为事务前一次缓存的完整information_schema签名；提交、超时自动提交、重算和v2报告生成统一隐藏DB细节；`user_time`冻结到run overall；012对漂移/额外种子失败关闭；011在013复合FK存在时可安全重跑。Go全量/build通过。FB-185I真实MySQL双连接测试已加入，但本机未配置`FB185_MYSQL_DSN`而明确跳过，因此迁移和staging重算仍禁止执行。
+
+**当前不变量**：v1结果/PDF/渲染路径只读兼容；v2仍被执行版本门禁拒绝；代码已有单卷v2 run创建/重算入口，但011～013未执行且没有v2运行数据，FB-185关闭前禁止应用迁移或调用重算，因此不会实际生成v2报告；未部署远端环境。
+
+**纠正（2026-09-19）**：上述末段为建设期历史状态。011～015、15份v2 run、双批准和真实v2报告已在staging完成，production未修改。FB-190报告格式修复也已部署staging：requiredFields过滤、完整时长、空选择器状态、批准效度/免责声明、横向等级刻度及目标LibreOffice适配的分表分页；最终真实PDF为A4 10页，详情严格2/2/2/2/2，认证下载与数据库SHA一致。
+
+**补充（2026-09-20）**：客户重新提供并由Word重存的模板已完成FB-191安全清理和运行适配，原件逐字节备份。修复后的客户文件、本地活动模板和staging模板SHA一致；真实同一paper强制重生成后继续保持A4 10页、详情2/2/2/2/2、v1/v2并存和current指针正确。production未修改。
+
+**纠正（2026-09-20 / FB-192）**：FB-191验收漏检Word组合对象中的十维柱线图。现已将客户竖向等级图与动态chart2拆为两个普通内联对象，并新增真实PDF可见性门禁。staging同一真实paper第4页已显示10根分值柱、10个维度名称和常模折线；A4 10页、详情2/2/2/2/2、数据与v1/v2并存均保持。production未修改。
+
+**补充（2026-09-20 / FB-193）**：优势/待发展链由“仅规则正文+整段继承粗体”修正为动态`维度名：`与批准规则正文双run输出。真实3项优势/2项待发展报告逐项匹配选择器和数据库文案，仅名称粗体、正文常规；其他报告字段仍为value-only。production未修改。
+
+**补充（2026-09-20 / FB-194，本地）**：报告概览页按用户红框完成模板层视觉优化：摘要卡增加绿色左强调和内边距；环图中心改为紧凑的`总体得分`/绿色分值两级排版；竖向等级图升级为高清圆角色阶。动态字段、评分、图表数据和页序不变，Word/LibreOffice仍为10页。尚未部署staging/production。
+
+**纠正（2026-09-20 / FB-194 staging）**：上述本地模板已部署staging并对真实3优势/2待发展报告强制重生成。目标LibreOffice 24.2输出A4 10页，概览页三处视觉层级与十页接触表通过；评分、组合图、动态文案、详情2/2/2/2/2和v1/v2并存均保持。production未修改。
+
+**补充（2026-09-20 / FB-195）**：报告模板管理现明确分流v1/v2。页面管理当前活动v2文件，后端使用独立`v2TemplatePath`和60字段/12图表value-only契约；旧v1路由、文件及门禁均保留。真实UI同源multipart API完成上传→元数据刷新→下载→报告重生成闭环，production未修改。
+
+**补充（2026-09-20 / FB-196）**：十维组合图在value-only基础上增加唯一明确的动态样式例外：程序只按已批准五档修改10个柱形数据点填充色，常模折线及其余图表样式仍由模板控制。真实staging报告验证同档同色、跨档异色，production未修改。
+
+**补充（2026-09-22 / FB-197，本地）**：一期结果导出已从v1旧结果表切换为completed v2 result run。两个既有导出入口继续返回同一三Sheet文件；汇总使用总体/三模块/十维百分制及常模口径，逐题和题目字典同步增加v2稳定身份。仅导出精确v2四版本+基层对象，不回退或混入v1；暂无v2 run时只保留表头。尚未部署staging/production。
+
+**纠正（2026-09-22 / FB-197 staging）**：新版导出后端已部署。真实3-run测评的两个入口输出字节一致，三Sheet为3×75、270×20、90×14，并与数据库42项v2总体/模块/维度/效度事实一致；真实无v2 run测评三个Sheet均仅表头。通用胜任力和传统导出未改，production未修改。
+
+**补充（2026-10-01 / FB-198，本地）**：v2报告概览的优势/待发展选择不再按等级类别过滤，统一对十维精确分值排序并固定输出最高3项、最低2项；同分沿用既有维度顺序。五个槽位正文复用对应维度、对应等级的已批准完整表现评估文案，不修改模板或内容包。Go全量和build通过，尚未部署staging/production。
+
+**部署阻塞（2026-10-01 / FB-198 staging）**：Linux后端已构建为48854107 bytes/SHA=`ee4566e7a698ff592acaeab40c5986974787be27929cd1c2bc002d1adddcd300`。staging公网health仍为`ok`，但从客户端公网IP `20.239.176.250`访问`20.200.136.133:22`失败，三次SSH尝试均在执行远端命令前超时。遵守先备份后部署纪律，未启动数据库备份、未上传或替换后端、未生成真实报告；production未修改。
+
+**纠正（2026-10-01 / FB-198 staging完成）**：SSH恢复后先完成受限全库/旧后端/v2模板/目标旧PDF备份，再部署SHA=`ee4566e7...`后端。真实paper=`24504b9c-1874-4bbd-af09-f9d0d83abb16`按十维持久化分值选出最高三项`自律性75/成就导向71.875/计划执行68.75`和最低两项`敬业奉献40.625/逻辑思维53.125`；逻辑思维与合作意识同为53.125，按固定维度顺序选中逻辑思维。坐标感知PDF验证确认左右栏顺序及五段完整批准表现文案全部匹配数据库。最终PDF A4 10页、814637 bytes、SHA=`e981f5de...`，服务/health/日志/5xx/会话/临时文件门禁通过；production未修改。

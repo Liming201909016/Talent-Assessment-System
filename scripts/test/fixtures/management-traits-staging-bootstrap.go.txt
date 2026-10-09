@@ -1,0 +1,116 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
+	mysql "github.com/go-sql-driver/mysql"
+	"github.com/talent-assessment/refactored/internal/config"
+)
+
+func fail() { fmt.Println("STAGING_BOOTSTRAP_BLOCKED"); os.Exit(1) }
+
+func main() {
+	if len(os.Args) != 6 || os.Geteuid() != 0 {
+		fail()
+	}
+	mode, schema, binary, cwd, pid := os.Args[1], os.Args[2], os.Args[3], os.Args[4], os.Args[5]
+	pattern := `^mng_guard_audit_test_[a-f0-9]{16}$`
+	if mode == "lock" {
+		pattern = `^mng_source_lock_test_[a-f0-9]{16}$`
+	}
+	if !regexp.MustCompile(pattern).MatchString(schema) || !filepath.IsAbs(binary) || !filepath.IsAbs(cwd) || !regexp.MustCompile(`^[0-9]+$`).MatchString(pid) {
+		fail()
+	}
+	raw, err := os.ReadFile("/proc/" + pid + "/environ")
+	if err != nil {
+		fail()
+	}
+	for _, item := range strings.Split(string(raw), "\x00") {
+		if key, value, ok := strings.Cut(item, "="); ok {
+			if os.Setenv(key, value) != nil {
+				fail()
+			}
+		}
+	}
+	if os.Getenv("REPORT_EFFECTIVE_ENV") != "staging" || os.Chdir("/opt/talent-assessment") != nil {
+		fail()
+	}
+	log.SetOutput(io.Discard)
+	cfg := config.Load()
+	dc, err := mysql.ParseDSN(cfg.Mysql.DSN)
+	if err != nil || dc.DBName != "element" || dc.Net != "tcp" || (dc.Addr != "127.0.0.1:3306" && dc.Addr != "localhost:3306") || cfg.Jwt.Secret == "" {
+		fail()
+	}
+	dc.User, dc.Passwd, dc.Net, dc.Addr, dc.DBName = "root", "", "unix", "/var/run/mysqld/mysqld.sock", schema
+	dc.ParseTime, dc.MultiStatements, dc.InterpolateParams = true, false, false
+	dc.Timeout, dc.ReadTimeout, dc.WriteTimeout = 10*time.Second, 15*time.Second, 15*time.Second
+	name := "^TestManagementTraitsGuardAuditMySQLStagingExternal$"
+	var relay net.Listener
+	if mode == "lock" {
+		name = "^TestManagementTraitsSourceLockMySQLExternalUpdate$"
+		relay, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			fail()
+		}
+		defer relay.Close()
+		go func() {
+			for {
+				client, e := relay.Accept()
+				if e != nil {
+					return
+				}
+				go func() {
+					defer client.Close()
+					server, e := net.DialTimeout("unix", "/var/run/mysqld/mysqld.sock", 10*time.Second)
+					if e != nil {
+						return
+					}
+					defer server.Close()
+					var wg sync.WaitGroup
+					wg.Add(1)
+					go func() { defer wg.Done(); _, _ = io.Copy(server, client); server.Close() }()
+					_, _ = io.Copy(client, server)
+					client.Close()
+					wg.Wait()
+				}()
+			}
+		}()
+		dc.Net, dc.Addr = "tcp", relay.Addr().String()
+	}
+	cmd := exec.Command(binary, "-test.run", name, "-test.v", "-test.timeout", "150s")
+	cmd.Dir, cmd.Stdout, cmd.Stderr = cwd, os.Stdout, os.Stderr
+	env := make([]string, 0)
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if strings.HasPrefix(key, "MNG_") || key == "MYSQL_DSN" || key == "JWT_SECRET" {
+			continue
+		}
+		env = append(env, item)
+	}
+	env = append(env, "JWT_SECRET="+cfg.Jwt.Secret, "MYSQL_DSN="+dc.FormatDSN())
+	if mode == "lock" {
+		env = append(env, "MNG_SOURCE_LOCK_MYSQL_DSN="+dc.FormatDSN())
+	} else {
+		env = append(env, "MNG_GUARD_AUDIT_MYSQL_DSN="+dc.FormatDSN(), "MNG_GUARD_AUDIT_MYSQL_SCHEMA="+schema)
+		if mode == "schema" {
+			env = append(env, "MNG_STAGING_SCHEMA_ONLY=1")
+		} else if mode != "post" {
+			fail()
+		}
+	}
+	cmd.Env = env
+	if cmd.Run() != nil {
+		fail()
+	}
+	fmt.Println("STAGING_BOOTSTRAP_CHILD_PASS", mode)
+}

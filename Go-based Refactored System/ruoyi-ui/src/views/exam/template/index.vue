@@ -2,14 +2,14 @@
   <div class="app-container" style="padding: 8px 8px;">
     <div class="page-heading">
       <h3>报告模板管理</h3>
-      <p>集中管理胜任力与 MBTI Word 报告模板。上传后将立即用于后续报告生成。</p>
+      <p>集中管理胜任力、管理特质与 MBTI Word 报告模板。上传后将立即用于后续报告生成。</p>
     </div>
 
     <el-card class="phase1-card" shadow="never" v-loading="phase1Loading">
       <div slot="header" class="card-header">
         <div>
-          <strong>00401 一期胜任力报告模板</strong>
-          <span class="card-subtitle">基层员工版 · Word 内容控件模板</span>
+          <strong>00401 一期胜任力 v2 报告模板</strong>
+          <span class="card-subtitle">基层员工版 · 60字段 · 12业务图表 · value-only</span>
         </div>
         <el-tag v-if="phase1Template.exists" :type="phase1Template.valid ? 'success' : 'danger'" size="small">
           {{ phase1Template.valid ? '校验通过' : '校验失败' }}
@@ -42,7 +42,46 @@
         <span class="selected-file" :title="phase1File ? phase1File.name : ''">{{ phase1File ? phase1File.name : '未选择文件' }}</span>
         <el-button type="primary" icon="el-icon-upload2" :loading="phase1Uploading" :disabled="!phase1File" @click="uploadPhase1Template">上传并生效</el-button>
       </div>
-      <p class="upload-hint">仅支持 20MB 以内 DOCX。V1 模板继续兼容；V2 将校验必需/可选业务字段、12 个业务图表、FieldDictionary、ChartData、内嵌工作簿及零外部链接，校验通过后备份旧模板并原子替换。</p>
+      <p class="upload-hint">仅支持 20MB 以内 DOCX。系统将严格校验正文与页眉中的 60 个 v2 业务字段、12 个业务图表、零公式/引用/外部链接及页码契约；通过后备份旧 v2 模板并原子替换，不影响历史 v1 模板。</p>
+    </el-card>
+
+    <el-card class="management-traits-card" shadow="never" v-loading="managementTraitsTemplateLoading">
+      <div slot="header" class="card-header">
+        <div>
+          <strong>00501 / 00502 共用报告模板</strong>
+          <span class="card-subtitle">基层员工新版 / 干部新版 · 共用一份模板</span>
+        </div>
+        <el-tag v-if="managementTraitsTemplate.exists" :type="managementTraitsTemplate.valid ? 'success' : 'danger'" size="small">
+          {{ managementTraitsTemplate.valid ? '校验通过' : '校验失败' }}
+        </el-tag>
+        <el-tag v-else type="danger" size="small">模板缺失</el-tag>
+      </div>
+
+      <el-row :gutter="16" class="template-meta">
+        <el-col :xs="24" :sm="12" :md="6"><span class="meta-label">文件</span><span class="meta-value">{{ managementTraitsTemplate.fileName || '—' }}</span></el-col>
+        <el-col :xs="24" :sm="12" :md="4"><span class="meta-label">大小</span><span class="meta-value">{{ formatFileSize(managementTraitsTemplate.size) }}</span></el-col>
+        <el-col :xs="24" :sm="12" :md="7"><span class="meta-label">修改时间</span><span class="meta-value">{{ managementTraitsTemplate.modTime || '—' }}</span></el-col>
+        <el-col :xs="24" :sm="12" :md="7"><span class="meta-label">模板契约</span><span class="meta-value">{{ managementTraitsContractText }}</span></el-col>
+      </el-row>
+      <div class="sha-row"><span class="meta-label">SHA-256</span><code>{{ managementTraitsTemplate.sha256 || '—' }}</code></div>
+      <el-alert v-if="managementTraitsTemplate.validationError" :title="managementTraitsTemplate.validationError" type="error" :closable="false" show-icon class="contract-alert" />
+
+      <div class="phase1-actions">
+        <el-button icon="el-icon-download" :loading="managementTraitsTemplateDownloading" :disabled="!managementTraitsTemplate.exists" @click="downloadManagementTraitsTemplate">下载模板</el-button>
+        <el-upload
+          ref="managementTraitsTemplateUpload"
+          action="#"
+          :auto-upload="false"
+          :show-file-list="false"
+          :on-change="selectManagementTraitsTemplateFile"
+          accept=".docx"
+        >
+          <el-button icon="el-icon-folder-opened">选择文件</el-button>
+        </el-upload>
+        <span class="selected-file" :title="managementTraitsTemplateFile ? managementTraitsTemplateFile.name : ''">{{ managementTraitsTemplateFile ? managementTraitsTemplateFile.name : '未选择文件' }}</span>
+        <el-button type="primary" icon="el-icon-upload2" :loading="managementTraitsTemplateUploading" :disabled="!managementTraitsTemplateFile" @click="uploadManagementTraitsTemplate">上传并生效</el-button>
+      </div>
+      <p class="upload-hint">仅支持20MB以内DOCX。系统校验90个内容控件、6个业务图表、5个数字标签、零外部关系，并在备份旧模板后原子替换。上传后仅影响新生成或重发报告，历史PDF保持不变。</p>
     </el-card>
 
     <div style="margin: 16px 0 8px;">
@@ -111,7 +150,12 @@
 <script>
 import request from '@/utils/request'
 import { getToken } from '@/utils/auth'
-import { downloadPhase1WordTemplate, fetchPhase1WordTemplate, uploadPhase1WordTemplate } from '@/api/competency'
+import { downloadPhase1V2WordTemplate, fetchPhase1V2WordTemplate, uploadPhase1V2WordTemplate } from '@/api/competency'
+import {
+  downloadManagementTraitsTemplate as downloadManagementTraitsTemplateFile,
+  fetchManagementTraitsTemplateInfo,
+  uploadManagementTraitsTemplate as uploadManagementTraitsTemplateFile
+} from '@/api/managementTraits'
 
 export default {
   name: 'MbtiTemplates',
@@ -125,7 +169,7 @@ export default {
       phase1File: null,
       phase1Template: {
         exists: false,
-        fileName: 'competency-phase1-report.docx',
+        fileName: 'competency-phase1-report-v2.docx',
         size: 0,
         modTime: '',
         sha256: '',
@@ -140,6 +184,24 @@ export default {
         embeddedWorkbooks: 0,
         externalLinks: 0,
         visibleTokens: 0
+      },
+      managementTraitsTemplateLoading: false,
+      managementTraitsTemplateDownloading: false,
+      managementTraitsTemplateUploading: false,
+      managementTraitsTemplateFile: null,
+      managementTraitsTemplate: {
+        exists: false,
+        fileName: 'management-traits-00501-00502-shared.docx',
+        size: 0,
+        modTime: '',
+        sha256: '',
+        valid: false,
+        validationError: '',
+        productCodes: ['00501', '00502'],
+        contentControls: 0,
+        businessCharts: 0,
+        numericLabels: 0,
+        externalLinks: 0
       }
     }
   },
@@ -152,21 +214,27 @@ export default {
     },
     phase1ContractText() {
       if (!this.phase1Template.exists) return '—'
-      if (this.phase1Template.schemaVersion === 'competency-phase1-template-schema-v2') {
-        return `V2 · ${this.phase1Template.usedFields || 0}/${this.phase1Template.registeredFields || 0} 字段 · ${this.phase1Template.businessCharts || 0} 业务图表 · ${this.phase1Template.embeddedWorkbooks || 0} 内嵌工作簿 · ${this.phase1Template.externalLinks || 0} 外链`
+      if (['competency-phase1-template-schema-v2', 'competency-phase1-report-template-v2'].includes(this.phase1Template.schemaVersion)) {
+        const workbook = this.phase1Template.embeddedWorkbooks ? ` · ${this.phase1Template.embeddedWorkbooks} 内嵌工作簿` : ''
+        return `V2 · ${this.phase1Template.usedFields || 0}/${this.phase1Template.registeredFields || 0} 字段 · ${this.phase1Template.businessCharts || 0} 业务图表${workbook} · ${this.phase1Template.externalLinks || 0} 外链`
       }
       return `${this.phase1Template.contentControls || 0} 控件 / ${this.phase1Template.charts || 0} 图表 / ${this.phase1Template.visibleTokens || 0} 可见占位符`
+    },
+    managementTraitsContractText() {
+      if (!this.managementTraitsTemplate.exists) return '—'
+      return `${this.managementTraitsTemplate.contentControls || 0} 控件 / ${this.managementTraitsTemplate.businessCharts || 0} 图表 / ${this.managementTraitsTemplate.numericLabels || 0} 数字标签 / ${this.managementTraitsTemplate.externalLinks || 0} 外链`
     }
   },
   created() {
     this.fetchList()
     this.fetchPhase1Template()
+    this.fetchManagementTraitsTemplate()
   },
   methods: {
     async fetchPhase1Template() {
       this.phase1Loading = true
       try {
-        const response = await fetchPhase1WordTemplate()
+        const response = await fetchPhase1V2WordTemplate()
         this.phase1Template = { ...this.phase1Template, ...(response.data || {}) }
       } catch (error) {
         this.$message.error(error.message || '读取胜任力模板失败')
@@ -179,7 +247,7 @@ export default {
       return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(2)} MB` : `${(size / 1024).toFixed(0)} KB`
     },
     phase1DownloadFileName() {
-      const base = (this.phase1Template.fileName || 'competency-phase1-report.docx').replace(/\.docx$/i, '')
+      const base = (this.phase1Template.fileName || 'competency-phase1-report-v2.docx').replace(/\.docx$/i, '')
       const version = (this.phase1Template.sha256 || '').slice(0, 8)
       return `${base}${version ? '-' + version : ''}.docx`
     },
@@ -202,7 +270,7 @@ export default {
     async downloadPhase1Template() {
       this.phase1Downloading = true
       try {
-        const blob = await downloadPhase1WordTemplate()
+        const blob = await downloadPhase1V2WordTemplate()
         const blobUrl = window.URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.style.display = 'none'
@@ -232,7 +300,7 @@ export default {
       }
       this.phase1Uploading = true
       try {
-        await uploadPhase1WordTemplate(this.phase1File)
+        await uploadPhase1V2WordTemplate(this.phase1File)
         this.$message.success('胜任力报告模板已上传并生效')
         this.phase1File = null
         if (this.$refs && this.$refs.phase1Upload) this.$refs.phase1Upload.clearFiles()
@@ -241,6 +309,75 @@ export default {
         this.$message.error(error.message || '上传胜任力模板失败')
       } finally {
         this.phase1Uploading = false
+      }
+    },
+    async fetchManagementTraitsTemplate() {
+      this.managementTraitsTemplateLoading = true
+      try {
+        const response = await fetchManagementTraitsTemplateInfo()
+        this.managementTraitsTemplate = { ...this.managementTraitsTemplate, ...(response.data || {}) }
+      } catch (error) {
+        this.$message.error(error.message || '读取00501/00502共用报告模板失败')
+      } finally {
+        this.managementTraitsTemplateLoading = false
+      }
+    },
+    managementTraitsTemplateDownloadFileName() {
+      const base = (this.managementTraitsTemplate.fileName || 'management-traits-00501-00502-shared.docx').replace(/\.docx$/i, '')
+      const version = (this.managementTraitsTemplate.sha256 || '').slice(0, 8)
+      return `${base}${version ? '-' + version : ''}.docx`
+    },
+    selectManagementTraitsTemplateFile(uploadFile) {
+      const file = uploadFile.raw || uploadFile
+      if (!this.beforePhase1Upload(file)) {
+        this.managementTraitsTemplateFile = null
+        if (this.$refs && this.$refs.managementTraitsTemplateUpload) this.$refs.managementTraitsTemplateUpload.clearFiles()
+        return
+      }
+      this.managementTraitsTemplateFile = file
+    },
+    async downloadManagementTraitsTemplate() {
+      this.managementTraitsTemplateDownloading = true
+      try {
+        const blob = await downloadManagementTraitsTemplateFile()
+        const blobUrl = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.style.display = 'none'
+        link.href = blobUrl
+        link.setAttribute('download', this.managementTraitsTemplateDownloadFileName())
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(blobUrl)
+      } catch (error) {
+        this.$message.error(error.message || '下载00501/00502共用报告模板失败')
+      } finally {
+        this.managementTraitsTemplateDownloading = false
+      }
+    },
+    async uploadManagementTraitsTemplate() {
+      if (!this.managementTraitsTemplateFile) return
+      try {
+        await this.$confirm('上传校验通过后将立即替换00501/00502共用报告模板；历史PDF保持不变。是否继续？', '确认上传', {
+          confirmButtonText: '上传并生效',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+      } catch (error) {
+        if (error !== 'cancel' && error !== 'close') this.$message.error(error.message || '上传已取消')
+        return
+      }
+      this.managementTraitsTemplateUploading = true
+      try {
+        await uploadManagementTraitsTemplateFile(this.managementTraitsTemplateFile)
+        this.$message.success('00501/00502共用报告模板已上传并生效')
+        this.managementTraitsTemplateFile = null
+        if (this.$refs && this.$refs.managementTraitsTemplateUpload) this.$refs.managementTraitsTemplateUpload.clearFiles()
+        await this.fetchManagementTraitsTemplate()
+      } catch (error) {
+        this.$message.error(error.message || '上传00501/00502共用报告模板失败')
+      } finally {
+        this.managementTraitsTemplateUploading = false
       }
     },
     fetchList() {
@@ -315,7 +452,8 @@ export default {
 .page-heading { margin-bottom: 12px; }
 .page-heading h3 { margin: 0 0 4px; font-size: 18px; }
 .page-heading p, .upload-hint { margin: 0; color: #909399; font-size: 12px; line-height: 1.5; }
-.phase1-card { border-color: #dcdfe6; }
+.phase1-card, .management-traits-card { border-color: #dcdfe6; }
+.management-traits-card { margin-top: 12px; }
 .card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .card-subtitle { margin-left: 8px; color: #909399; font-size: 12px; font-weight: normal; }
 .template-meta .el-col { display: flex; gap: 8px; min-height: 30px; align-items: center; }

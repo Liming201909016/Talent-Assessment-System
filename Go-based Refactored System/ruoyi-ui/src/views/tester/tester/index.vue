@@ -391,6 +391,7 @@ export default {
         examId: this.queryParams.examId || null,
         idNumber: null,
         name: null,
+        status: "0",
         password: null,
         age: null,
         gender: null,

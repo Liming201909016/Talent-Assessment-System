@@ -89,6 +89,17 @@ export const constantRoutes = [
     ]
   },
   {
+    path: '/exam/management-traits-results',
+    component: Layout,
+    hidden: true,
+    children: [{
+      path: ':examId',
+      component: () => import('@/views/exam/exam/managementTraitsResults'),
+      name: 'ManagementTraitsResults',
+      meta: { title: '管理特质 TEST 结果', noCache: true, activeMenu: '/exam/exam' }
+    }]
+  },
+  {
     path: '/user',
     component: Layout,
     hidden: true,
@@ -156,6 +167,13 @@ export const constantRoutes = [
     component: () => import('@/views/paper/exam/competencyExam'),
     name: 'CompetencyExam',
     meta: { title: '胜任力测评', noCache: true, activeMenu: '/my/exam', hideSystemTitle: true },
+    hidden: true
+  },
+  {
+    path: '/exam/management-traits/start/:paperId',
+    component: () => import('@/views/paper/exam/managementTraitsExam'),
+    name: 'ManagementTraitsExam',
+    meta: { title: '管理特质 TEST', noCache: true, hideSystemTitle: true },
     hidden: true
   },
   {

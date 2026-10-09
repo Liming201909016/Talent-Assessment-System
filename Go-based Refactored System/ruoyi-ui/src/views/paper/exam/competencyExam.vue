@@ -235,6 +235,9 @@ export default {
 
 .scale-options .el-radio {
   display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   height: 52px;
   margin: 0;
   padding: 0 16px;
@@ -244,6 +247,8 @@ export default {
   background: #fff;
   transition: border-color .2s ease, background .2s ease, box-shadow .2s ease, transform .2s ease;
 }
+
+.scale-options .el-radio.is-bordered + .el-radio.is-bordered { margin-left: 0; }
 
 .scale-options .el-radio:hover {
   border-color: var(--primary);
@@ -258,6 +263,7 @@ export default {
 }
 
 .scale-options ::v-deep .el-radio__label { padding-left: 8px; font-size: 14px; }
+.scale-options ::v-deep .el-radio__input { flex: 0 0 auto; }
 .scale-options ::v-deep .el-radio__input.is-checked + .el-radio__label { color: var(--primary); font-weight: 600; }
 .scale-options ::v-deep .el-radio__input.is-checked .el-radio__inner { border-color: var(--primary); background: var(--primary); }
 

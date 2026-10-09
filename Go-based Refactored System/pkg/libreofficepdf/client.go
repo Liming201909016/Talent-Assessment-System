@@ -35,6 +35,22 @@ type Client struct {
 	runner     commandRunner
 }
 
+// ConversionError retains the cause for server-side classification, while
+// Error returns only the existing fixed public message, never command output.
+type ConversionError struct {
+	message string
+	class   string
+	cause   error
+}
+
+func (e *ConversionError) Error() string           { return e.message }
+func (e *ConversionError) Unwrap() error           { return e.cause }
+func (e *ConversionError) DiagnosticClass() string { return e.class }
+
+func conversionError(message, class string, cause error) error {
+	return &ConversionError{message: message, class: class, cause: cause}
+}
+
 func NewClient(executable string) *Client {
 	return newClient(executable, execRunner{})
 }
@@ -59,32 +75,32 @@ func newClient(executable string, runner commandRunner) *Client {
 
 func (c *Client) Convert(ctx context.Context, fileName string, docx []byte) ([]byte, error) {
 	if c == nil || c.runner == nil || strings.TrimSpace(c.executable) == "" {
-		return nil, errors.New("LibreOffice报告转换未配置")
+		return nil, conversionError("LibreOffice报告转换未配置", "lo_config", nil)
 	}
 	if len(docx) == 0 || len(docx) > maxDOCXBytes {
-		return nil, errors.New("Word报告文件大小无效")
+		return nil, conversionError("Word报告文件大小无效", "lo_input_size", nil)
 	}
 	fileName = strings.TrimSpace(fileName)
 	if fileName == "" || filepath.Base(fileName) != fileName || strings.ContainsAny(fileName, `/\`) || !strings.EqualFold(filepath.Ext(fileName), ".docx") {
-		return nil, errors.New("Word报告文件名无效")
+		return nil, conversionError("Word报告文件名无效", "lo_input_name", nil)
 	}
 	select {
 	case conversionSlot <- struct{}{}:
 		defer func() { <-conversionSlot }()
 	case <-ctx.Done():
-		return nil, errors.New("LibreOffice转换排队超时")
+		return nil, conversionError("LibreOffice转换排队超时", "lo_queue", ctx.Err())
 	}
 	workspace, err := os.MkdirTemp("", "phase1-word-pdf-")
 	if err != nil {
-		return nil, errors.New("创建Word报告转换目录失败")
+		return nil, conversionError("创建Word报告转换目录失败", "lo_workspace", err)
 	}
 	defer os.RemoveAll(workspace)
 	if err := os.Chmod(workspace, 0o700); err != nil {
-		return nil, errors.New("保护Word报告转换目录失败")
+		return nil, conversionError("保护Word报告转换目录失败", "lo_workspace_permission", err)
 	}
 	docxPath := filepath.Join(workspace, fileName)
 	if err := os.WriteFile(docxPath, docx, 0o600); err != nil {
-		return nil, errors.New("写入Word报告临时文件失败")
+		return nil, conversionError("写入Word报告临时文件失败", "lo_input_write", err)
 	}
 	profilePath := filepath.Join(workspace, "profile")
 	profileURL := localFileURL(profilePath)
@@ -97,22 +113,22 @@ func (c *Client) Convert(ctx context.Context, fileName string, docx []byte) ([]b
 	)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, errors.New("LibreOffice转换PDF超时")
+			return nil, conversionError("LibreOffice转换PDF超时", "lo_command", errors.Join(ctx.Err(), err))
 		}
-		return nil, errors.New("LibreOffice转换PDF失败")
+		return nil, conversionError("LibreOffice转换PDF失败", "lo_command", errors.Join(ctx.Err(), err))
 	}
 	pdfName := strings.TrimSuffix(fileName, filepath.Ext(fileName)) + ".pdf"
 	pdfFile, err := os.Open(filepath.Join(workspace, pdfName))
 	if err != nil {
-		return nil, errors.New("LibreOffice转换结果不存在")
+		return nil, conversionError("LibreOffice转换结果不存在", "lo_output_open", err)
 	}
 	defer pdfFile.Close()
 	pdf, err := io.ReadAll(io.LimitReader(pdfFile, maxPDFBytes+1))
 	if err != nil || len(pdf) > maxPDFBytes {
-		return nil, errors.New("读取LibreOffice PDF失败")
+		return nil, conversionError("读取LibreOffice PDF失败", "lo_output_read", err)
 	}
 	if len(pdf) < 1024 || !bytes.HasPrefix(pdf, []byte("%PDF-")) {
-		return nil, errors.New("LibreOffice返回的文件不是有效PDF")
+		return nil, conversionError("LibreOffice返回的文件不是有效PDF", "lo_output_invalid", nil)
 	}
 	return pdf, nil
 }

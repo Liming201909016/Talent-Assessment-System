@@ -109,6 +109,7 @@
 
 <script>
 import request from '@/utils/request'
+import { canManageManagementTraits, fetchManagementTraitsProfile, managementTraitsExamKnown } from '@/api/managementTraits'
 
 export default {
   name: "Index",
@@ -120,7 +121,8 @@ export default {
         repoCount: '-',
         userCount: '-'
       },
-      recentExams: []
+      recentExams: [],
+      traitsEntryLoading: false
     }
   },
   created() {
@@ -149,10 +151,27 @@ export default {
         this.recentExams = (res.data && res.data.records) ? res.data.records : []
       }).catch(() => {})
     },
-    goExamDetail(row) {
+    async goExamDetail(row) {
       if (row.assessmentType === 'competency') {
         this.$router.push({ name: 'CompetencyResults', params: { examId: row.id } })
         return
+      }
+      const code = row.repoCode || (row.repoList && row.repoList[0] && row.repoList[0].repoCode) || ''
+      if (managementTraitsExamKnown(row.id) && canManageManagementTraits(this.$store)) {
+        if (this.traitsEntryLoading) return
+        this.traitsEntryLoading = true
+        try {
+          const response = await fetchManagementTraitsProfile(row.id)
+          if (!response || !Object.prototype.hasOwnProperty.call(response, 'data') || response.data === undefined) throw new Error('profile响应无效。')
+          if (response.data !== null) {
+            if (response.data.examId !== row.id || !response.data.frozenAt) throw new Error('profile身份或冻结状态无效。')
+            await this.$router.push({ name: 'ManagementTraitsResults', params: { examId: row.id } })
+            return
+          }
+        } catch (err) {
+          this.$message.error(`002入口探测失败：${err.message || err}；已停止跳转，请重试。`)
+          return
+        } finally { this.traitsEntryLoading = false }
       }
       const isOpen = row.isOpen || 1
       this.$router.push({

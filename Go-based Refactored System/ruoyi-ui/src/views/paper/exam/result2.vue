@@ -1,5 +1,5 @@
 <template>
-  <div class="invitationLetter" style="width: 100%">
+  <div v-if="!managementTraitsBlocked" class="invitationLetter" style="width: 100%">
 <!--    <el-button type="primary" @click="createPdf">导出</el-button>-->
     <main id="meet-pdf-id" :class="{ pdf__output: isPdf }">
 
@@ -231,6 +231,7 @@ import {getDictsBatch} from '@/api/system/dict/data'
 import my_copy from "../../user/exam/my_copy.vue";
 import {getTesterByIdNumber, paperResult2, pdfPersistence2} from "@/api/tester/tester";
 import scoreImg from '@/assets/report_images/score002.png';
+import { managementTraitsIntent, isManagementTraitsPaper } from '@/api/managementTraits'
 
 export default {
   name: "result2",
@@ -286,6 +287,7 @@ export default {
 
   data() {
     return {
+      managementTraitsBlocked: false,
       r_stuFlag: 0, // 接收从在线考试提交后传递来的参数
       r_repoCode: null, // 接收从在线考试提交后传递来的参数
       requiredFields: [],
@@ -368,6 +370,8 @@ export default {
     const params = this.$route.params || {}
     const query = this.$route.query || {}
     const paperId = params.id
+    this.paperId = paperId || ''
+    if (this.blockManagementTraits(paperId)) return
     this.examId = query.examId || params.examId
     this.testerId = params.testerId
     this.r_stuFlag = (query.stuFlag !== undefined ? query.stuFlag : params.stuFlag)
@@ -396,6 +400,7 @@ export default {
   },
 
   mounted() {
+    if (this.blockManagementTraits(this.paperId)) return
     const tok = this.$route.query && this.$route.query._internal
     const isInternal = typeof tok === 'string' && /^[a-f0-9]{32}$/i.test(tok)
     if (isInternal) {
@@ -631,6 +636,15 @@ export default {
 
   methods: {
 
+    blockManagementTraits(paperId) {
+      if (this.managementTraitsBlocked || managementTraitsIntent(this.$route) || isManagementTraitsPaper(paperId || this.paperId)) {
+        if (!this.managementTraitsBlocked) this.$router.replace({ name: 'ExamThankYou' })
+        this.managementTraitsBlocked = true
+        return true
+      }
+      return false
+    },
+
     formatDate(dt) {
       if (!dt) return ''
       return dt.substring(0, 10)
@@ -675,6 +689,7 @@ export default {
     },
 
     getDictData() {
+      if (this.blockManagementTraits(this.paperId)) return
       // 13 个管理特质评估 dict
       const evalDicts = [
         ['el_sociality', '社会性'],
@@ -774,6 +789,7 @@ export default {
     },
 
     pdfDownload(paperId) {
+      if (this.blockManagementTraits(paperId)) return
       // this.isPdfDownload = false
       // this.paperId = paperId
     },
@@ -784,6 +800,7 @@ export default {
     // },
 
     fetchScore(paperId) {
+      if (this.blockManagementTraits(paperId)) return
       this.paperId = paperId
       console.log("fetchScore.paperId=" + this.paperId)
       const params = {paperId: paperId, repoCode: this.repoCode||this.r_repoCode}
@@ -821,6 +838,7 @@ export default {
     },
 
     fetchTester(paperId) {
+      if (this.blockManagementTraits(paperId)) return
       // console.log(this.testerId)
       const params = { paperId: paperId }
       if (this.testerId.length === 18) {
@@ -861,6 +879,7 @@ export default {
 
     // 生成pdf文件
     async createPdf() {
+      if (this.blockManagementTraits(this.paperId)) return
       return new Promise(async (resolve, reject) => {
         //this.$store.state.pdfStatus.singlePdfFinished = false;
         this.$store.commit('setSinglePdfFinished', false);
@@ -879,6 +898,7 @@ export default {
         const firstPageHeader = document.getElementById("first-page-header");
         const firstPageFooter = document.getElementById("first-page-footer");
         setTimeout(() => {
+          if (this.blockManagementTraits(this.paperId)) { resolve(); return }
           let pdfDom = document.getElementById("meet-pdf-id");
           let pdfObj = new PdfLoader(pdfDom, {
             fileName: this.pdfName,
@@ -915,6 +935,7 @@ export default {
 
     //上传pdf接口
     UploadPdf(res) {
+      if (this.blockManagementTraits(this.paperId)) return Promise.resolve()
       return new Promise((resolve, reject) => {
         //res拿到base64的pdf
         let pdfBase64Str = res;

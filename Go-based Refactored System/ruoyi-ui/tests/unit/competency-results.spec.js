@@ -3,7 +3,7 @@ import { shallowMount } from '@vue/test-utils'
 import fs from 'fs'
 import path from 'path'
 import CompetencyResults from '@/views/exam/exam/competencyResults.vue'
-import { downloadCompetencyReport, fetchCompetencyResultDetail, fetchCompetencyResults, generateCompetencyReport } from '@/api/competency'
+import { downloadCompetencyReport, downloadCompetencyReportsArchive, fetchCompetencyResultDetail, fetchCompetencyResults, generateCompetencyReport } from '@/api/competency'
 import { saveAs } from 'file-saver'
 
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
@@ -16,7 +16,8 @@ vi.mock('@/api/competency', () => ({
   fetchCompetencyResults: vi.fn(() => Promise.resolve({ data: { records: [], total: 0 } })),
   fetchCompetencyResultDetail: vi.fn(),
   generateCompetencyReport: vi.fn(() => Promise.resolve({ data: { id: 'report-1' } })),
-  downloadCompetencyReport: vi.fn(() => Promise.resolve(new Blob(['pdf'], { type: 'application/pdf' })))
+  downloadCompetencyReport: vi.fn(() => Promise.resolve(new Blob(['pdf'], { type: 'application/pdf' }))),
+  downloadCompetencyReportsArchive: vi.fn(() => Promise.resolve(new Blob(['zip'], { type: 'application/zip' })))
 }))
 
 const mountPage = (methods = {}) => shallowMount(CompetencyResults, {
@@ -130,6 +131,15 @@ describe('Competency result management', () => {
     expect(source).toContain('prop="scoreSum"')
   })
 
+  // TestBugFB159_ResultListHidesEvaluationAverage
+  // 对应：docs/regression-tests.md #FB-159
+  // 范围：只删除胜任力结果列表列，不改变报告、详情、导出或评分字段。
+  it('does not display the evaluation-average column in the competency result list', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/exam/exam/competencyResults.vue'), 'utf8')
+    expect(source).not.toContain('label="评价均值"')
+    expect(source).not.toContain('scope.row.evaluationAverage')
+  })
+
   // TestBugFB123_CompetencyScoresUseTwoDecimals
   // 对应：docs/regression-tests.md #FB-123
   it('formats all aggregate scores with two decimal places', () => {
@@ -139,7 +149,7 @@ describe('Competency result management', () => {
     expect(wrapper.vm.formatScore('4.625')).toBe('4.63')
     expect(wrapper.vm.formatScore(null)).toBe('—')
     const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/exam/exam/competencyResults.vue'), 'utf8')
-    for (const value of ['scope.row.overallScore', 'scope.row.sortDimensionScore', 'scope.row.evaluationAverage', 'selectedRow.overallScore', 'scope.row.groupScore', 'scope.row.scoreSum', 'scope.row.dimensionScore']) {
+    for (const value of ['scope.row.overallScore', 'scope.row.sortDimensionScore', 'selectedRow.overallScore', 'scope.row.groupScore', 'scope.row.scoreSum', 'scope.row.dimensionScore']) {
       expect(source).toContain(`formatScore(${value})`)
     }
   })
@@ -188,7 +198,7 @@ describe('Competency result management', () => {
 
   it('batch-generates and batch-downloads every selected complete result', async () => {
     generateCompetencyReport.mockClear()
-    downloadCompetencyReport.mockClear()
+    downloadCompetencyReportsArchive.mockClear()
     saveAs.mockClear()
     const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
     wrapper.vm.$message = { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
@@ -200,9 +210,34 @@ describe('Competency result management', () => {
     expect(generateCompetencyReport).toHaveBeenCalledTimes(2)
     expect(generateCompetencyReport).toHaveBeenNthCalledWith(1, { paperId: 'paper-1', force: true })
     await wrapper.vm.batchDownloadReports()
-    expect(downloadCompetencyReport).toHaveBeenCalledTimes(2)
-    expect(saveAs).toHaveBeenCalledTimes(2)
+    expect(downloadCompetencyReportsArchive).toHaveBeenCalledTimes(1)
+    expect(downloadCompetencyReportsArchive).toHaveBeenCalledWith(['paper-1', 'paper-2'])
+    expect(saveAs).toHaveBeenCalledTimes(1)
+    expect(saveAs.mock.calls[0][0].type).toBe('application/zip')
+    expect(saveAs.mock.calls[0][1]).toMatch(/\.zip$/)
     expect(wrapper.vm.reportLoading).toBe(false)
+  })
+
+  // TestBugFB157_BatchDownloadUsesOneZipArchive
+  // 对应：docs/regression-tests.md #FB-157
+  // 复现：勾选多份报告后，页面循环保存多个PDF，浏览器连续触发多个下载。
+  // 期望：一次请求全部paperId，浏览器只保存一个包含所选PDF的ZIP。
+  it('downloads selected reports as one zip instead of triggering one browser download per PDF', async () => {
+    downloadCompetencyReportsArchive.mockClear()
+    saveAs.mockClear()
+    const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
+    wrapper.vm.$message = { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
+    wrapper.vm.selectedRows = [
+      { paperId: 'paper-zip-1', participantName: '甲', isComplete: 1 },
+      { paperId: 'paper-zip-2', participantName: '乙', isComplete: 1 }
+    ]
+
+    await wrapper.vm.batchDownloadReports()
+
+    expect(downloadCompetencyReportsArchive).toHaveBeenCalledTimes(1)
+    expect(downloadCompetencyReportsArchive).toHaveBeenCalledWith(['paper-zip-1', 'paper-zip-2'])
+    expect(saveAs).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('批量下载完成，共2份，已打包为ZIP')
   })
 
   // TestBugFB082_BatchGenerationUsesSelectionSnapshot
@@ -235,10 +270,8 @@ describe('Competency result management', () => {
   // 对应：docs/regression-tests.md #FB-082
   it('keeps the original batch-download targets when selection changes during the task', async () => {
     const first = deferred()
-    const pdf = new Blob(['%PDF'], { type: 'application/pdf' })
-    downloadCompetencyReport.mockReset()
-      .mockReturnValueOnce(first.promise)
-      .mockResolvedValueOnce(pdf)
+    const archive = new Blob(['zip'], { type: 'application/zip' })
+    downloadCompetencyReportsArchive.mockReset().mockReturnValueOnce(first.promise)
     saveAs.mockClear()
     const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
     wrapper.vm.$message = { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
@@ -250,32 +283,23 @@ describe('Competency result management', () => {
     const task = wrapper.vm.batchDownloadReports()
     await flushPromises()
     wrapper.vm.selectedRows = []
-    first.resolve(pdf)
+    first.resolve(archive)
     await task
 
-    expect(downloadCompetencyReport).toHaveBeenCalledTimes(2)
-    expect(downloadCompetencyReport).toHaveBeenNthCalledWith(1, 'paper-1')
-    expect(downloadCompetencyReport).toHaveBeenNthCalledWith(2, 'paper-2')
-    expect(saveAs).toHaveBeenCalledTimes(2)
-    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('批量下载完成，共2份')
+    expect(downloadCompetencyReportsArchive).toHaveBeenCalledTimes(1)
+    expect(downloadCompetencyReportsArchive).toHaveBeenCalledWith(['paper-1', 'paper-2'])
+    expect(saveAs).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('批量下载完成，共2份，已打包为ZIP')
   })
 
   // TestBugFB085_ReportDownloadNamesAreUnique
   // 对应：docs/regression-tests.md #FB-085
   it('uses paper ids to keep same-name participant downloads unique', async () => {
-    const pdf = new Blob(['%PDF'], { type: 'application/pdf' })
-    downloadCompetencyReport.mockReset().mockResolvedValue(pdf)
-    saveAs.mockClear()
     const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
-    wrapper.vm.$message = { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
-    wrapper.vm.selectedRows = [
-      { paperId: 'paper-unique-1', participantName: '同名人员', isComplete: 1 },
-      { paperId: 'paper-unique-2', participantName: '同名人员', isComplete: 1 }
+    const names = [
+      wrapper.vm.reportDownloadFileName({ paperId: 'paper-unique-1', participantName: '同名人员' }),
+      wrapper.vm.reportDownloadFileName({ paperId: 'paper-unique-2', participantName: '同名人员' })
     ]
-
-    await wrapper.vm.batchDownloadReports()
-
-    const names = saveAs.mock.calls.map(call => call[1])
     expect(new Set(names).size).toBe(2)
     expect(names[0]).toContain('paper-unique-1')
     expect(names[1]).toContain('paper-unique-2')

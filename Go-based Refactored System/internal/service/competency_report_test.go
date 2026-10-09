@@ -76,6 +76,18 @@ func TestPhase1ReportContentApproval_RequiresDualApprovalAndSources(t *testing.T
 	}
 }
 
+func TestBugFB188_ReportApprovalEnvironmentCanDifferFromConfigProfile(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REPORT_EFFECTIVE_ENV", "staging")
+	if actual := CompetencyReportEffectiveEnvironment(); actual != "staging" {
+		t.Fatalf("effective report environment=%q, want staging", actual)
+	}
+	t.Setenv("REPORT_EFFECTIVE_ENV", "")
+	if actual := CompetencyReportEffectiveEnvironment(); actual != "production" {
+		t.Fatalf("fallback report environment=%q, want production", actual)
+	}
+}
+
 func TestBuildPhase1ReportTextSnapshot_RequiresExactFormalSet(t *testing.T) {
 	dimensionLevels := make(map[string]string, 10)
 	rows := []model.CompetencyReportText{
