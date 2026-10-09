@@ -13,6 +13,8 @@
 - 最终后端/进程SHA=`753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`；服务active、PID2354770、NRestarts0、nginx 7进程，8092/8090 health及8090 root均200，最近10分钟error journal为空。
 - 主库验证为MNG表14、005 repo2、state1 exam2、profile/snapshot/run/revision/reissue各2、reissue audit12；00501=`mng-00501-db-current-v1`，00502当前=`mng-00502-db-current-v2`。REPORT/MNG环境均为production，匿名直连管理特质详情401。DOCX/XLSX SHA分别为`05c55e77…`/`b0498249…`。未执行认证管理员浏览器链或客户状态切换，formal 002及competency 009/014/015继续明确排除。
 
+[补充 - 2026-10-09] 真实管理员浏览器验收发现FB-219：MySQL5.7统一`utf8mb4_general_ci`被旧代码硬编码的MySQL8 narrow-edge签名拒绝，00501启用409。新增回归先RED后GREEN，只放宽到父子相同的合法utf8mb4排序规则；全Go和build通过，提交`f6d0719`。用户明确不走CI/CD，手工补丁先备份旧binary再发布SHA=`f850575b…`，PID2355899/NRestarts0/三HTTP200。00501 state 1→0→1、模板元数据、结果列表和reissue PDF真实浏览器均通过，最终双005 state1且新PID无management schema reject。只读BCrypt比较另确认admin仍匹配仓库已知历史默认候选；未打印hash或改密码，已列为需授权轮换事项。
+
 # 2026-10-09 production 005策略与迁移包（静态GREEN，MySQL5.7动态演练待批准）
 
 - 用户明确：005发布production、保留TEST标注、不新增开关、客户决定是否启用；同时要求生成并评估production迁移包、清理Git范围、完成FB-218。

@@ -7,11 +7,11 @@
 
 | 环境 | 当前结论 |
 |---|---|
-| local | Go全量、Windows/Linux backend build、前端35文件611项及production build通过；Linux候选SHA=`753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`。仍有大量未提交改动，不能用Git提交号代表已部署字节 |
+| local | Go全量、Windows/Linux backend build、前端35文件611项及production build通过；FB-219 Linux候选SHA=`f850575b1dfa6eac3f5b4533148baf715eabc8afa13ccd32c7655d0507a7d600`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`。仍有范围外未提交改动，不以整个工作树代表已部署字节 |
 | staging | `20.200.136.133 / vm-ubuntu-go-dev`；当前后端SHA `f2940fc5ea51edffc4f325df1f461f3ba4e86868df3aa0594af95764e880d61e`，前端index SHA `593d4a20d890d73bf47f9a519a22fffbdb4b539afd5e1cc1dcc2fdebff73cfde` |
-| production | 🟡 2026-10-09受控发布完成且服务健康；真实管理员验收发现FB-219令005运行时Schema门禁在MySQL5.7上误拒绝，启用操作409且state保持1。本地补丁GREEN，production待发布复验 |
+| production | 🟢 2026-10-09受控发布及FB-219手工补丁完成；后端/进程SHA=`f850575b1dfa6eac3f5b4533148baf715eabc8afa13ccd32c7655d0507a7d600`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`，真实管理员005状态往返、模板/结果/reissue读取通过 |
 
-[生产发布 - 2026-10-09] `39.106.61.48 / iZ0yosjdcen2p4Z`已部署Git HEAD `227bff9`对应封存产物。发布前创建数据库、应用树和系统配置完整备份`/opt/talent-assessment/backups/production_release_backup_20261009_3e3692ce14634021`并校验。最终MySQL 5.7主库有14张`el_mng_*`表、005 repo/exam/profile/snapshot/run/revision/reissue各2、reissue audit12；两个exam均`state=1`可见禁用，00501 question v1、00502当前question v2。双环境变量均为`production`；共享DOCX SHA=`05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c`，内容XLSX SHA=`b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c`。匿名直连管理特质详情401，最近10分钟应用error journal为空。未执行认证管理员浏览器操作或客户启用切换。
+[生产发布 - 2026-10-09] `39.106.61.48 / iZ0yosjdcen2p4Z`已部署封存release；完整备份=`/opt/talent-assessment/backups/production_release_backup_20261009_3e3692ce14634021`。真实管理员验收发现并修复FB-219，补丁提交=`f6d0719`、binary备份=`/opt/talent-assessment/backups/fb219_binary_20261009_7d5fbd1559914437`。最终MySQL 5.7主库有14张`el_mng_*`表、005 repo/exam/profile/snapshot/run/revision/reissue各2、reissue audit12；两个exam均恢复`state=1`。共享DOCX SHA=`05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c`，内容XLSX SHA=`b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c`。真实管理员状态往返、模板、结果和647985-byte reissue PDF读取均通过。
 
 staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/nginx/mysql均active，内外health均200，active paper=0，应用fatal/panic/permission错误0，Nginx 5xx=0。
 
@@ -21,7 +21,7 @@ staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/ngin
 |---|---|---|---|
 | 00401一期胜任力 | 🟢 STAGING GREEN（范围限定） | 2组、10维、90题、恢复、90答、提交幂等、结果、筛选、三Sheet导出、批准v2 DTO、A4 10页PDF、审计及exact cleanup | production内容/发布仍需独立批准；本轮未做真实参与者浏览器全链和并发/容量重跑 |
 | 003 MBTI | 🟢 STAGING GREEN（API+报告） | 48题保存、ESTJ计分回读、完整版/简版PDF、16+16模板、匿名模板门禁、exact cleanup | 本轮未做参与者浏览器逐步交互和16种人格逐类型报告全矩阵 |
-| 00501/00502管理特质 | 🟢 STAGING GREEN / 🟢 PRODUCTION已发布（范围限定） | 名称与V67/V96、各140/700、保留结果50/13维/4模块、共用模板管理、TEST报告；production程序、14表、2 repo、2份禁用测评、2 run、4 PDF及模板已验收 | production未执行认证管理员浏览器/客户启用切换；formal仍不在本次范围 |
+| 00501/00502管理特质 | 🟢 STAGING GREEN / 🟢 PRODUCTION已发布（范围限定） | 名称与V67/V96、各140/700、保留结果50/13维/4模块、共用模板；production真实管理员state往返、模板元数据、结果列表及reissue PDF通过 | formal仍不在本次范围；未新建production参与者或重跑140题交卷 |
 | 00101传统测评 | 🟢 STAGING只读冒烟 | Detail及有效XLSX导出 | 未做本轮临时新卷完整交卷回归 |
 | 00201/00202历史管理特质 | 🟡 兼容保护有效 | Detail可读；冻结历史和002源数据保持 | 通用原始导出被管理特质legacy guard按设计403；是否需要专属导出属于产品决策，不应放宽guard绕过 |
 
@@ -50,7 +50,7 @@ staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/ngin
 
 1. **00401 production正式内容批准**：本次只部署已批准的additive结构，没有导入00401正式内容；仍需客户/负责人确认精确内容SHA、模板SHA和适用环境。
 2. **管理特质正式报告/formal assembly**：production当前只发布带TEST标注的005与reissue基线；formal registry/approval未包含，不得把TEST报告称正式报告。
-3. **005 production认证验收**：程序、数据库、资产、匿名门禁和健康检查已通过；仍需客户使用真实管理员账号确认列表显示、模板元数据/下载、报告view/download以及一次`state 1→0→1`受控切换。
+3. **生产管理员凭据轮换**：本轮只读BCrypt比对确认当前admin仍匹配仓库历史脚本中的已知默认候选；未输出hash、未修改密码。该凭据已不适合作为长期生产密码，需用户明确授权后单独轮换并验证登录/回滚。
 
 ### P1 — 可在后续独立测试中关闭
 

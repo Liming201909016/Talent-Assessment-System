@@ -1,8 +1,10 @@
 # Regression Tests
 
-## FB-219 — MySQL 5.7生产Schema门禁误拒绝已验证窄边 — 2026-10-09 🟢 LOCAL GREEN / PRODUCTION PATCH PENDING
+## FB-219 — MySQL 5.7生产Schema门禁误拒绝已验证窄边 — 2026-10-09 🟢 PRODUCTION GREEN
 
 production真实管理员登录成功，00501/00502列表均显示为可见禁用；点击00501“启用 TEST 测评”实际POST返回409，state保持1。只读证据显示exam/profile/bundle/repo及版本全部符合合同，但后台每30秒记录`management-traits expiry scan rejected`。根因定位到`managementTraitsSchemaLegacyNarrowEdge`把两个已验证`varchar(64)→varchar(32)`旧答题边的排序规则硬编码为MySQL 8专有`utf8mb4_0900_ai_ci`；production MySQL 5.7真实父子列统一为`utf8mb4_general_ci`，因此Schema门禁缓存失败。新增`TestBugFB219_MySQL57GeneralCollationKeepsVerifiedNarrowLegacyEdges`先真实RED：`got management traits data rejected, want <nil>`。GREEN仅允许父子同为`utf8mb4`、排序规则相同且匹配安全格式时接受精确64→32旧边；类型、nullable、字符集、排序规则漂移仍拒绝。专项614、Schema相关2890及规范`go test ./... -count=1`全通过，Windows server build通过。production尚运行旧SHA，补丁部署前005运行时仍不可用。
+
+[production GREEN补充] 用户明确无需CI/CD，本次采用受控手工补丁。首个补丁命令误用`state=0`作为active paper门禁，在备份/停服/写入前失败；生产旧SHA、PID及health保持。改用已审阅release controller同一`state=1`零活动门禁后，备份旧binary至`/opt/talent-assessment/backups/fb219_binary_20261009_7d5fbd1559914437`并发布Linux SHA=`f850575b1dfa6eac3f5b4533148baf715eabc8afa13ccd32c7655d0507a7d600`；磁盘/进程一致，PID2355899、NRestarts0、8092/8090/root均200。真实管理员浏览器完成00501 `state 1→0→1`，两次POST均200且页面状态刷新正确；最终两个005均恢复state1。模板元数据200/valid=true/SHA=`05c55e77…`，结果列表1条，reissue PDF view 200、`application/pdf`、647985 bytes、`%PDF-`。新PID启动后不再出现management-traits schema reject；两条既有competency orphan expiry错误继续存在，不归因于FB-219。
 
 ## FB-218 — MBTI LibreOffice转换必须有截止时间 — 2026-10-09 🟢 STAGING GREEN / PRODUCTION CODE DEPLOYED
 
