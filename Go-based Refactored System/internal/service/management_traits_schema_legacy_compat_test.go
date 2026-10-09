@@ -60,6 +60,25 @@ func TestBugMTSchemaLegacy002Metadata(t *testing.T) {
 	}
 }
 
+// TestBugFB219_MySQL57GeneralCollationKeepsVerifiedNarrowLegacyEdges
+// 对应：docs/regression-tests.md #FB-219
+// 复现：production MySQL 5.7全部ID列使用utf8mb4_general_ci，两个旧答题外键为varchar(32)。
+// 期望：同字符集、同排序规则且精确32/64签名通过运行时Schema门禁。
+// 实际：门禁把已验证窄边硬编码为MySQL 8的utf8mb4_0900_ai_ci，导致所有005运行时操作409。
+func TestBugFB219_MySQL57GeneralCollationKeepsVerifiedNarrowLegacyEdges(t *testing.T) {
+	d, err := managementTraitsSchemaContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := managementSchemaLegacy002Fixture(d, true, false)
+	for i := range m.Columns {
+		if m.Columns[i].Charset != "" {
+			m.Columns[i].Collation = "utf8mb4_general_ci"
+		}
+	}
+	managementSchemaCheckTwice(t, d, m, nil)
+}
+
 func TestBugMTSchemaLegacy002Drift(t *testing.T) {
 	d, _ := managementTraitsSchemaContract()
 	for _, key := range []string{"el_qu.id", "el_qu_answer.id", "el_paper_qu_answer.qu_id", "el_paper_qu_answer.answer_id", "el_repo.id", "el_exam_repo.repo_id", "el_qu_repo.repo_id"} {

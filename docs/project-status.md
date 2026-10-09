@@ -9,7 +9,7 @@
 |---|---|
 | local | Go全量、Windows/Linux backend build、前端35文件611项及production build通过；Linux候选SHA=`753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`。仍有大量未提交改动，不能用Git提交号代表已部署字节 |
 | staging | `20.200.136.133 / vm-ubuntu-go-dev`；当前后端SHA `f2940fc5ea51edffc4f325df1f461f3ba4e86868df3aa0594af95764e880d61e`，前端index SHA `593d4a20d890d73bf47f9a519a22fffbdb4b539afd5e1cc1dcc2fdebff73cfde` |
-| production | 🟢 2026-10-09已完成受控发布；后端/进程SHA=`753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`，服务active、`NRestarts=0`、8092/8090/root均HTTP200 |
+| production | 🟡 2026-10-09受控发布完成且服务健康；真实管理员验收发现FB-219令005运行时Schema门禁在MySQL5.7上误拒绝，启用操作409且state保持1。本地补丁GREEN，production待发布复验 |
 
 [生产发布 - 2026-10-09] `39.106.61.48 / iZ0yosjdcen2p4Z`已部署Git HEAD `227bff9`对应封存产物。发布前创建数据库、应用树和系统配置完整备份`/opt/talent-assessment/backups/production_release_backup_20261009_3e3692ce14634021`并校验。最终MySQL 5.7主库有14张`el_mng_*`表、005 repo/exam/profile/snapshot/run/revision/reissue各2、reissue audit12；两个exam均`state=1`可见禁用，00501 question v1、00502当前question v2。双环境变量均为`production`；共享DOCX SHA=`05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c`，内容XLSX SHA=`b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c`。匿名直连管理特质详情401，最近10分钟应用error journal为空。未执行认证管理员浏览器操作或客户启用切换。
 

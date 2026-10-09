@@ -199,7 +199,7 @@ func managementTraitsSchemaLegacyNarrowEdge(parent, child string, columns map[st
 		return false
 	}
 	p, c := columns[parent], columns[child]
-	return p.ColumnType == "varchar(64)" && c.ColumnType == "varchar(32)" && p.Nullable == "NO" && c.Nullable == "NO" && p.Charset == "utf8mb4" && c.Charset == p.Charset && p.Collation == "utf8mb4_0900_ai_ci" && c.Collation == p.Collation
+	return p.ColumnType == "varchar(64)" && c.ColumnType == "varchar(32)" && p.Nullable == "NO" && c.Nullable == "NO" && p.Charset == "utf8mb4" && c.Charset == p.Charset && managementTraitsSchemaCollation.MatchString(p.Collation) && c.Collation == p.Collation
 }
 
 func managementTraitsSchemaLegacyRepo(columns map[string]managementTraitsSchemaColumnRow, base managementTraitsSchemaColumnRow) bool {

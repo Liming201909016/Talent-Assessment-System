@@ -28,6 +28,7 @@
 | 匿名/普通权限、非005、未冻结005、非法state、额外字段、重复键 | ✅ 写前或事务内拒绝 |
 | DB失败/并发删除profile或exam | ✅ 行锁、条件UPDATE、事务回滚、受控错误 |
 | 管理端列表启用/禁用操作、确认、成功刷新、失败提示 | ✅ 仅005管理员显示；focused API/SFC 152项通过 |
+| production MySQL 5.7 `utf8mb4_general_ci`＋旧32位答题边 | ⚠️ FB-219本地RED→GREEN；production旧进程仍409，待补丁发布后复验 |
 | 正式报告 | ⚪ 本策略只开放保留TEST标注的TEST/reissue，不把formal称已批准 |
 
 ## MT-005-QUESTION-BANK-CONTENT — 2026-10-09 STAGING GREEN

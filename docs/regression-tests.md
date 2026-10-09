@@ -1,5 +1,9 @@
 # Regression Tests
 
+## FB-219 — MySQL 5.7生产Schema门禁误拒绝已验证窄边 — 2026-10-09 🟢 LOCAL GREEN / PRODUCTION PATCH PENDING
+
+production真实管理员登录成功，00501/00502列表均显示为可见禁用；点击00501“启用 TEST 测评”实际POST返回409，state保持1。只读证据显示exam/profile/bundle/repo及版本全部符合合同，但后台每30秒记录`management-traits expiry scan rejected`。根因定位到`managementTraitsSchemaLegacyNarrowEdge`把两个已验证`varchar(64)→varchar(32)`旧答题边的排序规则硬编码为MySQL 8专有`utf8mb4_0900_ai_ci`；production MySQL 5.7真实父子列统一为`utf8mb4_general_ci`，因此Schema门禁缓存失败。新增`TestBugFB219_MySQL57GeneralCollationKeepsVerifiedNarrowLegacyEdges`先真实RED：`got management traits data rejected, want <nil>`。GREEN仅允许父子同为`utf8mb4`、排序规则相同且匹配安全格式时接受精确64→32旧边；类型、nullable、字符集、排序规则漂移仍拒绝。专项614、Schema相关2890及规范`go test ./... -count=1`全通过，Windows server build通过。production尚运行旧SHA，补丁部署前005运行时仍不可用。
+
 ## FB-218 — MBTI LibreOffice转换必须有截止时间 — 2026-10-09 🟢 STAGING GREEN / PRODUCTION CODE DEPLOYED
 
 staging真实MBTI 48题完成、计分回读后，强制生成完整版报告超过180秒未响应；服务端旧`convertDocxToPdf`使用无context的`exec.Command`，可能无限等待LibreOffice。新增`TestBugFB218_MBtiLibreOfficeConversionHasDeadline`要求MBTI使用有界共享转换客户端；修改产品代码前测试因转换能力符号缺失而编译RED。修复后复用已由胜任力验证的`libreofficepdf.Client`，90秒context、隔离0700 workspace/0600 DOCX及finally清理，并禁止转换失败时把DOCX冒充PDF成功返回。focused MBTI与共享客户端测试、Go全量及Linux build通过；部署SHA=`f2940fc5ea51edffc4f325df1f461f3ba4e86868df3aa0594af95764e880d61e`。真实staging复测48题/48答案、ESTJ计分回读、完整版/简版PDF、16+16模板和匿名门禁全部PASS，exact cleanup0且基线前后同为`73|1491|1352|2653`。
