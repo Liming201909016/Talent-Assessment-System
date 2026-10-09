@@ -9,9 +9,9 @@
 |---|---|
 | local | Go全量、Windows/Linux backend build、前端35文件611项及production build通过；Linux候选SHA=`753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`。仍有大量未提交改动，不能用Git提交号代表已部署字节 |
 | staging | `20.200.136.133 / vm-ubuntu-go-dev`；当前后端SHA `f2940fc5ea51edffc4f325df1f461f3ba4e86868df3aa0594af95764e880d61e`，前端index SHA `593d4a20d890d73bf47f9a519a22fffbdb4b539afd5e1cc1dcc2fdebff73cfde` |
-| production | 已完成只读评估，未执行任何写入/备份/迁移/上传/重启；当前NO-GO，任何staging GREEN都不构成production批准 |
+| production | 🟢 2026-10-09已完成受控发布；后端/进程SHA=`753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`，服务active、`NRestarts=0`、8092/8090/root均HTTP200 |
 
-[生产只读评估 - 2026-10-09] 已安全访问`39.106.61.48 / iZ0yosjdcen2p4Z`，仅只读：现有后端/进程SHA=`03397e0faf24a21fb6da4e76ba0776226ab87bf2a3c52f72b475eeed4791e44a`，前端index=`f5cd615b7a8f968b4ffba6fef61953c067fb86519d1a75987128f797bbb93136`、372文件；MySQL=`5.7.44-log`、54表；8092/8090/80均HTTP200；active paper=0。生产有517份到期state0历史卷、409份缺exam孤儿paper、66 exam/1980 paper/1448 candidate/33 tester/4862 MBTI answers；management-traits表0、005题库0、competency版本列0、result-run/current六表0。Noto/WQY、LibreOffice7.4、Chrome均存在；未写数据库、未备份、未部署。
+[生产发布 - 2026-10-09] `39.106.61.48 / iZ0yosjdcen2p4Z`已部署Git HEAD `227bff9`对应封存产物。发布前创建数据库、应用树和系统配置完整备份`/opt/talent-assessment/backups/production_release_backup_20261009_3e3692ce14634021`并校验。最终MySQL 5.7主库有14张`el_mng_*`表、005 repo/exam/profile/snapshot/run/revision/reissue各2、reissue audit12；两个exam均`state=1`可见禁用，00501 question v1、00502当前question v2。双环境变量均为`production`；共享DOCX SHA=`05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c`，内容XLSX SHA=`b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c`。匿名直连管理特质详情401，最近10分钟应用error journal为空。未执行认证管理员浏览器操作或客户启用切换。
 
 staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/nginx/mysql均active，内外health均200，active paper=0，应用fatal/panic/permission错误0，Nginx 5xx=0。
 
@@ -21,7 +21,7 @@ staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/ngin
 |---|---|---|---|
 | 00401一期胜任力 | 🟢 STAGING GREEN（范围限定） | 2组、10维、90题、恢复、90答、提交幂等、结果、筛选、三Sheet导出、批准v2 DTO、A4 10页PDF、审计及exact cleanup | production内容/发布仍需独立批准；本轮未做真实参与者浏览器全链和并发/容量重跑 |
 | 003 MBTI | 🟢 STAGING GREEN（API+报告） | 48题保存、ESTJ计分回读、完整版/简版PDF、16+16模板、匿名模板门禁、exact cleanup | 本轮未做参与者浏览器逐步交互和16种人格逐类型报告全矩阵 |
-| 00501/00502管理特质 | 🟢 STAGING GREEN / 🟢 PRODUCTION迁移包演练GREEN | 名称与V67/V96、各140/700、保留结果50/13维/4模块、共用模板管理、TEST报告view/download；production MySQL5.7恢复副本首跑/重复/双状态回滚/重装、140/700冻结映射及资产均GREEN | production主库/程序尚未部署或验收；formal仍不在本次范围 |
+| 00501/00502管理特质 | 🟢 STAGING GREEN / 🟢 PRODUCTION已发布（范围限定） | 名称与V67/V96、各140/700、保留结果50/13维/4模块、共用模板管理、TEST报告；production程序、14表、2 repo、2份禁用测评、2 run、4 PDF及模板已验收 | production未执行认证管理员浏览器/客户启用切换；formal仍不在本次范围 |
 | 00101传统测评 | 🟢 STAGING只读冒烟 | Detail及有效XLSX导出 | 未做本轮临时新卷完整交卷回归 |
 | 00201/00202历史管理特质 | 🟡 兼容保护有效 | Detail可读；冻结历史和002源数据保持 | 通用原始导出被管理特质legacy guard按设计403；是否需要专属导出属于产品决策，不应放宽guard绕过 |
 
@@ -42,16 +42,15 @@ staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/ngin
 | 当前工作树management-traits发布为PARTIAL | 该条是发布当时阶段结论；后续真实认证浏览器、模板、报告及完整主链验收已补齐，当前按本文件矩阵读取 |
 | 00401 staging必须为空才能跑E2E | 错误；当前脚本接受非空基线并要求清理后精确恢复 |
 | MBTI直接执行LibreOffice且失败可返回DOCX | 已由FB-218修正为共享有界转换、失败关闭 |
-| “完整staging GREEN”等于全系统/production GREEN | 错误；所有GREEN均带产品、链路和环境范围，production仍未批准 |
+| “完整staging GREEN”等于全系统/production GREEN | 错误；production后来经独立评估、恢复副本演练、完整备份及受控发布单独批准并验收，不能由staging结论自动推出 |
 
 ## 5. 仍需处理的遗漏事项
 
 ### P0 — 外部批准/上线门禁
 
-1. **Production上线未授权**：需要独立确定发布范围、当前production备份、MySQL 5.7兼容演练、旧卷策略、回滚和正式验收；不得沿用staging授权。
-2. **00401 production正式内容批准**：staging已有批准内容和v2真实报告，但不等于production内容/心理测量批准；需客户/负责人确认精确内容SHA、模板SHA和适用环境。
-3. **管理特质正式报告/production assembly**：当前只验证TEST/reissue；formal registry/approval与production正式路由没有完成上线批准，不得把TEST报告称正式报告。
-4. **005 production迁移包动态演练已通过，部署仍未执行**：SHA封存包含9个批准的additive迁移、精确2 repo/280题/1400选项/2 exam/2 paper/2 run/4 PDF及模板、00502当前profile v2、客户激活状态适配和exact rollback；明确排除formal 002及competency 009/014/015。production MySQL5.7恢复副本完成schema两轮、data重复失败关闭、激活前后rollback、reapply、140题/700选项映射、历史v1字节不变及资产安装/校验/清理。第二轮自动cleanup=`0`、临时Schema0、主库MNG表/005均0、服务hash/PID/restart不变。仍需Git可追踪提交及正式发布确认/备份/验收。
+1. **00401 production正式内容批准**：本次只部署已批准的additive结构，没有导入00401正式内容；仍需客户/负责人确认精确内容SHA、模板SHA和适用环境。
+2. **管理特质正式报告/formal assembly**：production当前只发布带TEST标注的005与reissue基线；formal registry/approval未包含，不得把TEST报告称正式报告。
+3. **005 production认证验收**：程序、数据库、资产、匿名门禁和健康检查已通过；仍需客户使用真实管理员账号确认列表显示、模板元数据/下载、报告view/download以及一次`state 1→0→1`受控切换。
 
 ### P1 — 可在后续独立测试中关闭
 
@@ -59,8 +58,8 @@ staging最后独立终验：PID `22668`、`NRestarts=0`，talent-assessment/ngin
 2. **真实浏览器用户链**：00401和MBTI本轮以真实API/DB/PDF为主；需补真实参与者浏览器入口、刷新恢复、提交、原生下载事件。005的历史native事件盲区也应统一复测。
 3. **MBTI类型矩阵**：至少为16种类型各验证模板可加载和DOCX/PDF转换；当前完整链只得到ESTJ，模板只验证存在性16+16。
 4. **001/002兼容回归**：若下一发行会改公共paper/exam/report代码，应重跑临时001/002/003新卷完整链，而非只读Detail。
-5. **最新FB-218独立代码复审/远端复验**：同步和异步失败关闭补丁均已有RED/GREEN、Go全量与Linux build；异步补丁尚未重新部署staging或在production验证，且尚无独立CodeReviewer结论。
-6. **版本可追踪性**：当前工作树共407项状态（72项tracked modified、271项untracked、64项deleted），且部署字节不对应单一干净Git提交；发布前需生成精确源码输入manifest、排除用户无关改动并形成可追踪提交/候选包。
+5. **最新FB-218真实失败注入复验**：同步和异步失败关闭补丁已有RED/GREEN、Go全量并随production后端SHA上线；production未故意触发LibreOffice故障，仍缺远端真实失败注入证据。
+6. **工作树清理**：生产字节已由SHA封存并关联已推送提交，但本地仍有本次范围外的未提交删除/编辑器改动；不得误提交或据此判断生产漂移。
 
 ### P2 — 测试与治理改进
 

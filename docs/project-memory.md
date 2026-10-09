@@ -6,6 +6,13 @@
 - 历史`PARTIAL/BLOCKED/未部署`若已被后续同范围真实证据关闭，保留作过程证据，但不再是当前状态。禁止删除失败历史或覆写原收据。
 - 当前待办已按P0/P1/P2整理在[遗漏事项](project-status.md#5-仍需处理的遗漏事项)；不要从下方两千余行历史中重新猜当前待办。
 
+# 2026-10-09 production受控发布完成（范围限定GREEN）
+
+- 精选提交已推送至GitHub，最终controller修正提交=`227bff9`。首个正式尝试在任何备份/写入前因payload成员比较错误失败；第二个尝试完成全备份并启动新程序，但错误地用port 80校验前端，acceptance失败后自动rollback=`ROLLBACK_OK=1`。回滚后主库MNG表0/005 repo0，server/process=`03397e0f…`、index=`f5cd615b…`、服务健康，证明数据库和运行时恢复成功。
+- 纠正controller只把前端验收目标改为实际应用vhost `127.0.0.1:8090`，重新封存、合同GREEN并使用新stamp `3e3692ce14634021`发布。完整数据库、应用和系统配置备份=`/opt/talent-assessment/backups/production_release_backup_20261009_3e3692ce14634021`；controller输出`PRODUCTION_RELEASE_PASS=1`且exit0。
+- 最终后端/进程SHA=`753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc`，前端index=`abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4`；服务active、PID2354770、NRestarts0、nginx 7进程，8092/8090 health及8090 root均200，最近10分钟error journal为空。
+- 主库验证为MNG表14、005 repo2、state1 exam2、profile/snapshot/run/revision/reissue各2、reissue audit12；00501=`mng-00501-db-current-v1`，00502当前=`mng-00502-db-current-v2`。REPORT/MNG环境均为production，匿名直连管理特质详情401。DOCX/XLSX SHA分别为`05c55e77…`/`b0498249…`。未执行认证管理员浏览器链或客户状态切换，formal 002及competency 009/014/015继续明确排除。
+
 # 2026-10-09 production 005策略与迁移包（静态GREEN，MySQL5.7动态演练待批准）
 
 - 用户明确：005发布production、保留TEST标注、不新增开关、客户决定是否启用；同时要求生成并评估production迁移包、清理Git范围、完成FB-218。

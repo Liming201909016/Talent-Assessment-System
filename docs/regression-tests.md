@@ -1,10 +1,12 @@
 # Regression Tests
 
-## FB-218 — MBTI LibreOffice转换必须有截止时间 — 2026-10-09 🟢 STAGING GREEN
+## FB-218 — MBTI LibreOffice转换必须有截止时间 — 2026-10-09 🟢 STAGING GREEN / PRODUCTION CODE DEPLOYED
 
 staging真实MBTI 48题完成、计分回读后，强制生成完整版报告超过180秒未响应；服务端旧`convertDocxToPdf`使用无context的`exec.Command`，可能无限等待LibreOffice。新增`TestBugFB218_MBtiLibreOfficeConversionHasDeadline`要求MBTI使用有界共享转换客户端；修改产品代码前测试因转换能力符号缺失而编译RED。修复后复用已由胜任力验证的`libreofficepdf.Client`，90秒context、隔离0700 workspace/0600 DOCX及finally清理，并禁止转换失败时把DOCX冒充PDF成功返回。focused MBTI与共享客户端测试、Go全量及Linux build通过；部署SHA=`f2940fc5ea51edffc4f325df1f461f3ba4e86868df3aa0594af95764e880d61e`。真实staging复测48题/48答案、ESTJ计分回读、完整版/简版PDF、16+16模板和匿名门禁全部PASS，exact cleanup0且基线前后同为`73|1491|1352|2653`。
 
 [补充GREEN - 2026-10-09] 生产评估复审发现同步接口已失败关闭，但`GenerateReportByPaperID`异步链仍在转换失败时把DOCX写入`pdf_path`并设置`pdf_flag=1`。新增行为回归先因`finalizeMbtiPDFConversion`缺失编译RED；GREEN后完整版异步转换失败立即返回、不写`pdf_path/pdf_flag`，简版失败也不冒成功日志，临时DOCX无论成功失败均删除。两项FB-218回归和共享LibreOffice客户端测试通过；Go全量与生产环境复测仍作为发布门禁，不沿此前staging SHA自动宣称该补丁已上线。
+
+[上线补充 - 2026-10-09] 含同步/异步失败关闭补丁的后端已随SHA `753fad7a6134139b11ed3285c418da092c160b4fe81b9baf53dbf70f6d3cf0fc`部署production，磁盘与运行进程SHA一致，服务active/NRestarts0/health200且最近10分钟error journal为空。未在production故意注入LibreOffice失败，不把部署健康检查冒充远端失败路径复测。
 
 ## STAGING-PHASE1-POPULATED-BASELINE — 2026-10-09 🟢 GREEN
 
@@ -36,11 +38,13 @@ Reviewer阻断为原rollback只断言三张新增表行数0，没有证明schema
 
 [策略纠正 - 2026-10-09] 用户明确批准production显示保留TEST标注的005，并要求不新增开关。新RED锁定`production/production`必须注册运行时/routes/report loader；GREEN仅扩展现有双环境声明允许精确production，空值、不一致、`prod`和畸形值继续关闭，HTTP仍不可覆盖。客户启用使用现有测评`state`，生产包把两个005测评由staging的进行中状态适配为`state=1`可见禁用。focused config/router/handler、Go全量、Windows/Linux build通过；未部署。
 
-## PRODUCTION-MIGRATION-PACKAGE-20261009 — 🟢 MYSQL57 RESTORED-COPY GREEN / DEPLOYMENT PENDING
+## PRODUCTION-MIGRATION-PACKAGE-20261009 — 🟢 PRODUCTION DEPLOYED / RANGE-LIMITED GREEN
 
 staging只读盘点锁定005 closure：repo2、question280、answer1400、relation280、exam/paper/candidate各2、paper question280、paper answer1400、bundle/profile/snapshot/run/receipt各2、dimension26、module8、report revision/current/audit各2、reissue2/audit12、draft0及4份PDF。受控exporter生成完整INSERT、源SHA、资产和TEST/synthetic声明；顶层包加入00401 `007/008/010/011/012/013`及管理特质`001/003/004`，明确排除formal 002、competency 009/014/015。`001`父列门禁先RED后改为三个`varchar(64) NOT NULL`精确签名。Node合同核精确row cardinality、TEST标签、排除项、rollback无DROP/TRUNCATE及22文件SHA；shell syntax通过。MySQL5.7恢复副本脚本已生成但未执行，因为会在production服务器创建并删除临时Schema，须单独确认后才可运行。
 
 [动态GREEN - 2026-10-09] 用户单独授权后在production服务器创建全量受限备份和临时恢复Schema，未写`element`。复审先发现00502源V67/V96已改但冻结profile仍旧，新增当前question v2并保留冻结v1兼容；package 015按staging真实140/700生成canonical mapping/bundle。最终MySQL5.7.44恢复副本：9迁移首跑/重跑、data重复失败关闭、激活前/后两次rollback、reapply、00502有序唯一140 question/700 option逐项ID/题干/raw/选项文本SHA、历史v1完整表字节、4 PDF及模板SHA/bytes、资产cleanup全部PASS。首轮所有业务门禁通过但runner过早删client导致自动DROP失败；精确手工cleanup后临时Schema0、主库0 MNG/0 005、服务active/health200/hash不变。修复runner后第二轮`RUN_EXIT=0/CLEANUP_EXIT=0/OWNED_SCHEMA_REMAINING=0`，receipt=`/opt/talent-assessment/backups/production_migration_rehearsal_20261009_a8b4cbb5e6cf45ad`。
+
+[正式发布GREEN - 2026-10-09] GitHub/controller最终提交`227bff9`。一次新版本acceptance因错误探测port80而自动rollback，随后只修正为真实应用vhost port8090并以新stamp发布；最终controller `PRODUCTION_RELEASE_PASS=1/exit0`，完整备份=`/opt/talent-assessment/backups/production_release_backup_20261009_3e3692ce14634021`。后端/进程SHA=`753fad7a…`、index=`abf93dd1…`、MNG表14、005 repo/state1 exam/profile/snapshot/run/revision/reissue=`2/2/2/2/2/2/2`、reissue audit12；00502 current question v2，双production环境声明生效，DOCX/XLSX及4 PDF由controller逐SHA/bytes核验。health/root均200、匿名详情401、NRestarts0、最近10分钟error0。认证管理员UI/API状态切换未执行，formal仍排除。
 
 ## MNG005-CUSTOMER-ACTIVATION — 2026-10-09 🟢 LOCAL GREEN
 
