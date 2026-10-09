@@ -30,9 +30,12 @@ db_mutated=0
 nginx_stopped=0
 
 cleanup_secret() { rm -f "$client"; }
+nginx_active() { pgrep -x nginx >/dev/null; }
+nginx_start() { /etc/init.d/nginx start; }
+nginx_stop() { /etc/init.d/nginx stop; }
 verify_recovery() {
   [ "$(systemctl is-active talent-assessment)" = active ] || return 1
-  [ "$(systemctl is-active nginx)" = active ] || return 1
+  nginx_active || return 1
   curl --retry 30 --retry-delay 1 --retry-connrefused --connect-timeout 2 --max-time 2 -sS -f http://127.0.0.1:8092/health >/dev/null || return 1
   curl --retry 10 --retry-delay 1 --retry-connrefused --connect-timeout 2 --max-time 2 -sS -f -H 'Host: 39.106.61.48' http://127.0.0.1:8090/prod-api/health >/dev/null || return 1
 }
@@ -44,7 +47,7 @@ release_failed() {
   if [ "$rollback_ready" != 1 ]; then
     recovery_ok=1
     [ "$service_stopped" = 0 ] || systemctl start talent-assessment || recovery_ok=0
-    [ "$nginx_stopped" = 0 ] || systemctl start nginx || recovery_ok=0
+    [ "$nginx_stopped" = 0 ] || nginx_start || recovery_ok=0
     verify_recovery || recovery_ok=0
     printf 'PRODUCTION_RELEASE_PREFLIGHT_OR_BACKUP_FAILED_PHASE=%s\nORIGINAL_EXIT=%s\nRECOVERY_OK=%s\n' "$phase" "$code" "$recovery_ok"
     cleanup_secret
@@ -93,7 +96,7 @@ release_failed() {
   fi
   systemctl start talent-assessment || rollback_ok=0
   service_stopped=0
-  if [ "$nginx_stopped" = 1 ]; then systemctl start nginx || rollback_ok=0; nginx_stopped=0; fi
+  if [ "$nginx_stopped" = 1 ]; then nginx_start || rollback_ok=0; nginx_stopped=0; fi
   verify_recovery || rollback_ok=0
   printf 'PRODUCTION_RELEASE_FAILED_PHASE=%s\nORIGINAL_EXIT=%s\nROLLBACK_OK=%s\nBACKUP_ROOT=%s\n' "$phase" "$code" "$rollback_ok" "$backup"
   cleanup_secret
@@ -127,7 +130,7 @@ mysqlq() { mysql --defaults-extra-file="$client" --batch --skip-column-names --r
   cd "$payload"
   [ "$(sha256sum SHA256SUMS | cut -d' ' -f1)" = "$payload_manifest_sha" ]
   sha256sum -c SHA256SUMS
-  find . -type f ! -name SHA256SUMS -printf '%P\n' | sort > "$backup/payload.actual-files"
+  find . -type f ! -path './SHA256SUMS' -printf '%P\n' | sort > "$backup/payload.actual-files"
   sed -E 's#^[a-f0-9]{64}  (\./)?##' SHA256SUMS | sort > "$backup/payload.expected-files"
   cmp "$backup/payload.actual-files" "$backup/payload.expected-files"
   rm -f "$backup/payload.actual-files" "$backup/payload.expected-files"
@@ -154,9 +157,9 @@ sha256sum "$app/server" "$app/dist/index.html" > "$backup/runtime.before"
 systemctl stop talent-assessment
 service_stopped=1
 [ "$(systemctl is-active talent-assessment || true)" = inactive ]
-systemctl stop nginx
+nginx_stop
 nginx_stopped=1
-[ "$(systemctl is-active nginx || true)" = inactive ]
+! nginx_active
 [ "$(mysqlq -e "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE DB='element' AND ID<>CONNECTION_ID()")" = 0 ]
 mysqldump --defaults-extra-file="$client" --single-transaction --quick --skip-lock-tables --routines --triggers --events --hex-blob --set-gtid-purged=OFF --no-tablespaces element | gzip -c > "$backup/element.sql.gz"
 [ "$(mysqlq -e "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE DB='element' AND ID<>CONNECTION_ID()")" = 0 ]
@@ -245,10 +248,10 @@ while IFS=$'\t' read -r kind key expected_sha expected_bytes; do
 done < "$stage/report-assets.tsv"
 [ "$(sha256sum "$app/configs/export-templates/management-traits-002-test-only-v2.docx" | cut -d' ' -f1)" = 05c55e77e567c6111ba62c08f2e69b4d5e5b416b2dd989c49914cc95b962a84c ]
 [ "$(sha256sum "$app/configs/export-templates/management-traits-002-test-content-v1.xlsx" | cut -d' ' -f1)" = b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c ]
-nginx -t
-systemctl start nginx
+/www/server/nginx/sbin/nginx -t
+nginx_start
 nginx_stopped=0
-[ "$(systemctl is-active nginx)" = active ]
+nginx_active
 [ "$(curl -sS -o /dev/null -w '%{http_code}' -H 'Host: 39.106.61.48' http://127.0.0.1:8090/prod-api/health)" = 200 ]
 curl -sS -H 'Host: 39.106.61.48' http://127.0.0.1/ > "$stage/public-index.html"
 [ "$(sha256sum "$stage/public-index.html" | cut -d' ' -f1)" = abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4 ]
