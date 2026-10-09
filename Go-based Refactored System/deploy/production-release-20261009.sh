@@ -253,7 +253,7 @@ nginx_start
 nginx_stopped=0
 nginx_active
 [ "$(curl -sS -o /dev/null -w '%{http_code}' -H 'Host: 39.106.61.48' http://127.0.0.1:8090/prod-api/health)" = 200 ]
-curl -sS -H 'Host: 39.106.61.48' http://127.0.0.1/ > "$stage/public-index.html"
+curl -sS -H 'Host: 39.106.61.48' http://127.0.0.1:8090/ > "$stage/public-index.html"
 [ "$(sha256sum "$stage/public-index.html" | cut -d' ' -f1)" = abf93dd1fcd6ca6d94a1da393cc492594f6c6d00117152cd987b9c490bbfcbc4 ]
 rm -rf "$app/dist.old-$stamp" "$stage"
 printf 'PRODUCTION_RELEASE_PASS=1\nBACKUP_ROOT=%s\nSERVER_SHA=%s\nINDEX_SHA=%s\nMNG_TABLES=%s\nMNG005_REPOS=%s\n' "$backup" "$(sha256sum "$app/server" | cut -d' ' -f1)" "$(sha256sum "$app/dist/index.html" | cut -d' ' -f1)" "$(mysqlq -e "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='element' AND LEFT(TABLE_NAME,7)='el_mng_'")" "$(mysqlq element -e "SELECT COUNT(*) FROM el_repo WHERE code IN ('00501','00502')")"
