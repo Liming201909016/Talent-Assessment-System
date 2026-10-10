@@ -17,6 +17,7 @@
 - 仅清理可再生过程产物：B区`bin`约3.18GB、`tmp`约186MB、明确标注的临时00401 PDF，以及215个被忽略的LibreOffice `user`运行profile；恢复误变更的跟踪coverage文件和个人Python环境设置。保留`scripts/test/results`、正式备份、客户原件、评审报告及可复核视觉证据，不把证据当垃圾删除。
 - Git worktree仅保留主工作区；隔离release worktree已不存在，执行prune后无陈旧登记。最终诊断0、`git diff --check`退出0；Go全量、server build、前端35文件616项和production build均通过。
 - 首次前端验证调用不存在的`npm run build`而退出1；查明仓库实际脚本为`build:prod`后执行成功，原失败作为命令选择错误保留，不是产品构建失败。
+- 本轮代码、模板、测试、文档和已确认过时脚本清理结项提交=`da0cc81`（`feat: finalize assessment report workflows and release records`），连同此前4个本地提交已推送至`origin/master`；推送前fetch确认remote-only=0。
 
 # 2026-10-10 FB-220～FB-231 production累计发布完成
 

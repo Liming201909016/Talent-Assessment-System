@@ -29,6 +29,7 @@
 | 运行验收 | PID=`2394050`、NRestarts0；8092 health/8090 root/API均200；captcha code200、浏览器120×40；关键日志/Nginx5xx/tester-list请求均0；payload残留0 |
 | 数据边界 | MySQL5.7.44；DB写0；state1及未过期state0均0；Schema/题库/内容未改 |
 | 发布结论 | PRODUCTION GREEN（精确发布与匿名入口范围）；认证后业务流程沿既有local/staging验收，本轮未使用管理员凭据复跑 |
+| 源码结项 | 提交=`da0cc81`，已推送`origin/master`；UF-068发布后业务纠正见下节 |
 
 #### 发布后业务门禁纠正 `202610102340`
 
