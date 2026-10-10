@@ -29,6 +29,14 @@ scripts/test/*.js
 scripts/test/*.ps1
 scripts/tools/*.js
 scripts/tools/*.ps1
+
+# LibreOffice isolated runtime profiles (generated during document/PDF evidence runs)
+docs/generated/management-traits-word-candidate-20261001/**/user/
+docs/generated/management-traits-word-candidate-20261001/**/profile/
+docs/generated/management-traits-word-candidate-20261001/**/shared-cache/
+docs/generated/management-traits-word-candidate-20261001/**/crash/
+docs/generated/management-traits-word-candidate-20261001/**/.lock
+
 !scripts/tools/convert-competency-phase1-workbook.js
 !scripts/test/competency-mobile-ui-test.js
 !scripts/test/competency-answer-flow-e2e.js
