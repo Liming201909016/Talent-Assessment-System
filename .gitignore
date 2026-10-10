@@ -31,11 +31,12 @@ scripts/tools/*.js
 scripts/tools/*.ps1
 
 # LibreOffice isolated runtime profiles (generated during document/PDF evidence runs)
-docs/generated/management-traits-word-candidate-20261001/**/user/
-docs/generated/management-traits-word-candidate-20261001/**/profile/
-docs/generated/management-traits-word-candidate-20261001/**/shared-cache/
-docs/generated/management-traits-word-candidate-20261001/**/crash/
-docs/generated/management-traits-word-candidate-20261001/**/.lock
+docs/generated/**/user/
+docs/generated/**/profile/
+docs/generated/**/lo-profile/
+docs/generated/**/shared-cache/
+docs/generated/**/crash/
+docs/generated/**/.lock
 docs/generated/management-traits-word-candidate-20261001/*
 !docs/generated/management-traits-word-candidate-20261001/candidate-review-contactsheet.png
 !docs/generated/management-traits-word-candidate-20261001/demo-review-3.png
