@@ -36,6 +36,23 @@ docs/generated/management-traits-word-candidate-20261001/**/profile/
 docs/generated/management-traits-word-candidate-20261001/**/shared-cache/
 docs/generated/management-traits-word-candidate-20261001/**/crash/
 docs/generated/management-traits-word-candidate-20261001/**/.lock
+docs/generated/management-traits-word-candidate-20261001/*
+!docs/generated/management-traits-word-candidate-20261001/candidate-review-contactsheet.png
+!docs/generated/management-traits-word-candidate-20261001/demo-review-3.png
+!docs/generated/management-traits-word-candidate-20261001/demo-review-4.png
+!docs/generated/management-traits-word-candidate-20261001/demo-review-contactsheet.png
+!docs/generated/management-traits-word-candidate-20261001/field-position-manifest.json
+!docs/generated/management-traits-word-candidate-20261001/final-validation-20261002.json
+!docs/generated/management-traits-word-candidate-20261001/layout-slice-validation-20261002.json
+!docs/generated/management-traits-word-candidate-20261001/lo-compatible-manifest.json
+!docs/generated/management-traits-word-candidate-20261001/lo-compatible-synthetic-demo.pdf
+!docs/generated/management-traits-word-candidate-20261001/lo-compatible-validation.json
+!docs/generated/management-traits-word-candidate-20261001/management-traits-002-candidate.docx
+!docs/generated/management-traits-word-candidate-20261001/management-traits-002-source-layout-template.docx
+!docs/generated/management-traits-word-candidate-20261001/management-traits-002-synthetic-demo.docx
+!docs/generated/management-traits-word-candidate-20261001/management-traits-002-synthetic-demo.pdf
+!docs/generated/management-traits-word-candidate-20261001/source-layout-manifest.json
+!docs/generated/management-traits-word-candidate-20261001/source-layout-synthetic-demo.docx
 
 !scripts/tools/convert-competency-phase1-workbook.js
 !scripts/test/competency-mobile-ui-test.js

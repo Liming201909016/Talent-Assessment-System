@@ -1,0 +1,2066 @@
+{
+  "schema": "management-traits-002-word-candidate-v1",
+  "status": "candidate_not_approved",
+  "source_sha256": "c82c2dc0cdcaec413866268c557561d5c53abc41ec02d94dc6aea615edca2f48",
+  "fields": {
+    "participant.name": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          1
+        ],
+        "sample": "张",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "participant.gender": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[1]/w:tc[4]/w:p[1]",
+        "source_char_range": [
+          0,
+          1
+        ],
+        "sample": "—",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[1]/w:tc[4]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "participant.affiliation": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[2]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          2
+        ],
+        "sample": "人才",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[2]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "participant.post": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[2]/w:tc[4]/w:p[1]",
+        "source_char_range": [
+          0,
+          1
+        ],
+        "sample": "无",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[2]/w:tc[4]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "participant.telephone": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          11
+        ],
+        "sample": "15544502636",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "result.submittedAt": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[3]/w:tc[4]/w:p[1]",
+        "source_char_range": [
+          0,
+          16
+        ],
+        "sample": "2025-09-10 10:07",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[1]/w:tr[3]/w:tc[4]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "overview.high.1.text": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[2]",
+        "source_char_range": [
+          4,
+          24
+        ],
+        "sample": "乐于影响他人，相信自己的管理与领导能力。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[2]/w:sdt[2]"
+      }
+    ],
+    "overview.high.1.name": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[2]",
+        "source_char_range": [
+          0,
+          3
+        ],
+        "sample": "领导性",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[2]/w:sdt[1]"
+      }
+    ],
+    "overview.high.2.text": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[3]",
+        "source_char_range": [
+          4,
+          20
+        ],
+        "sample": "喜欢挑战，自信心较强，乐观坚韧。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[3]/w:sdt[2]"
+      }
+    ],
+    "overview.high.2.name": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[3]",
+        "source_char_range": [
+          0,
+          3
+        ],
+        "sample": "自信心",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[3]/w:sdt[1]"
+      }
+    ],
+    "overview.high.3.text": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[4]",
+        "source_char_range": [
+          4,
+          23
+        ],
+        "sample": "有责任意识，能主动助人并完成本职工作。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[4]/w:sdt[2]"
+      }
+    ],
+    "overview.high.3.name": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[4]",
+        "source_char_range": [
+          0,
+          3
+        ],
+        "sample": "责任心",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[1]/w:p[4]/w:sdt[1]"
+      }
+    ],
+    "overview.low.1.text": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[2]",
+        "source_char_range": [
+          4,
+          24
+        ],
+        "sample": "稍显内向沉稳，偏好熟悉场合，社交不主动。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[2]/w:sdt[2]"
+      }
+    ],
+    "overview.low.1.name": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[2]",
+        "source_char_range": [
+          0,
+          3
+        ],
+        "sample": "社会性",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[2]/w:sdt[1]"
+      }
+    ],
+    "overview.low.2.text": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[3]",
+        "source_char_range": [
+          4,
+          23
+        ],
+        "sample": "有一定上进心，参与竞争但不愿过度付出。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[3]/w:sdt[2]"
+      }
+    ],
+    "overview.low.2.name": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[3]",
+        "source_char_range": [
+          0,
+          3
+        ],
+        "sample": "进取性",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[3]/w:sdt[1]"
+      }
+    ],
+    "overview.low.3.text": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[4]",
+        "source_char_range": [
+          4,
+          23
+        ],
+        "sample": "对新事物好奇，一定条件下能提出新思路。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[4]/w:sdt[2]"
+      }
+    ],
+    "overview.low.3.name": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[4]",
+        "source_char_range": [
+          0,
+          3
+        ],
+        "sample": "创新性",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[4]/w:tr[1]/w:tc[2]/w:p[4]/w:sdt[1]"
+      }
+    ],
+    "dimension.self_confidence.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[6]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "良好",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[6]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.self_confidence.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[6]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "70.83",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[6]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.self_confidence.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[6]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "57.50",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[6]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.self_confidence.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[6]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          30
+        ],
+        "sample": "喜欢挑战，不怕困难，自信心较强，具有顽强的毅力和乐观的精神。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[6]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.emotional_stability.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[7]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[7]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.emotional_stability.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[7]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "67.50",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[7]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.emotional_stability.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[7]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "55.00",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[7]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.emotional_stability.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[7]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          54
+        ],
+        "sample": "在各种情境下能够保持冷静和理性，即使面对重大挑战或压力也往往能保持镇定和自信；具有较好的情绪调节和管理能力。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[7]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.self_discipline.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[8]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[8]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.self_discipline.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[8]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "55.50",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[8]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.self_discipline.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[8]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "56.25",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[8]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.self_discipline.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[8]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          48
+        ],
+        "sample": "在大多数情况下具有一定的自我约束和自我调整的能力，但在特定情况下可能会受到外界因素的干扰和影响。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[8]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.sociality.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[9]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "欠佳",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[9]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.sociality.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[9]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "29.75",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[9]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.sociality.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[9]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "51.25",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[9]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.sociality.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[9]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          44
+        ],
+        "sample": "性格稍显内向，沉稳，不太喜欢热闹，喜欢人少或熟悉的场合，社交主动性不强，不轻易结交他人。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[9]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.leadership.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[10]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "良好",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[10]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.leadership.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[10]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "72.50",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[10]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.leadership.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[10]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "52.50",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[10]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.leadership.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[10]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          38
+        ],
+        "sample": "喜欢对别人施加影响，相信自己的管理能力和领导能力，有一定的支配欲和指挥意识。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[10]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.interpersonal_sensitivity.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[11]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[11]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.interpersonal_sensitivity.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[11]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "57.69",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[11]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.interpersonal_sensitivity.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[11]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "50.00",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[11]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.interpersonal_sensitivity.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[11]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          40
+        ],
+        "sample": "能够有意识地关注他人的言行，了解对方的需要，体察他人的动机和态度，做到举止有度。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[11]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.cooperation.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[12]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[12]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.cooperation.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[12]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "57.50",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[12]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.cooperation.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[12]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "57.50",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[12]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.cooperation.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[12]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          38
+        ],
+        "sample": "与他人合作的过程中，主动性和积极性一般，对团队整体目标的理解有时会不够深入。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[12]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.planning.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[13]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[13]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.planning.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[13]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "68.75",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[13]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.planning.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[13]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "53.75",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[13]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.planning.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[13]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          40
+        ],
+        "sample": "做事有计划、有条理，会预先对自己的工作和生活作出一定的安排，但也有一定的随机性。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[13]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.responsibility.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[14]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "良好",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[14]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.responsibility.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[14]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "70.00",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[14]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.responsibility.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[14]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "58.75",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[14]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.responsibility.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[14]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          36
+        ],
+        "sample": "工作积极主动，认真负责，富有热情，能够主动帮助和关心他人，有主人翁意识。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[14]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.decisiveness.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[15]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[15]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.decisiveness.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[15]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "68.75",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[15]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.decisiveness.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[15]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "53.75",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[15]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.decisiveness.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[15]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          35
+        ],
+        "sample": "在面对各种情境时，能够保持冷静和镇定，权衡利弊，迅速、果断地做出决策。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[15]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.proactiveness.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[16]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[16]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.proactiveness.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[16]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "50.00",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[16]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.proactiveness.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[16]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "55.00",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[16]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.proactiveness.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[16]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          35
+        ],
+        "sample": "具备一定的上进心，能够主动参与竞争，但不会付出特别多的努力去争取成功。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[16]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.learning.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[17]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[17]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.learning.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[17]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "54.55",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[17]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.learning.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[17]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "55.00",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[17]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.learning.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[17]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          36
+        ],
+        "sample": "能够主动寻找学习资源并持续学习，但在面对挑战和困难时可能需要额外的支持。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[17]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.innovation.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[18]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          22,
+          24
+        ],
+        "sample": "合格",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[18]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[2]"
+      }
+    ],
+    "dimension.innovation.score": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[18]/w:tr[1]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          3,
+          8
+        ],
+        "sample": "54.55",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[18]/w:tr[1]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.innovation.norm": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[18]/w:tr[1]/w:tc[3]/w:p[1]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "53.75",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[18]/w:tr[1]/w:tc[3]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "dimension.innovation.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[18]/w:tr[3]/w:tc[2]/w:p[1]",
+        "source_char_range": [
+          0,
+          43
+        ],
+        "sample": "对新鲜事物保持好奇，并在一定条件下能够提出新的工作思路和解决方案，使团队成员耳目一新。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[18]/w:tr[3]/w:tc[2]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "overall.level": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[20]",
+        "source_char_range": [
+          4,
+          9
+        ],
+        "sample": "合格管理者",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[20]/w:sdt[1]"
+      }
+    ],
+    "overall.diagnosis": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[21]",
+        "source_char_range": [
+          4,
+          84
+        ],
+        "sample": "管理表现中规中矩，与大多数管理者处于同一水平线。能完成日常管理职责，但在关键管理行为上尚未形成稳定优势。部分领域存在短板，需要借助培训和实战积累来挖掘自身潜力。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[21]/w:sdt[1]"
+      }
+    ],
+    "dimension.self_confidence.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[45]",
+        "source_char_range": [
+          0,
+          63
+        ],
+        "sample": "受测者适合承担需要主动争取资源、结果不确定的任务，目标公开、责任到人；完成后由单位组织复盘，把有效做法整理成团队可复用的方法。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[45]/w:sdt[1]"
+      }
+    ],
+    "dimension.emotional_stability.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[47]",
+        "source_char_range": [
+          0,
+          74
+        ],
+        "sample": "受测者可承担有一定时限压力的任务，高难度沟通前由上级提前通报情况并统一口径；可教授“觉察—抽离—复述”的情绪处理方式，每月选取一次实际案例共同复盘。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[47]/w:sdt[1]"
+      }
+    ],
+    "dimension.self_discipline.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[49]",
+        "source_char_range": [
+          0,
+          59
+        ],
+        "sample": "受测者已具备基本自律，可通过制度与检查进一步稳定产出；任务拆分为两周以内的小节点，进度在部门内公开，上级每周检查一次。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[49]/w:sdt[1]"
+      }
+    ],
+    "dimension.sociality.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[52]",
+        "source_char_range": [
+          0,
+          70
+        ],
+        "sample": "受测者不必勉强承担社交型角色，可先从一对一深度沟通开始，每周固定一次同业或部门内交流；沉稳专注的特点在工作推进中同样具有价值，逐步扩展即可。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[52]/w:sdt[1]"
+      }
+    ],
+    "dimension.leadership.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[54]",
+        "source_char_range": [
+          0,
+          72
+        ],
+        "sample": "受测者宜安排到正式的管理岗位，如项目负责人、专项组长，系统锻炼目标拆解、分工与过程纠偏；配套管理培训和带教导师，每个项目结束后开展一次带教复盘。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[54]/w:sdt[1]"
+      }
+    ],
+    "dimension.interpersonal_sensitivity.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[56]",
+        "source_char_range": [
+          0,
+          76
+        ],
+        "sample": "受测者可参与面谈、协调会等需要观察对方反应的场合；事前共同梳理对方最关注的三件事，事后由本人复述对方的态度信号、上级补充校正，每月选取一次沟通进行复盘。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[56]/w:sdt[1]"
+      }
+    ],
+    "dimension.cooperation.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[58]",
+        "source_char_range": [
+          0,
+          81
+        ],
+        "sample": "受测者承担任务时需明确应同步的关联岗位，每周至少与一至两个关联岗位同步信息或提供一次支持；团队目标讨论时要求站在整体角度提出建议，把关注点从个人任务转向团队效率。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[58]/w:sdt[1]"
+      }
+    ],
+    "dimension.planning.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[61]",
+        "source_char_range": [
+          0,
+          82
+        ],
+        "sample": "受测者已具备基本规划习惯，可借助统一模板进一步做实：每天列出不超过五项关键任务并排序，每周用十五分钟复盘并安排下一周；上级帮助识别最常占用时间的三类干扰并逐一隔离。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[61]/w:sdt[1]"
+      }
+    ],
+    "dimension.responsibility.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[63]",
+        "source_char_range": [
+          0,
+          75
+        ],
+        "sample": "受测者已具备责任意识，可在本职之外认领一件需负责到底的事项，如带教一名新人、梳理一条流程；要求建立闭环台账，做到事事有回音、件件有落实，上级定期检查。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[63]/w:sdt[1]"
+      }
+    ],
+    "dimension.decisiveness.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[65]",
+        "source_char_range": [
+          0,
+          81
+        ],
+        "sample": "受测者负责的决策事项需设定截止时间，信息收集到点即要求形成决定；可把大决策拆分为若干可逆的小决策先试再推，出现犹豫时由上级及时定夺，通过实践降低对不确定性的顾虑。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[65]/w:sdt[1]"
+      }
+    ],
+    "dimension.proactiveness.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[68]",
+        "source_char_range": [
+          0,
+          76
+        ],
+        "sample": "受测者已有一定上进心，目标可设定略高于常规水平，并要求公开承诺；遇到卡点时上级帮助区分是能力困难还是资源不足，再向上争取支持，避免因一次挫败就降低要求。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[68]/w:sdt[1]"
+      }
+    ],
+    "dimension.learning.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[70]",
+        "source_char_range": [
+          0,
+          77
+        ],
+        "sample": "受测者已能主动学习，可安排学习伙伴或导师，每周固定三小时学习时间并纳入工作安排；难度较大的内容拆解为小模块逐步攻克，建立请教通道，遇到困难时及时提供支持。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[70]/w:sdt[1]"
+      }
+    ],
+    "dimension.innovation.advice": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:p[72]",
+        "source_char_range": [
+          0,
+          68
+        ],
+        "sample": "受测者对新事物已有好奇心，可要求每月针对一个业务痛点提出一条改进方案并推动试行，季度末复盘落地情况；安排参加跨界案例分享，接触前沿做法。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:p[72]/w:sdt[1]"
+      }
+    ],
+    "overall.advice.1": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[20]/w:tr[1]/w:tc[1]/w:p[1]",
+        "source_char_range": [
+          0,
+          60
+        ],
+        "sample": "受测者可纳入后备管理人才或关键岗位继任计划，安排牵头公司级项目或跨部门专项，拓展全局视野，并同步明确授权边界与资源支持。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[20]/w:tr[1]/w:tc[1]/w:p[1]/w:sdt[1]"
+      }
+    ],
+    "overall.advice.2": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[20]/w:tr[1]/w:tc[1]/w:p[2]",
+        "source_char_range": [
+          0,
+          74
+        ],
+        "sample": "针对测评中相对偏低的维度（以维度得分为依据），每半年组织一次上级与平级参与的反馈沟通，由受测者提出改进动作并纳入下一周期工作目标，避免优势掩盖短板。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[20]/w:tr[1]/w:tc[1]/w:p[2]/w:sdt[1]"
+      }
+    ],
+    "overall.advice.3": [
+      {
+        "part": "word/document.xml",
+        "source_xpath": "/w:document[1]/w:body[1]/w:tbl[20]/w:tr[1]/w:tc[1]/w:p[3]",
+        "source_char_range": [
+          0,
+          61
+        ],
+        "sample": "可承担内部带教任务，指导一至两名后备人员，并安排参加行业交流或外部研修；创新类想法需配套试点资源和评估周期，避免多头铺开。",
+        "status": "candidate_pending_approval",
+        "candidate_xpath": "/w:document[1]/w:body[1]/w:tbl[20]/w:tr[1]/w:tc[1]/w:p[3]/w:sdt[1]"
+      }
+    ]
+  },
+  "charts": [
+    {
+      "key": "chart.overall",
+      "part": "word/charts/chart1.xml",
+      "relationship_id": "rId12",
+      "type": "doughnut",
+      "series": 1,
+      "points_per_series": 2,
+      "numeric_text_slots": [
+        {
+          "field": "overall.score",
+          "xpath": "./w:body[1]/w:p[22]/w:r[1]/w:drawing[2]/wp:anchor[1]/a:graphic[1]/a:graphicData[1]/wps:wsp[1]/wps:txbx[1]/w:txbxContent[1]/w:p[1]/w:r[2]/w:t[1]",
+          "kind": "independent-source-label-numeric-slot",
+          "format": "HALF_UP_2",
+          "fixed_label_and_unit_outside_slot": true,
+          "part": "word/document.xml",
+          "source_bounds_points": [
+            "41.0047244094488",
+            "45.2562204724409",
+            "69.8237795275591",
+            "50.0034645669291",
+            "155.9"
+          ],
+          "extent_emu": {
+            "cx": "1524000",
+            "cy": "812800"
+          }
+        }
+      ],
+      "source_frame_transform": {
+        "off": {
+          "x": "5449",
+          "y": "9668"
+        },
+        "ext": {
+          "cx": "3118",
+          "cy": "3118"
+        }
+      },
+      "source_group_transform": {
+        "off": {
+          "x": "0",
+          "y": "0"
+        },
+        "ext": {
+          "cx": "3719830",
+          "cy": "2218690"
+        },
+        "chOff": {
+          "x": "4082",
+          "y": "9521"
+        },
+        "chExt": {
+          "cx": "5858",
+          "cy": "3494"
+        }
+      },
+      "anchor_extent_emu": {
+        "cx": "1979930",
+        "cy": "1979930"
+      },
+      "anchor_offset_emu": {
+        "x": "868045",
+        "y": "93345"
+      },
+      "source_inline_origin_emu": {
+        "x": "1380490",
+        "y": "0"
+      },
+      "source_outer_placement": "inline",
+      "source_label_bounds_points": [
+        "41.0047244094488",
+        "45.2562204724409",
+        "69.8237795275591",
+        "50.0034645669291",
+        "155.9"
+      ],
+      "layout_status": "pending_visual_approval"
+    },
+    {
+      "key": "chart.module.self",
+      "part": "word/charts/chart2.xml",
+      "relationship_id": "rId13",
+      "type": "doughnut",
+      "series": 1,
+      "points_per_series": 2,
+      "numeric_text_slots": [
+        {
+          "field": "module.self.score",
+          "xpath": "./w:body[1]/w:p[22]/w:r[1]/w:drawing[4]/wp:anchor[1]/a:graphic[1]/a:graphicData[1]/wps:wsp[1]/wps:txbx[1]/w:txbxContent[1]/w:p[1]/w:r[2]/w:t[1]",
+          "kind": "independent-source-label-numeric-slot",
+          "format": "HALF_UP_2",
+          "fixed_label_and_unit_outside_slot": true,
+          "part": "word/document.xml",
+          "source_bounds_points": [
+            "3.5",
+            "24.5799212598425",
+            "69.7",
+            "27.25",
+            "85.05"
+          ],
+          "extent_emu": {
+            "cx": "1524000",
+            "cy": "558800"
+          }
+        }
+      ],
+      "source_frame_transform": {
+        "off": {
+          "x": "4082",
+          "y": "9536"
+        },
+        "ext": {
+          "cx": "1701",
+          "cy": "1701"
+        }
+      },
+      "source_group_transform": {
+        "off": {
+          "x": "0",
+          "y": "0"
+        },
+        "ext": {
+          "cx": "3719830",
+          "cy": "2218690"
+        },
+        "chOff": {
+          "x": "4082",
+          "y": "9521"
+        },
+        "chExt": {
+          "cx": "5858",
+          "cy": "3494"
+        }
+      },
+      "anchor_extent_emu": {
+        "cx": "1080135",
+        "cy": "1080135"
+      },
+      "anchor_offset_emu": {
+        "x": "0",
+        "y": "9525"
+      },
+      "source_inline_origin_emu": {
+        "x": "1380490",
+        "y": "0"
+      },
+      "source_outer_placement": "inline",
+      "source_label_bounds_points": [
+        "3.5",
+        "24.5799212598425",
+        "69.7",
+        "27.25",
+        "85.05"
+      ],
+      "layout_status": "pending_visual_approval"
+    },
+    {
+      "key": "chart.module.task",
+      "part": "word/charts/chart3.xml",
+      "relationship_id": "rId14",
+      "type": "doughnut",
+      "series": 1,
+      "points_per_series": 2,
+      "numeric_text_slots": [
+        {
+          "field": "module.task.score",
+          "xpath": "./w:body[1]/w:p[22]/w:r[1]/w:drawing[6]/wp:anchor[1]/a:graphic[1]/a:graphicData[1]/wps:wsp[1]/wps:txbx[1]/w:txbxContent[1]/w:p[1]/w:r[2]/w:t[1]",
+          "kind": "independent-source-label-numeric-slot",
+          "format": "HALF_UP_2",
+          "fixed_label_and_unit_outside_slot": true,
+          "part": "word/document.xml",
+          "source_bounds_points": [
+            "5.00007874015748",
+            "24.8429921259842",
+            "66.75",
+            "27.3",
+            "85.05"
+          ],
+          "extent_emu": {
+            "cx": "1524000",
+            "cy": "558800"
+          }
+        }
+      ],
+      "source_frame_transform": {
+        "off": {
+          "x": "8203",
+          "y": "9521"
+        },
+        "ext": {
+          "cx": "1701",
+          "cy": "1701"
+        }
+      },
+      "source_group_transform": {
+        "off": {
+          "x": "0",
+          "y": "0"
+        },
+        "ext": {
+          "cx": "3719830",
+          "cy": "2218690"
+        },
+        "chOff": {
+          "x": "4082",
+          "y": "9521"
+        },
+        "chExt": {
+          "cx": "5858",
+          "cy": "3494"
+        }
+      },
+      "anchor_extent_emu": {
+        "cx": "1080135",
+        "cy": "1080135"
+      },
+      "anchor_offset_emu": {
+        "x": "2616835",
+        "y": "0"
+      },
+      "source_inline_origin_emu": {
+        "x": "1380490",
+        "y": "0"
+      },
+      "source_outer_placement": "inline",
+      "source_label_bounds_points": [
+        "5.00007874015748",
+        "24.8429921259842",
+        "66.75",
+        "27.3",
+        "85.05"
+      ],
+      "layout_status": "pending_visual_approval"
+    },
+    {
+      "key": "chart.module.development",
+      "part": "word/charts/chart4.xml",
+      "relationship_id": "rId15",
+      "type": "doughnut",
+      "series": 1,
+      "points_per_series": 2,
+      "numeric_text_slots": [
+        {
+          "field": "module.development.score",
+          "xpath": "./w:body[1]/w:p[22]/w:r[1]/w:drawing[8]/wp:anchor[1]/a:graphic[1]/a:graphicData[1]/wps:wsp[1]/wps:txbx[1]/w:txbxContent[1]/w:p[1]/w:r[2]/w:t[1]",
+          "kind": "independent-source-label-numeric-slot",
+          "format": "HALF_UP_2",
+          "fixed_label_and_unit_outside_slot": true,
+          "part": "word/document.xml",
+          "source_bounds_points": [
+            "5",
+            "25.3985826771654",
+            "70.5",
+            "27.3",
+            "85.05"
+          ],
+          "extent_emu": {
+            "cx": "1524000",
+            "cy": "558800"
+          }
+        }
+      ],
+      "source_frame_transform": {
+        "off": {
+          "x": "8239",
+          "y": "11314"
+        },
+        "ext": {
+          "cx": "1701",
+          "cy": "1701"
+        }
+      },
+      "source_group_transform": {
+        "off": {
+          "x": "0",
+          "y": "0"
+        },
+        "ext": {
+          "cx": "3719830",
+          "cy": "2218690"
+        },
+        "chOff": {
+          "x": "4082",
+          "y": "9521"
+        },
+        "chExt": {
+          "cx": "5858",
+          "cy": "3494"
+        }
+      },
+      "anchor_extent_emu": {
+        "cx": "1080135",
+        "cy": "1080135"
+      },
+      "anchor_offset_emu": {
+        "x": "2639695",
+        "y": "1138555"
+      },
+      "source_inline_origin_emu": {
+        "x": "1380490",
+        "y": "0"
+      },
+      "source_outer_placement": "inline",
+      "source_label_bounds_points": [
+        "5",
+        "25.3985826771654",
+        "70.5",
+        "27.3",
+        "85.05"
+      ],
+      "layout_status": "pending_visual_approval"
+    },
+    {
+      "key": "chart.module.interpersonal",
+      "part": "word/charts/chart5.xml",
+      "relationship_id": "rId16",
+      "type": "doughnut",
+      "series": 1,
+      "points_per_series": 2,
+      "numeric_text_slots": [
+        {
+          "field": "module.interpersonal.score",
+          "xpath": "./w:body[1]/w:p[22]/w:r[1]/w:drawing[10]/wp:anchor[1]/a:graphic[1]/a:graphicData[1]/wps:wsp[1]/wps:txbx[1]/w:txbxContent[1]/w:p[1]/w:r[2]/w:t[1]",
+          "kind": "independent-source-label-numeric-slot",
+          "format": "HALF_UP_2",
+          "fixed_label_and_unit_outside_slot": true,
+          "part": "word/document.xml",
+          "source_bounds_points": [
+            "5",
+            "25.7012598425197",
+            "69.7",
+            "28.95",
+            "85.05"
+          ],
+          "extent_emu": {
+            "cx": "1524000",
+            "cy": "558800"
+          }
+        }
+      ],
+      "source_frame_transform": {
+        "off": {
+          "x": "4082",
+          "y": "11309"
+        },
+        "ext": {
+          "cx": "1701",
+          "cy": "1701"
+        }
+      },
+      "source_group_transform": {
+        "off": {
+          "x": "0",
+          "y": "0"
+        },
+        "ext": {
+          "cx": "3719830",
+          "cy": "2218690"
+        },
+        "chOff": {
+          "x": "4082",
+          "y": "9521"
+        },
+        "chExt": {
+          "cx": "5858",
+          "cy": "3494"
+        }
+      },
+      "anchor_extent_emu": {
+        "cx": "1080135",
+        "cy": "1080135"
+      },
+      "anchor_offset_emu": {
+        "x": "0",
+        "y": "1135380"
+      },
+      "source_inline_origin_emu": {
+        "x": "1380490",
+        "y": "0"
+      },
+      "source_outer_placement": "inline",
+      "source_label_bounds_points": [
+        "5",
+        "25.7012598425197",
+        "69.7",
+        "28.95",
+        "85.05"
+      ],
+      "layout_status": "pending_visual_approval"
+    },
+    {
+      "key": "chart.dimension.comparison",
+      "part": "word/charts/chart6.xml",
+      "relationship_id": "rId22",
+      "type": "bar+line",
+      "series": 2,
+      "points_per_series": 13,
+      "numeric_text_slots": [],
+      "source_frame_transform": {
+        "off": {
+          "x": "9939",
+          "y": "1772"
+        },
+        "ext": {
+          "cx": "8306",
+          "cy": "4867"
+        }
+      },
+      "source_group_transform": {
+        "off": {
+          "x": "0",
+          "y": "0"
+        },
+        "ext": {
+          "cx": "5617210",
+          "cy": "3089910"
+        },
+        "chOff": {
+          "x": "9519",
+          "y": "1772"
+        },
+        "chExt": {
+          "cx": "8846",
+          "cy": "4866"
+        }
+      },
+      "anchor_extent_emu": {
+        "cx": "5274310",
+        "cy": "3090545"
+      },
+      "anchor_offset_emu": {
+        "x": "266700",
+        "y": "0"
+      },
+      "source_inline_origin_emu": {
+        "x": "431800",
+        "y": "2336165"
+      },
+      "source_outer_placement": "inline",
+      "source_label_bounds_points": null,
+      "layout_status": "pending_visual_approval"
+    }
+  ],
+  "repeat_whitelist": [],
+  "overall_advice_protocol": {
+    "logical_key": "overall.advice",
+    "cardinality": 3,
+    "slots": [
+      "overall.advice.1",
+      "overall.advice.2",
+      "overall.advice.3"
+    ],
+    "layout": "three-existing-numbered-paragraphs",
+    "approval": "pending"
+  },
+  "pending": [
+    {
+      "field": "participant.age",
+      "reason": "no approved position; not inserted"
+    },
+    {
+      "field": "result.userTime",
+      "reason": "no approved position; not inserted"
+    },
+    {
+      "field": "overall.norm",
+      "reason": "no approved position; not inserted"
+    },
+    {
+      "field": "chart.layout",
+      "reason": "native anchors use source frame/group transforms; original inline flow boxes and fixed layers retained; Word/LO placement requires visual approval"
+    },
+    {
+      "field": "fixed.content",
+      "reason": "definitions/statistical wording/product name kept; not content approval"
+    },
+    {
+      "field": "compatible.layout",
+      "reason": "local PDF contracts require execution; final visual review, Word/PDF parity and target server acceptance not approved"
+    }
+  ],
+  "category_hierarchy": [
+    [
+      {
+        "idx": 0,
+        "value": "自信心"
+      },
+      {
+        "idx": 1,
+        "value": "情绪稳定性"
+      },
+      {
+        "idx": 2,
+        "value": "自律性"
+      },
+      {
+        "idx": 3,
+        "value": "社会性"
+      },
+      {
+        "idx": 4,
+        "value": "领导性"
+      },
+      {
+        "idx": 5,
+        "value": "人际敏感性"
+      },
+      {
+        "idx": 6,
+        "value": "合作性"
+      },
+      {
+        "idx": 7,
+        "value": "计划性"
+      },
+      {
+        "idx": 8,
+        "value": "责任心"
+      },
+      {
+        "idx": 9,
+        "value": "决断性"
+      },
+      {
+        "idx": 10,
+        "value": "进取性"
+      },
+      {
+        "idx": 11,
+        "value": "学习力"
+      },
+      {
+        "idx": 12,
+        "value": "创新性"
+      }
+    ],
+    [
+      {
+        "idx": 0,
+        "value": "自我管理"
+      },
+      {
+        "idx": 3,
+        "value": "人际管理"
+      },
+      {
+        "idx": 7,
+        "value": "任务管理"
+      },
+      {
+        "idx": 10,
+        "value": "发展管理"
+      }
+    ]
+  ],
+  "layout_mode": "libreoffice-compatible",
+  "source_path": "E:\\Talent-Assessment\\docs\\260929管理特质测评-优化\\260928管理潜质测评报告模板修改稿V2.8.docx",
+  "source_bytes": 660351,
+  "runtime_connected": false,
+  "attachment_byte_equality_verified": false,
+  "sample_values_preserved_not_scoring_gold_standard": true,
+  "output_paths": {
+    "template": "E:\\Talent-Assessment\\docs\\generated\\management-traits-word-candidate-20261001\\management-traits-002-lo-compatible-template.docx",
+    "manifest": "E:\\Talent-Assessment\\docs\\generated\\management-traits-word-candidate-20261001\\lo-compatible-manifest.json",
+    "demo": "E:\\Talent-Assessment\\docs\\generated\\management-traits-word-candidate-20261001\\lo-compatible-synthetic-demo.docx"
+  },
+  "layout_policy": "source text/rPr/sample/stars/footer preserved; only numeric-box size/insets/offsets, comparison legend manualLayout and local page-flow compatibility",
+  "sample_discrepancies": "source overall label 59.45 vs cached score retained without correction; sample is not scoring evidence",
+  "allowed_changes": [
+    "88 SDT wrappers/text-run splits preserving source rPr",
+    "six grouped charts/five backgrounds to source-coordinate anchors with original inline flow boxes",
+    "five labels to source-bound/source-font/source-inset Word text boxes with preserved sample numeric slots",
+    "cached data references to literals; accepted 13 leaf category flattening",
+    "six external chart OLE relationships/externalData removed",
+    "five numeric boxes: 120pt width, 64/44pt height, zero insets; left -96pt/right +100pt/overall +108pt offsets only",
+    "comparison legend manualLayout x/y/w/h only",
+    "local summary/detail/advice keepLines/keepNext/cantSplit and detail heading pageBreakBefore only"
+  ],
+  "semantic_decisions": {
+    "participant.post": "post",
+    "result.submittedAt": "submittedAt",
+    "categories": "13 leaf literals accepted"
+  },
+  "candidate_sha256": "a986ba0f3c5985486cf5f2a781346beb4140d2f2e79952a25c3beb57a273eb46",
+  "media_sha256": {
+    "word/media/": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "word/media/image1.png": "5ed914f99493291e68daf0e14699e0de759bfcce7589df55a3494f0799f7db31",
+    "word/media/image10.png": "97cca4de09c6148b2afd5617b0ee591e81d29cc693dcc00f1fd95ca70ef8ca96",
+    "word/media/image11.png": "c64826970644e8ea5638053e894f858728f7a6c884fd716189bca96f1aa72658",
+    "word/media/image2.emf": "ca977e7614e272c50dfa72f89f31700412bcccb2a04d5e7a05d8baa41fafba15",
+    "word/media/image3.png": "6deb82c9bf2dcaaedc46c5cc9fcc0a071f5f3fdae4054c05e9bfc4426807faef",
+    "word/media/image4.png": "5e59b389e54ab163b0be67915ffd18bb24b77d93509e23bb477525482bc473a7",
+    "word/media/image5.png": "7e078bbabaf9302aa04afc75f0ee824bfa533750dfc74175d5a7de0db141c9ac",
+    "word/media/image6.png": "cfff568224e489ce8dd7b25c39544e1430bb93494da8893039a2fffb34714a17",
+    "word/media/image7.png": "5c8bf3e7d7ebb2a6e5684bd882000803151620eb618f7ae938b0ba40603ca68c",
+    "word/media/image8.png": "cbdaf0555283bc6701abad8b3d608b7b181516d9cd6ee69824e1e0a3a206e51b",
+    "word/media/image9.png": "70f44e4231434bb2a0c141a67db2408a35afd575294edda6ddc1bc3bc7470042"
+  },
+  "changed_parts": [
+    "word/charts/_rels/chart1.xml.rels",
+    "word/charts/_rels/chart2.xml.rels",
+    "word/charts/_rels/chart3.xml.rels",
+    "word/charts/_rels/chart4.xml.rels",
+    "word/charts/_rels/chart5.xml.rels",
+    "word/charts/_rels/chart6.xml.rels",
+    "word/charts/chart1.xml",
+    "word/charts/chart2.xml",
+    "word/charts/chart3.xml",
+    "word/charts/chart4.xml",
+    "word/charts/chart5.xml",
+    "word/charts/chart6.xml",
+    "word/document.xml"
+  ],
+  "synthetic_demo": {
+    "synthetic": true,
+    "not_formal_report": true,
+    "no_scoring_gold_standard": true,
+    "workbook_sha256": "b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c",
+    "values": {
+      "dimension.self_confidence.score": "0.00",
+      "dimension.self_confidence.level": "不足",
+      "dimension.self_confidence.norm": "57.50",
+      "dimension.self_confidence.diagnosis": "谦逊，不逞强好胜，不爱主动表现自己，有时显得有些沉默，自信心不够强。",
+      "dimension.self_confidence.advice": "受测者暂不适合安排在需要强势推进、频繁公开表达的岗位，可先承担标准清晰、结果可控的执行工作；上级每月开展一次肯定性谈话，小组会上要求每次至少表达一条自己的看法，先保证频次再提升质量。",
+      "dimension.emotional_stability.score": "0.00",
+      "dimension.emotional_stability.level": "不足",
+      "dimension.emotional_stability.norm": "55.00",
+      "dimension.emotional_stability.diagnosis": "情绪波动大，难以控制自己的情绪，容易在关键时刻做出冲动的决策。",
+      "dimension.emotional_stability.advice": "受测者不宜安排在需要独立处理冲突、客户投诉或高强度赶工的岗位；批评类、争执类沟通尽量安排上级在场或延后处理，确需当天回复的先由上级把关口径；上级定期开展一对一辅导，三个月后评估岗位适配度，必要时引入专业支持。",
+      "dimension.self_discipline.score": "0.00",
+      "dimension.self_discipline.level": "不足",
+      "dimension.self_discipline.norm": "56.25",
+      "dimension.self_discipline.diagnosis": "缺乏自我约束和自我调整的能力，难以适应不断变化的工作环境，难以应对各种挑战和困难。",
+      "dimension.self_discipline.advice": "受测者可从最小单元开始建立秩序：每天只确定一件必须完成的事，固定时段执行，由本人记录完成情况，上级每周抽查两次；一个月后评估，达标后再增加任务强度和周计划要求。",
+      "dimension.sociality.score": "0.00",
+      "dimension.sociality.level": "不足",
+      "dimension.sociality.norm": "51.25",
+      "dimension.sociality.diagnosis": "性格内向，话语不多，不喜社交，在社交场合中常常谨言慎行，略显严肃和拘谨，注重自我感受，喜欢独立思考与活动。",
+      "dimension.sociality.advice": "受测者宜先安排在社交强度较低的岗位，承担专业性强、就事论事的协作任务；选择三到五位关键协作对象建立固定沟通机制，每周十五分钟业务交流，先做深再做广。",
+      "dimension.leadership.score": "50.00",
+      "dimension.leadership.level": "合格",
+      "dimension.leadership.norm": "52.50",
+      "dimension.leadership.diagnosis": "有一定的领导能力，面对问题能够坚持自己的见解，可以独立处理日常工作，但不将自己的观点、看法强加于他人。",
+      "dimension.leadership.advice": "受测者已能独立处理日常工作，可再给一些牵头机会，如主持一次复盘、牵头一项专项改进；在会议中主动点名征求意见，并要求以“我的建议是……理由是……”的方式表达，养成先出方案的习惯。",
+      "dimension.interpersonal_sensitivity.score": "25.00",
+      "dimension.interpersonal_sensitivity.level": "欠佳",
+      "dimension.interpersonal_sensitivity.norm": "50.00",
+      "dimension.interpersonal_sensitivity.diagnosis": "人际敏感性一般，不太关注他人的行为反应，有时会忽略他人的心理感受和情绪变化。",
+      "dimension.interpersonal_sensitivity.advice": "受测者可用清单弥补直觉不足；重要沟通前准备“对方立场、顾虑、期待”三个问题，沟通后主动确认理解是否准确；在事后沟通中用具体事例指出被忽略的信号，并安排一位敏感度较高的同事协同配合。",
+      "dimension.cooperation.score": "0.00",
+      "dimension.cooperation.level": "不足",
+      "dimension.cooperation.norm": "57.50",
+      "dimension.cooperation.diagnosis": "缺乏合作意愿，倾向于独自行动，不愿意与他人分享资源或信息。",
+      "dimension.cooperation.advice": "受测者可从一件共享事项入手；指定一名协作搭档，明确信息共享的硬性要求（如项目进度每日更新至共享文档），并要求每周为协作方提供一项具体支持；派工时写清协作动作和检查节点，一个月后评估变化。",
+      "dimension.planning.score": "50.00",
+      "dimension.planning.level": "合格",
+      "dimension.planning.norm": "53.75",
+      "dimension.planning.diagnosis": "做事有计划、有条理，会预先对自己的工作和生活作出一定的安排，但也有一定的随机性。",
+      "dimension.planning.advice": "受测者已具备基本规划习惯，可借助统一模板进一步做实：每天列出不超过五项关键任务并排序，每周用十五分钟复盘并安排下一周；上级帮助识别最常占用时间的三类干扰并逐一隔离。",
+      "dimension.responsibility.score": "100.00",
+      "dimension.responsibility.level": "优秀",
+      "dimension.responsibility.norm": "58.75",
+      "dimension.responsibility.diagnosis": "处理事务有恒负责，恪尽职守，为了完成工作能保持高度热情和付出额外努力，自愿做一些本不属于自己职责范围内的工作，热心帮助他人。",
+      "dimension.responsibility.advice": "受测者可承担关键岗位、重点专项、带教新人等需要高度负责的任务，作为担当标杆；同时需引导学会授权，按风险等级把可交付事项分给下属，紧盯关键节点和验收标准，避免成为流程瓶颈。",
+      "dimension.decisiveness.score": "50.00",
+      "dimension.decisiveness.level": "合格",
+      "dimension.decisiveness.norm": "53.75",
+      "dimension.decisiveness.diagnosis": "在面对一般情境时，能够保持冷静和镇定，较为果断地做出决策。",
+      "dimension.decisiveness.advice": "受测者负责的决策事项需设定截止时间，信息收集到点即要求形成决定；可把大决策拆分为若干可逆的小决策先试再推，出现犹豫时由上级及时定夺，通过实践降低对不确定性的顾虑。",
+      "dimension.proactiveness.score": "0.00",
+      "dimension.proactiveness.level": "不足",
+      "dimension.proactiveness.norm": "55.00",
+      "dimension.proactiveness.diagnosis": "随遇而安，不喜欢参与激烈的竞争，成就动机不强，喜欢稳定的生活，不愿给自己太大的压力和设置太高的目标。",
+      "dimension.proactiveness.advice": "受测者宜先安排在标准明确、节奏平稳的岗位，暂不给予强竞争、强业绩压力的任务；与进取心较强的同事编入同一工作组，每周设定一个可量化的小目标并确保完成，周期逐步延长到月度、季度。",
+      "dimension.learning.score": "100.00",
+      "dimension.learning.level": "优秀",
+      "dimension.learning.norm": "53.75",
+      "dimension.learning.diagnosis": "具有强烈的学习欲望，能够主动探索新知识和新方法，理解和掌握复杂的知识体系，并能够在实践中进行应用。",
+      "dimension.learning.advice": "受测者可作为内部师资培养，安排授课、案例库建设、带教新人等输出型任务，以输出促进持续学习；每年锁定一至两个能直接转化为业绩的主题深入学习，培训资源和外出交流优先安排。",
+      "dimension.innovation.score": "0.00",
+      "dimension.innovation.level": "不足",
+      "dimension.innovation.norm": "50.00",
+      "dimension.innovation.diagnosis": "对新鲜事物没有好奇心，工作循规蹈矩，拒绝做偏离现有工作要求和标准的事情。",
+      "dimension.innovation.advice": "受测者宜先安排在标准明确的岗位，暂不安排从零设计、突破常规的工作；可鼓励针对具体问题尝试新做法，选择成本低、风险小、见效快的切入点，一个月后评估接受度再作安排。",
+      "overall.score": "28.85",
+      "overall.level": "基础管理者",
+      "overall.diagnosis": "管理综合能力偏低，在多项核心管理行为上尚未达到成熟标准，面对组织要求时常显得力不从心。虽有基本的管理意识，但缺乏系统的管理思路和有效的方法论。需要加大培养力度，通过高强度的基础训练和指导，逐步建立管理自信和能力根基。",
+      "overall.advice.1": "受测者需先建立基础管理认知，可从参加基础管理课程、学习本岗位管理制度与流程入手，由上级明确岗位职责与工作要求。",
+      "overall.advice.2": "优先改善自我管理类行为（如情绪调节、守时与节点意识、任务记录），由本人填写工作日志，上级每周检查一次，先把基本要求稳定下来。",
+      "overall.advice.3": "可安排低风险的管理实践机会，如小组任务负责人、项目协调员，在支持性环境中积累经验；每项任务结束后由上级给予具体反馈和肯定，三个月后评估改进情况。",
+      "participant.name": "synthetic 演示人员（非正式数据）",
+      "participant.gender": "—",
+      "participant.affiliation": "synthetic 本地候选审阅",
+      "participant.post": "synthetic 职务语义待批准",
+      "participant.telephone": "synthetic 非真实联系方式",
+      "result.submittedAt": "2026-10-01 00:00（synthetic）",
+      "overview.high.1.name": "责任心",
+      "overview.high.1.text": "恪尽职守，愿额外付出，主动承担分外之事。",
+      "overview.high.2.name": "学习力",
+      "overview.high.2.text": "求知欲强，主动探索新知并能应用于实践。",
+      "overview.high.3.name": "领导性",
+      "overview.high.3.text": "能坚持己见、独当一面，但不强加观点于人。",
+      "overview.low.1.name": "自信心",
+      "overview.low.1.text": "谦逊少言、不爱表现，自信心偏弱。",
+      "overview.low.2.name": "情绪稳定性",
+      "overview.low.2.text": "情绪波动大、难以自控，易冲动决策。",
+      "overview.low.3.name": "自律性",
+      "overview.low.3.text": "缺乏自我约束与调整，难以适应变化与压力。",
+      "module.self.score": "0.00",
+      "module.interpersonal.score": "18.75",
+      "module.task.score": "66.67",
+      "module.development.score": "33.33"
+    },
+    "chart_values": {
+      "chart.overall": [
+        [
+          "28.846153846154",
+          "71.153846153846"
+        ]
+      ],
+      "chart.module.self": [
+        [
+          "0.000000000000",
+          "100.000000000000"
+        ]
+      ],
+      "chart.module.interpersonal": [
+        [
+          "18.750000000000",
+          "81.250000000000"
+        ]
+      ],
+      "chart.module.task": [
+        [
+          "66.666666666667",
+          "33.333333333333"
+        ]
+      ],
+      "chart.module.development": [
+        [
+          "33.333333333333",
+          "66.666666666667"
+        ]
+      ],
+      "chart.dimension.comparison": [
+        [
+          "0.000000000000",
+          "0.000000000000",
+          "0.000000000000",
+          "0.000000000000",
+          "50.000000000000",
+          "25.000000000000",
+          "0.000000000000",
+          "50.000000000000",
+          "100.000000000000",
+          "50.000000000000",
+          "0.000000000000",
+          "100.000000000000",
+          "0.000000000000"
+        ],
+        [
+          "57.500000000000",
+          "55.000000000000",
+          "56.250000000000",
+          "51.250000000000",
+          "52.500000000000",
+          "50.000000000000",
+          "57.500000000000",
+          "53.750000000000",
+          "58.750000000000",
+          "53.750000000000",
+          "55.000000000000",
+          "53.750000000000",
+          "50.000000000000"
+        ]
+      ]
+    },
+    "content_origins": {
+      "dimension.self_confidence.advice": {
+        "sheet": 3,
+        "cell": "G3",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.self_confidence.diagnosis": {
+        "sheet": 2,
+        "cell": "H3"
+      },
+      "dimension.emotional_stability.advice": {
+        "sheet": 3,
+        "cell": "G4",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.emotional_stability.diagnosis": {
+        "sheet": 2,
+        "cell": "H4"
+      },
+      "dimension.self_discipline.advice": {
+        "sheet": 3,
+        "cell": "G5",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.self_discipline.diagnosis": {
+        "sheet": 2,
+        "cell": "H5"
+      },
+      "dimension.sociality.advice": {
+        "sheet": 3,
+        "cell": "G6",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.sociality.diagnosis": {
+        "sheet": 2,
+        "cell": "H6"
+      },
+      "dimension.leadership.advice": {
+        "sheet": 3,
+        "cell": "E7",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.leadership.diagnosis": {
+        "sheet": 2,
+        "cell": "F7"
+      },
+      "dimension.interpersonal_sensitivity.advice": {
+        "sheet": 3,
+        "cell": "F8",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.interpersonal_sensitivity.diagnosis": {
+        "sheet": 2,
+        "cell": "G8"
+      },
+      "dimension.cooperation.advice": {
+        "sheet": 3,
+        "cell": "G9",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.cooperation.diagnosis": {
+        "sheet": 2,
+        "cell": "H9"
+      },
+      "dimension.planning.advice": {
+        "sheet": 3,
+        "cell": "E10",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.planning.diagnosis": {
+        "sheet": 2,
+        "cell": "F10"
+      },
+      "dimension.responsibility.advice": {
+        "sheet": 3,
+        "cell": "C11",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.responsibility.diagnosis": {
+        "sheet": 2,
+        "cell": "D11"
+      },
+      "dimension.decisiveness.advice": {
+        "sheet": 3,
+        "cell": "E12",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.decisiveness.diagnosis": {
+        "sheet": 2,
+        "cell": "F12"
+      },
+      "dimension.proactiveness.advice": {
+        "sheet": 3,
+        "cell": "G13",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.proactiveness.diagnosis": {
+        "sheet": 2,
+        "cell": "H13"
+      },
+      "dimension.learning.advice": {
+        "sheet": 3,
+        "cell": "C14",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.learning.diagnosis": {
+        "sheet": 2,
+        "cell": "D14"
+      },
+      "dimension.innovation.advice": {
+        "sheet": 3,
+        "cell": "G15",
+        "selection": "longest raw advice; conflict text unchanged"
+      },
+      "dimension.innovation.diagnosis": {
+        "sheet": 2,
+        "cell": "H15"
+      },
+      "overall.advice.1": {
+        "sheet": 4,
+        "cell": "D5",
+        "paragraph": 1
+      },
+      "overall.advice.2": {
+        "sheet": 4,
+        "cell": "D5",
+        "paragraph": 2
+      },
+      "overall.advice.3": {
+        "sheet": 4,
+        "cell": "D5",
+        "paragraph": 3
+      }
+    },
+    "demo_sha256": "09ed491a2665c2145f2771312066201fb2b9c2c7252967b4aecc7989bb456fa0",
+    "synthetic_scores": "reachable final-score sums selected for longest advice stress; not actual answers"
+  }
+}

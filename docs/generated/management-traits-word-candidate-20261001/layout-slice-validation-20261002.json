@@ -1,0 +1,81 @@
+{
+  "slice": "local002Word-local-layout",
+  "status": "local_bounded_gates_passed_candidate_not_activated",
+  "started_at_utc": "2026-10-02T00:38:43.7875996Z",
+  "verified_at_utc": "2026-10-02T00:49:42.9920264Z",
+  "implementation_layout_attempts": 1,
+  "python": "C:/Users/Liming/.local/bin/python3.14.exe (3.14.4)",
+  "new_top_level_tests": 5,
+  "test_results": {
+    "command": "C:/Users/Liming/.local/bin/python3.14.exe -B scripts/test/management-traits-002-word-candidate-contract-test.py --visual-boundaries",
+    "tests": 23,
+    "passed": 23,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "returncode": 0,
+    "evidence": "layout-slice-green.txt",
+    "syntax_ast_compile": "PASS",
+    "editor_diagnostics": 0,
+    "scoped_git_diff_check_returncode": 0
+  },
+  "red_results": {
+    "exact_original_candidate_sha256": "8b929da1fd8e78068240dc57c7ea6df14518ad3b24c9b0b54af5f6b0299fe1ba",
+    "exact_original_demo_sha256": "cbdcf73c04279d95eb1f8b365cd6be236f431c6497d00fa69f6ecd015a65b2df",
+    "method": "In-memory reversal of only this slice's page-flow and label offsets; both baseline hashes asserted before rendering. No source files rewritten.",
+    "tests": 4,
+    "failures_including_subtests": 48,
+    "errors": 0,
+    "skipped": 0,
+    "returncode": 1,
+    "evidence": "layout-slice-exact-baseline-red.txt",
+    "original_findings": ["25 label/ring-envelope intersections", "20 nonzero-boundary label/ring-pixel intersections", "synthetic summary-only physical page 4", "candidate responsibility detail spans two pages", "candidate development advice spans two pages"]
+  },
+  "source_sha256": "c82c2dc0cdcaec413866268c557561d5c53abc41ec02d94dc6aea615edca2f48",
+  "workbook_sha256": "b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c",
+  "outputs": [
+    {"file": "management-traits-002-candidate.docx", "bytes": 523359, "sha256": "1f236407713143d0e945d60391e9179bc761c62f0a42e750b50075c98f029273", "word_read_only_pages": 10, "sdt_count": 88, "word_close_without_save_sha_unchanged": true},
+    {"file": "management-traits-002-synthetic-demo.docx", "bytes": 523829, "sha256": "be2ec7119fd5a5589a05d4dd6c0d5ddb0e026cb913873321e8b97775faa88154", "word_read_only_pages": 11, "sdt_count": 88, "word_close_without_save_sha_unchanged": true},
+    {"file": "management-traits-002-candidate.pdf", "bytes": 649122, "sha256": "9fb10afeac53752cf173e97a713460b22b88431f40b8b8d516ec264457ec5221", "libreoffice_pages": 9},
+    {"file": "management-traits-002-synthetic-demo.pdf", "bytes": 658063, "sha256": "a2fb3e3bc5aa19bc4d7c69da214884ab89909c512769547c84f8b2ae1d94e403", "libreoffice_pages": 9}
+  ],
+  "changes": [
+    "Five label boxes retain 120pt width, 64/44pt height, zero insets and original font/color/data. Physical shifts: overall y+108pt, left modules x-96pt, right modules x+100pt. Five ring matrices and comparison plot coordinates remain unchanged.",
+    "Source detail-analysis pageBreakBefore disabled; summary heading/description locally kept with summary. Summary now shares physical page 4 with subsequent detailed analysis.",
+    "Source tables 6-18: each three-row module has cantSplit and keepLines; keepNext enabled only first two rows, explicitly disabled last row. No thirteen-module keepNext chain.",
+    "Development headings kept with complete advice paragraphs, each paragraph keepLines enabled and keepNext terminated; overall three-paragraph advice row kept local.",
+    "All existing data/style/source/media/literal-only/numeric/legend/36-text contracts retained. No star/footer/hierarchical category changes."
+  ],
+  "visual_evidence": {
+    "boundary_scores": [0, 25, 75, 100, 28.85],
+    "boundary_pages_each": 9,
+    "unbroken_numeric_tokens_each": 5,
+    "svg_actual_complete_ring_envelopes": 5,
+    "label_envelope_intersections": 0,
+    "144dpi_label_bbox_ring_ink_pixels": 0,
+    "candidate_and_demo_detail_blocks_same_page_each": 13,
+    "candidate_and_demo_complete_advice_same_page_each": 13,
+    "summary_only_orphan_page": false,
+    "contact_sheets": ["candidate-review-contactsheet.png", "candidate-focus-contactsheet.png", "demo-review-contactsheet.png", "demo-focus-contactsheet.png"],
+    "inspected": ["candidate and demo all-page contact sheets", "demo physical page 3 full size", "demo physical page 4 full size"]
+  },
+  "upstream_artifacts_consumed": [
+    {"path": "docs/project-memory.md", "used_for": "complete project constraints/history and current baseline"},
+    {"path": "docs/management-traits-word-candidate-verification-20261001.md", "used_for": "current top section's three outstanding layout facts and previous SHA/test gates"},
+    {"path": "docs/management-traits-word-design-20261001.md", "used_for": "section 8 existing fields, six charts, no data/style/business contract expansion"}
+  ],
+  "evidence_mapping": [
+    "verification current top: ring intersection -> SVG envelope and actual144DPI pixel tests",
+    "verification current top: sparse summary-only page -> paragraph identity + shared overview/detail page test",
+    "verification current top: responsibility split -> all13 exact-title anchored paragraph-page tests",
+    "design section8 -> original data/style/media/literal-only/field contract regression tests"
+  ],
+  "remaining_visual_facts_and_limits": [
+    "Physical page 7 retains two intact detailed dimensions followed by substantial whitespace; original development section page break retained. No global compaction attempted.",
+    "Overview physical page 3 retains lower whitespace after summary moves together onto physical page 4. Summary-only orphan is removed, not a claim that all pages have optimal density.",
+    "Word10/11 pages differ from LibreOffice9/9. Word only read-only opened; Word PDF/paragraph pagination not verified. No final or cross-engine page count approval.",
+    "Original fixed stars, footer policy and category hierarchy display remain pending business approval and unchanged.",
+    "No target-server validation, formal content approval, runtime integration or activation. Main agent owns docs/project-memory and ledgers; not modified here."
+  ],
+  "prohibited_operations_executed": []
+}

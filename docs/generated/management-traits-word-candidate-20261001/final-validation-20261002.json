@@ -1,0 +1,49 @@
+{
+  "task": "MT-WORD-01-local-candidate-display",
+  "status": "local-contracts-pass-candidate-not-approved",
+  "upstream_artifacts_consumed": ["docs/management-traits-word-candidate-verification-20261001.md"],
+  "evidence_mapping": {
+    "upstream_section_1_numeric_wrap_clip": "five real PDF boundary cases, exactly five full tokens each",
+    "upstream_section_1_legend": "complete original legend text and no full-score-label bounding-box intersection",
+    "upstream_section_1_orphan_tail": "all 36 dynamic long texts complete; summary paragraphs kept together; no tail-only page"
+  },
+  "interpreter": "C:/Users/Liming/.local/bin/python3.14.exe",
+  "build_command": "C:/Users/Liming/.local/bin/python3.14.exe -B scripts/tools/build-management-traits-002-word-candidate.py",
+  "test_command": "C:/Users/Liming/.local/bin/python3.14.exe -B scripts/test/management-traits-002-word-candidate-contract-test.py --visual-boundaries",
+  "test_results": {
+    "expanded_red": {"top_level": 17, "failures": 10, "errors": 0, "skips": 0, "exit": 1},
+    "round_1": {"top_level": 17, "failures": 8, "errors": 0, "skips": 0, "exit": 1},
+    "round_2": {"top_level": 18, "failures": 0, "errors": 1, "skips": 0, "exit": 1, "error": "new whitelist test serialized a missing original pPr; no PDF gate failures"},
+    "round_3": {"top_level": 18, "passed": 18, "failures": 0, "errors": 0, "skips": 0, "exit": 0},
+    "unchanged_reproducibility_run": {"top_level": 18, "passed": 18, "failures": 0, "errors": 0, "skips": 0, "exit": 0},
+    "pdf_boundary_full_numeric_tokens": {"0": 5, "25": 5, "75": 5, "100": 5, "28.85": 5},
+    "complete_dynamic_long_texts": 36,
+    "syntax": "both scripts compiled in memory without cache files",
+    "editor_diagnostics": 0
+  },
+  "source_sha256": "c82c2dc0cdcaec413866268c557561d5c53abc41ec02d94dc6aea615edca2f48",
+  "workbook_sha256": "b0498249ae057e3aa1b798922ed2d53a6ca304811943b3b41f4f64f9b024e84c",
+  "candidate_docx_sha256": "8b929da1fd8e78068240dc57c7ea6df14518ad3b24c9b0b54af5f6b0299fe1ba",
+  "demo_docx_sha256": "cbdcf73c04279d95eb1f8b365cd6be236f431c6497d00fa69f6ecd015a65b2df",
+  "candidate_pdf_sha256": "0b71ba4e8c05c4b4f0f95b4eca7cddf98dc53690504ae5e131c301a10588d9dc",
+  "demo_pdf_sha256": "831b93ea924a5f7f36cb734c48f7c038a0605e8a083ded7053fc9534a97e501f",
+  "renderer": "LibreOffice 26.2.5.2 (X86_64)",
+  "pdf_pages": {"candidate": 8, "demo": 9, "each_boundary": 9, "legend_fixture": 9},
+  "approved_change_whitelist": [
+    "five existing numeric-label textboxes: width 120 source-chart points, height overall 64/module 44, original center retained within one EMU, four insets zero",
+    "comparison legend manualLayout only: x=0.66,y=0.88,w=0.33,h=0.09; plotArea and legend content/styles unchanged",
+    "overview overall diagnosis keepLines=1; two summary cells' four direct paragraphs keepLines=1 and first three keepNext=1"
+  ],
+  "preserved": ["fonts", "font sizes", "colors", "chart types", "chart frame/group matrices", "series names", "literal business data", "88 SDTs", "20 tables", "original media", "customer sources", "tool signatures"],
+  "pending": [
+    "Word COM opening/export and customer acceptance belong to the main agent",
+    "demo physical page 4 has the complete summary table but remains sparse; explicit page breaks were not reconstructed",
+    "source-coordinate label placement and original ring/text overlap are retained; no blanket all-layout visual approval",
+    "page-count approval, content approval, post/date semantics, age/userTime/overall.norm positions, hierarchical categories, stars and footer policy remain pending",
+    "target-server renderer, runtime integration, active-template installation and formal report activation were not attempted"
+  ],
+  "initial_baseline_note": "14 structure cases passed; first score-0 LO conversion timed out once, three remaining boundary subcases failed. Fresh isolated profiles reproduced all four original boundary failures plus 28.85 deterministically.",
+  "auxiliary_generation_note": "Pillow was unavailable; no package was installed. Contact sheets were generated with Windows System.Drawing. pdfinfo output used local cp936 encoding.",
+  "timing_utc": {"start": "2026-10-02T00:06:53Z", "verification_end": "2026-10-02T00:18:03Z"},
+  "document_memory_ledger_owner": "main-agent; no modernization task/checkpoint or project ledgers edited"
+}
