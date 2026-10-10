@@ -11,6 +11,42 @@ import (
 	"testing"
 )
 
+// TestBugUF056_Phase1V2CoverHidesDuration
+// 对应：docs/regression-tests.md #UF-056
+// 复现：production正式PDF首页仍显示“时长：1分钟”。
+// 期望：v2模板和渲染结果保留内部result.userTime合同，但整项在Word/PDF中不可见。
+func TestBugUF056_Phase1V2CoverHidesDuration(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report-v2.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(readWordPart(t, template, "word/document.xml"))
+	if strings.Contains(document, ">时长：</w:t>") || strings.Contains(document, ">分钟</w:t>") {
+		t.Fatal("v2 template still exposes the cover duration label or unit")
+	}
+	control := regexp.MustCompile(`(?s)<w:sdt>.*?<w:tag w:val="result\.userTime".*?</w:sdt>`).FindString(document)
+	if control == "" || !strings.Contains(control, "<w:vanish") {
+		t.Fatal("v2 template duration contract is absent or visible")
+	}
+	fields := phase1V2WordTestFields(t, template)
+	fields["result.userTime"] = "1"
+	rendered, err := renderPhase1V2WordTemplate(template, fields, phase1V2WordTestCharts(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderedDocument := string(readWordPart(t, rendered, "word/document.xml"))
+	if strings.Contains(renderedDocument, ">时长：</w:t>") || strings.Contains(renderedDocument, ">分钟</w:t>") {
+		t.Fatal("rendered v2 report exposes the cover duration label or unit")
+	}
+	renderedControl := regexp.MustCompile(`(?s)<w:sdt>.*?<w:tag w:val="result\.userTime".*?</w:sdt>`).FindString(renderedDocument)
+	if renderedControl == "" || !strings.Contains(renderedControl, "<w:vanish") {
+		t.Fatal("rendered v2 duration contract became visible")
+	}
+	if strings.Contains(renderedControl, ">1</w:t>") {
+		t.Fatal("rendered v2 duration control still contains the numeric duration")
+	}
+}
+
 // TestBugFB179_Phase1V2WordRendererIsValueOnly
 // Corresponds to docs/regression-tests.md FB-179.
 func TestBugFB179_Phase1V2WordRendererIsValueOnly(t *testing.T) {
@@ -73,7 +109,7 @@ func TestBugFB179_Phase1V2WordRendererIsValueOnly(t *testing.T) {
 		}
 	}
 	for _, name := range wordPartNames(t, template, `.*`) {
-		if name == "word/document.xml" || strings.HasPrefix(name, "word/header") || strings.HasPrefix(name, "word/charts/chart") {
+		if name == "word/document.xml" || strings.HasPrefix(name, "word/header") || strings.HasPrefix(name, "word/footer") || strings.HasPrefix(name, "word/charts/chart") {
 			continue
 		}
 		if !bytes.Equal(readWordPart(t, template, name), readWordPart(t, rendered, name)) {
@@ -102,7 +138,7 @@ func TestBugFB193_V2OverviewPreservesLabelAndBodyStyles(t *testing.T) {
 	}
 	fields := phase1V2WordTestFields(t, template)
 	styledValues := map[string]string{
-		"rule.strength.1":    "数字应用：能熟练使用数字工具，数据处理规范准确，能借助技术手段提升效率，善于自行解决遇到的问题。",
+		"rule.strength.1":    "计划执行：能根据目标制定清晰计划，合理安排时间和资源，并按步骤推进任务落实。",
 		"rule.strength.2":    "求真务实：可以做到以事实和效果为依据，核实关键数据和信息来源，确保工作建立在客观事实之上。",
 		"rule.strength.3":    "自律性：主动约束自身行为，按计划推进工作，面对常规任务时能保持专注。",
 		"rule.development.1": "成就导向：愿意尽力达到既定标准和要求，但面对挑战性工作时常感到焦虑、把握不大，不过仍能努力完成任务。",
@@ -124,20 +160,21 @@ func TestBugFB193_V2OverviewPreservesLabelAndBodyStyles(t *testing.T) {
 	for _, test := range []struct {
 		tag, label, body string
 	}{
-		{"rule.strength.1", "数字应用：", strings.TrimPrefix(styledValues["rule.strength.1"], "数字应用：")},
+		{"rule.strength.1", "计划执行：", strings.TrimPrefix(styledValues["rule.strength.1"], "计划执行：")},
 		{"rule.strength.2", "求真务实：", strings.TrimPrefix(styledValues["rule.strength.2"], "求真务实：")},
 		{"rule.strength.3", "自律性：", strings.TrimPrefix(styledValues["rule.strength.3"], "自律性：")},
 		{"rule.development.1", "成就导向：", strings.TrimPrefix(styledValues["rule.development.1"], "成就导向：")},
 		{"rule.development.2", "沟通表达：", strings.TrimPrefix(styledValues["rule.development.2"], "沟通表达：")},
 	} {
-		controlPattern := regexp.MustCompile(`(?s)<w:sdt>.*?<w:tag w:val="` + regexp.QuoteMeta(test.tag) + `".*?</w:sdt>`)
-		control := controlPattern.FindString(document)
-		if control == "" || !strings.Contains(control, ">"+test.label+"<") || !strings.Contains(control, ">"+test.body+"<") {
-			t.Fatalf("styled control missing values: %s", test.tag)
+		if strings.Contains(document, `w:val="`+test.tag+`"`) {
+			t.Fatalf("rendered selected item retained its content-control wrapper: %s", test.tag)
+		}
+		if !strings.Contains(document, ">"+test.label+"<") || !strings.Contains(document, ">"+test.body+"<") {
+			t.Fatalf("styled item missing values: %s", test.tag)
 		}
 		labelRun := ""
 		bodyRun := ""
-		for _, run := range phase1V2WordRunPattern.FindAllString(control, -1) {
+		for _, run := range phase1V2WordRunPattern.FindAllString(document, -1) {
 			if strings.Contains(run, ">"+test.label+"<") {
 				labelRun = run
 			}
@@ -147,6 +184,9 @@ func TestBugFB193_V2OverviewPreservesLabelAndBodyStyles(t *testing.T) {
 		}
 		if labelRun == "" || !phase1V2WordBoldPattern.MatchString(labelRun) || bodyRun == "" || phase1V2WordBoldPattern.MatchString(bodyRun) {
 			t.Fatalf("label/body style mismatch: %s", test.tag)
+		}
+		if !strings.Contains(labelRun, `<w:b w:val="true"/>`) || !strings.Contains(labelRun, `<w:bCs w:val="true"/>`) {
+			t.Fatalf("label does not use explicit LibreOffice-compatible bold flags: %s", test.tag)
 		}
 	}
 }
@@ -281,7 +321,7 @@ func maskPhase1V2ControlValues(t *testing.T, part []byte) []byte {
 		}
 		content = content[:bounds[0]] + masked + content[bounds[1]:]
 	}
-	return []byte(content)
+	return []byte(unwrapPhase1V2ContentControls(content))
 }
 
 func phase1V2ChartByKey(t *testing.T, docx []byte, key string) []byte {

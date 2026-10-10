@@ -1,5 +1,37 @@
 # User Feedback Log
 
+## UF-057 — 2026-10-09 ✅ production旧报告已覆盖
+
+- 分类：报告版式 / 已生成资产。五问：①production管理端打开`/#/exam/competency-results/1791556668267388349`并查看正式报告；②UF-056活动模板发布后复查发现；③当前明确00401 v2报告及paper=`9174f98e-181f-486e-bbc7-0118bc39ced1`；④首页仍显示数字`1`，页脚显示`page2`；⑤用户期望时长整项无任何残留、页脚居中只显示数字，并已明确批准覆盖生成的旧报告文件。
+- [关闭 - 2026-10-10] 先以RED锁定隐藏时长、PAGE字段兼容、页码内层段落居中及`计划执行：`粗体。staging真实90答/10页PDF通过；production LibreOffice 7.4确定性DOCX进一步证明需移除冗余wrapper。最终后端SHA=`c321bf35...`，指定PDF覆盖为SHA=`cf1385c5...`/758202 bytes；封面无时长/页码，正文数字1–9居中，无Page前缀，计划执行粗体。report/current=1/1，audit最终15，备份=`/opt/talent-assessment/backups/uf057-report-20261010001515`，下载/DB/文件一致。
+
+## UF-056 — 2026-10-09 ✅ production模板已发布
+
+- 分类：报告版式 / 部署资产。五问：①production 00401完整答题后生成正式PDF；②production与staging活动v2模板SHA一致，不是单机漂移；③当前确认00401正式报告；④用户要求首页时长隐藏整项、页码保持居中、`胜任力综合表现`保持模板粗体；⑤触发试卷=`9174f98e-181f-486e-bbc7-0118bc39ced1`，来自保留测评`TEST-BROWSER-00401-20261009223722`。
+- [定位 - 2026-10-09] production PDF实测包含`时长：1分钟`，故只有首页时长不符合。DOCX页脚及PDF坐标证明页码已居中；标题、优势项/待发展项和动态维度名按模板加粗，正文常规字重。PDF已嵌入微软雅黑粗体/常规及宋体，本问题不是相关字体缺失。
+- [本地修复 - 2026-10-09] 先新增`TestBugUF056_Phase1V2CoverHidesDuration`并取得RED；从线上精确v2基线SHA=`a814c36e...`生成候选，仅隐藏可见标签/单位并保留隐藏`result.userTime`强合同。候选SHA=`52e0020c...`；专项1/1、v2 Word 5/5、handler 53/53及Go build GREEN。未替换staging/production模板；目标LibreOffice动态转换仍待重新设计验证流程后完成。
+- [发布关闭 - 2026-10-09] 重构传输门禁后，staging真实90答与LibreOffice 10页PDF证明首页时长隐藏、审计2、临时闭包清理0、基线无漂移。用户随后明确批准production只替换模板且不涉及数据库；production解包差异仅`word/document.xml`，活动v2模板SHA=`52e0020c...`，备份=`/opt/talent-assessment/backups/uf056-template-20261009232349`。服务PID2370974/NRestarts0，内外root/API 200，关键日志0。未重生成旧报告，因此保留PDF仍是历史版式。
+
+## UF-055 — 2026-10-09 ✅ production全站500已关闭
+
+- 分类：部署/环境。五问：①直接访问production根地址`http://39.106.61.48:8090/`即失败；②此前可用、刚刚开始；③用户确认所有页面；④浏览器只显示`500 Internal Server Error`，暂无失败请求响应正文或Request ID；⑤无特定测评、试卷或用户数据条件。
+- 期望：production根页面和API代理正常响应。实际：公网根地址返回500。该问题发生在本轮staging基准只读检查之后；该检查未执行远端文件写入、DDL、DML、服务重启或部署。
+- 下一步：先从公网分别探测root与`/prod-api/health`，再只读检查Nginx错误日志、应用service/journal、监听端口、磁盘/权限和配置引用；定位前不改代码或配置。
+
+[关闭 - 2026-10-09] 公网实测root/favicon=`500/500`而`/prod-api/health=200`，隔离为Nginx静态文件链；后端active、8092=200、PID=`2370974`、NRestarts=0。`namei`确认dist/index为755/644，但父目录`/opt`及`/opt/talent-assessment`被置为0700，Nginx worker `www`无法穿越。根因链为已禁止复用的第一代00401历史清理controller：先把备份目录全部chmod700，再由失败rollback执行`cp -a report-files/. /`，把备份中的父目录mode保留到真实`/opt`和应用目录；此前只纠正了`/`，漏检两个父目录。
+
+[修复与验收] 用户明确批准后仅将`/opt`和`/opt/talent-assessment`由0700改为0755；未改文件、数据库、Nginx配置或程序，未重启服务。以worker `www`读取index通过；服务器内root/favicon/API均200；公网真实HTTP分别`200(16155 bytes)/200(26900 bytes)/200(15 bytes)`，浏览器真实打开并显示“人才综合素质评估系统”登录页。失败断言会自动回滚原mode，本次全部通过未触发回滚。
+
+## UF-054 — 2026-10-09 ✅ production已关闭
+
+- 分类：数据一致性 / 题库范围认知。五问：①admin打开production `/#/exam/repo`，确认题库列表显示总题目数554；②此前也是554，不是本次发布回归；③当前仅确认admin；④页面无报错、空白或网络异常，只是数量不符合预期；⑤用户预期全局题目总数为90。
+- 已核代码事实：题库列表由`/exam/api/repo/paging`返回物理题库行，并额外插入虚拟00401行；00401行只统计`dimension_id IS NOT NULL OR competency_question_type IS NOT NULL`的胜任力题。此前production只读receipt已证明00401精确为90题，因此“全局应为90”与“只替换00401、其他产品不动”的既有范围存在破坏性歧义。
+- 当前未修改代码、题库、关联、历史答卷或环境。下一步先只读拆分554的物理题/胜任力题/题库关联和被测评引用数量，再由用户明确是否真的删除所有非00401题目；未获明确授权前禁止把全局554删到90。
+
+[执行补充] 用户已授权删除旧00401完整测试闭包。只读确认页面实际00401计数为544=当前90+旧454；其他传统题858。删除controller在完整备份后被safe-update/MySQL tmp权限门禁拦截并自动恢复；期间5条报告被不完整restore清空，随后从有效全备份精确恢复。最终9测评/22试卷/19结果/5报告、旧454题均仍在，当前90题及其他产品不变；`/`权限修复为0755、mysql tmp写和应用health通过。状态保持🔍 BLOCKED，不得把本轮称为已删除。
+
+[关闭 - 2026-10-09] 用户再次明确直接删除后，改用逐表主键常量DELETE的新controller，完整备份=`/opt/talent-assessment/backups/phase1_history_delete_v2_20261009220803`。旧9测评/22试卷/19结果/5报告/11审计/454题/48维及其冻结和试卷引用全部删除；当前10维90题的数量、分布和两项SHA与staging实时收据完全一致，传统858题保留。服务、MySQL临时写和root目录权限终验通过。
+
 ## FB-218 — 2026-10-09 ✅ staging关闭
 
 五问事实来自本轮真实链：staging MBTI，48题全部保存并完成计分，预期完整版报告在有界时间内返回PDF，实际旧链两次超过180/240秒。根因是MBTI独立使用无context的LibreOffice命令且转换失败会继续返回DOCX路径。RED先锁定有界共享客户端；GREEN改为复用`libreofficepdf.Client`、90秒context和隔离临时目录，失败固定业务错误且不更新PDF成功状态。部署后真实ESTJ完整版/简版PDF、16+16模板和匿名门禁PASS，临时业务链及两个旧profile清理0；production未访问。

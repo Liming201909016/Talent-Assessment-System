@@ -6,6 +6,99 @@
 - 历史`PARTIAL/BLOCKED/未部署`若已被后续同范围真实证据关闭，保留作过程证据，但不再是当前状态。禁止删除失败历史或覆写原收据。
 - 当前待办已按P0/P1/P2整理在[遗漏事项](project-status.md#5-仍需处理的遗漏事项)；不要从下方两千余行历史中重新猜当前待办。
 
+# 2026-10-10 UF-057 production旧PDF覆盖完成（LibreOffice 7.4/24.2兼容）
+
+- 用户要求提高效率，不再重复90题，复用staging真实生命周期收据并直接覆盖历史PDF。staging后端SHA=`ec4c85d7...`真实90答/10页PDF已PASS：时长隐藏、Page前缀0、数字页码居中、`计划执行：`粗体、audit2、cleanup=`0|0|0|0`、基线`10|24|48|24`前后一致。随后仅为production LibreOffice 7.4增加wrapper兼容时，Azure staging SSH连续两次超时，未上传或改动。
+- 两环境模板SHA=`52e0020c...`及微软雅黑/宋体文件一致；LibreOffice为staging 24.2、production 7.4。坐标证据定位：模板`footer2`页码段落缺居中导致物理第2页数字1靠左；嵌套DrawingML/VML内容控件使7.4把后续PAGE字段显示为文字并忽略动态label粗体。RED后改为从PAGE指令定位最近内层段落、渲染后移除页脚及selected-item冗余wrapper；相关报告测试53项通过。
+- production确定性DOCX（零DB）实证10页：封面无页码，物理2–10页数字1–9中心约297.8/298.8（页面中心297.7），PAGE字面量0，`计划执行：`PDF XML为粗体。首次用中间binary重生成在第3编号页校验失败并`ROLLBACK=completed`；保留失败证据。最终Linux SHA=`c321bf35...`发布，binary备份=`/opt/talent-assessment/backups/uf057-production-lo74-server-20261010001507`，PID2375402/NRestarts0。
+- 当前绑定基线不是旧收据`b9493c1c...`，DSN只读preflight确认覆盖前为SHA=`7cd40b29...`/716626 bytes、report/current=1/1、audit13、active paper0。最终仅force重生成授权report=`103d9a0d-0113-4aef-8962-434645783477`，精确备份=`/opt/talent-assessment/backups/uf057-report-20261010001515`；新PDF SHA=`cf1385c5...`/758202 bytes、10页、时长隐藏、Page前缀0、页码居中、计划执行粗体、认证下载/DB/文件一致。generate后audit14，最终下载验收后audit15；内外HTTP200、关键日志0、payload清理PASS。
+
+# 2026-10-09 UF-056 staging动态GREEN并发布production（仅模板，零数据库访问）
+
+- 重构失败的命令传输方式后，staging零写preflight确认旧v2 SHA=`a814c36e...`、服务active/NRestarts0及LibreOffice工具完整；DOCX解包只变`word/document.xml`。备份=`/opt/talent-assessment/backups/uf056-template-20261009230941`，安装SHA=`52e0020c...`后真实完成2组/10维/90题/90答/v1-v2结果/报告生成/LibreOffice转换/10页PDF下载；首页文本无`时长：`或`分钟`，审计2，cleanup=`0|0|0|0`，业务基线`10|24|48|24`前后一致。
+- 用户明确要求发布production、替换模板且本次不涉及数据库。production严格设置`databaseAccess=false/databaseWrites=false`，旧活动模板SHA=`a814c36e...`；上传候选后再次证明ZIP有效、隐藏字段合同保留、语义差异仅`word/document.xml`，建立0700备份=`/opt/talent-assessment/backups/uf056-template-20261009232349`并原子替换为611455-byte SHA=`52e0020c...`。
+- 终验：service active、PID=`2370974`、NRestarts=`0`、服务器内及公网root/API=`200/200`，公网root 16155 bytes、health=`{"status":"ok"}`，近5分钟panic/fatal/permission=0；SSH/SFTP会话关闭。没有重启、程序/前端/字体/Schema/题库/Nginx/systemd改动，也没有数据库读取或写入。保留的历史PDF未重生成，仍保留旧版式；后续新生成或明确重生成的v2报告使用新模板。
+
+# 2026-10-09 production 00401真实浏览器保留数据链与UF-056本地候选
+
+- 用户要求模拟真实production场景并保留测试业务数据。唯一marker=`TEST-BROWSER-00401-20261009223722`、exam=`1791556668267388349`、candidate=`1791556773728566030/TEST223722`、paper=`9174f98e-181f-486e-bbc7-0118bc39ced1`。真实浏览器完成登记、90题作答、前5题后刷新恢复、90/90二次确认提交、管理员结果列表、10维/90题详情、报告生成及PDF下载。
+- 最终只读闭包为candidate/paper/题/已答/维/组/效度/总体=`1/1/90/90/10/2/1/1`，v2=`1/1/3/10/1`，completed报告1；报告ID=`103d9a0d-0113-4aef-8962-434645783477`，717300 bytes，SHA=`145bc06b...`，10页。报告审计因真实重复生成/查看/下载增长到7条，属于保留数据；不得再用固定`audit=2`断言。短期管理员Redis会话删除后remaining=0，远端临时脚本、本地token文件已删除，SSH已关闭；业务闭包完整保留。
+- UF-056定位：production与staging活动v2模板同SHA=`a814c36e...`；production PDF确实显示`时长：1分钟`，而页码居中、综合表现模板字重及微软雅黑/宋体嵌入均正确。先RED后生成本地候选SHA=`52e0020c...`，仅隐藏可见时长并保留隐藏字段合同；专项、v2 Word、handler及build GREEN。三轮staging动态转换尝试均在转换前因命令传输/清理顺序失败，按门禁停止；未替换任何远端模板，production仍存在该版式问题。
+
+# 2026-10-09 production部署完整只读审计（可用但安全/运维需加固）
+
+- 当前运行GREEN：server/process=`f850575b...`、index=`593d4a20...`/393文件，Go active/PID2370974/NRestarts0，Nginx配置PASS，root/favicon/API/8092均200，MySQL alive、Redis PONG；真实匿名浏览器登录页无console error。当前PID自22:09:12启动后ERROR/FATAL/panic/permission均0；旧5899应用ERROR和Nginx permission记录不代表当前持续故障。
+- P0安全事实：登录仍是HTTP且无443/secure context；5个configs顶层文件全部0644，两个application配置检测到3/4个秘密字段标记；effective systemd以root运行且所有主要hardening关闭，`systemd-analyze security=9.6 UNSAFE`，并与仓库unit的liming用户定义漂移；管理员仍匹配历史默认候选的既有P0未关闭。
+- P1网络/数据/容量：UFW对Anywhere开放22/80/8090以及3306/10301/8088/9001/39000–40000，云侧当前只让22/80/8090可达，但MySQL/Go仍绑定所有网卡；SSH允许root直登。数据库有409条无父exam的paper（state0=199/state2=210），关联paper_qu20566、answer42963，candidate/MBTI直接引用0。根盘80%/余7.8GB，backup38项1.7GB，uploadPath502MB/782文件。
+- P2：根响应缺CSP/XCTO/XFO/Referrer/Permissions安全头；敏感URL由SPA fallback返回200/16155而非实际泄漏；backups根755且内部81个0644文件依赖子目录700保护，upload 782文件同样依赖父目录700；CUPS/BT Panel监听所有网卡但云侧不可达。
+- 本轮全程只读，未改代码、配置、权限、DB、防火墙或服务。完整脱敏证据与修复顺序见`docs/production-deployment-audit-20261009.md`。
+
+# 2026-10-09 staging基准对production程序/模板/Schema/题库只读复核
+
+- 两环境同一脚本实时采集且全程零写，production每次SSH均在收据返回后关闭。服务、进程文件一致性和内外health均PASS；前端index=`593d4a20...`且均393文件。后端按已批准兼容边界保持staging=`f2940fc5...`、production=`f850575b...`（staging基线+FB-219），不是未解释漂移。
+- 模板目录各9文件；00101/00102/00201/00202/00301 XLSX、00401 v1/v2 DOCX、005内容XLSX和共用DOCX的文件名、大小、SHA逐项完全一致。00401文案66/124、包1/1及四项内容/包SHA也完全一致。
+- 00401 Schema外键SHA相同。字段级差异仅MySQL8移除整数display width、`DEFAULT_GENERATED`元数据；staging另有`el_competency_migration`标记表。production仅多`el_qu.idx_qu_type_level_id(qu_type,level,id)`安全索引。未发现业务列、默认值、顺序或外键缺失。
+- 00401题库精确一致：10维、90题、分布`90|90|80|10|62|18|10|90`、dimension SHA=`ac6d4290...`、question SHA=`db1554e7...`。production旧00401运行历史为0；staging保留10测评/24试卷/24结果/28报告，这是环境业务历史差异，不应覆盖production。
+- 全题库扩展核验发现不能声称全库一致：共享00101/00102/00201/00202/00501/00502题数及题干+选项语义SHA一致，但00101/00102/00501/00502 repo元数据SHA不同；production `00301`的48题语义SHA等于staging `00302`，而staging自身`00301`是另一套48题，production缺`00302`；production另有`10201`一题。传统题总数staging/production=`1135/858`，未关联题=`122/0`。005 definition bundle均3行但语义SHA不同，需单独列字段差异和历史引用闭包后才能决定同步。
+- 结论：00401及全部9份部署模板GREEN；全程序允许FB-219差异；全Schema无业务缺口；“全部传统/005题库按staging覆盖production”当前NO-GO，必须先确认00301/00302产品身份、repo元数据和bundle差异，不能直接全量复制。
+
+# 2026-10-09 UF-055 production静态站点500已恢复
+
+- 用户五问确认production根地址刚刚开始全站500、无特定数据条件。公网探针证明root/favicon500，但API proxy health200；后端active、8092=200、PID=`2370974`、NRestarts=0，故不是Go服务或数据库故障。
+- `namei`实证dist/index自身755/644，但`/opt`和`/opt/talent-assessment`均0700。根因追到已禁止复用的旧清理controller：备份父目录先被递归chmod700，失败rollback再`cp -a ... /`保留mode；此前“根目录标准0755”只验证并修复了`/`，遗漏`/opt`和应用目录。[纠正 - 2026-10-09] 上述旧结论并不代表完整静态路径权限已恢复。
+- 用户批准后只执行两个`chmod 755`，断言失败自动恢复原mode；worker `www`读index、服务器内三HTTP和公网三HTTP全部PASS。公网root=200/16155、favicon=200/26900、API health=200/15；真实浏览器显示系统登录页。未重启、未改代码/配置/文件内容/数据库。
+
+# 2026-10-09 00401旧测试闭包已删除（production与staging题库精确一致）
+
+- 用户再次明确“直接删除”。弃用失败controller后新增主键常量版`scripts/tools/production-phase1-history-delete-v2-20261009.sh`：DELETE内零子查询、保留SQL_SAFE_UPDATES、不开FOREIGN_KEY_CHECKS、不TRUNCATE；production只输入一次root密码并复用同一SSH/SFTP会话完成全流程。
+- 删除前新建并验证完整数据库及5份报告文件备份=`/opt/talent-assessment/backups/phase1_history_delete_v2_20261009220803`。事务按外键顺序删除旧9测评、22试卷、19结果、147维度结果、5报告、11审计、1406试卷题、548冻结题、旧454题、旧48维及3条owned导出日志；报告文件同步删除。其他已核为0的闭包表无写入。
+- 最终production只读收据：旧competency exam/paper/result/report=`0/0/0/0`，active paper0；当前10维/90题、分布`90|90|80|10|62|18|10|90`，dimension SHA=`ac6d4290...`、question SHA=`db1554e7...`；与当前staging同一时点六项完全一致。传统001/002/003/005题共858保留，v1/v2文案66/124、包1/1、两模板SHA不变。
+- 服务active、PID=`2370974`、NRestarts=0、server/process=`f850575b...`、health200；根目录标准0755、mysql临时写PASS。production认证会话已关闭。UF-054关闭。
+
+# 2026-10-09 00401旧454题清理BLOCKED并完整恢复（禁止复用失败controller）
+
+- 用户明确授权：完整数据库备份后删除旧00401的454题及全部相关测试历史，同时保留当前10维90题和001/002/003/005传统题。只读闭包为旧48维、454题、9测评、22试卷、1406试卷题、548冻结题、19结果、147维度结果、5报告、11审计和3条导出日志；active paper=0，其他交叉引用均0。
+- 多轮controller均先创建并校验全量gzip数据库备份及5份报告文件副本；已知有效备份包括`phase1_history_delete_20261009214800`、`...214949`、`...215404`。删除事务分别被MySQL safe-update及服务器临时目录权限拒绝；未得到一次完整DELETE COMMIT。
+- 调查确认production根目录`/`曾为0700，导致mysql用户无法穿越到`/tmp`。用户批准修复为标准0755后，mysql临时写PASS，并从`...215404`精确恢复一度被不完整全库restore清空的5条`el_competency_report`；11条audit始终保留。
+- 回滚逻辑中的`cp -a report-files/. /`又把根目录模式覆盖回0700；最终已再次修复`/`为0755，mysql临时写PASS，服务active/health200。最终只读收据：server/process=`f850575b...`、active paper0、当前10维90题及SHA不变、旧9 exam/22 paper/19 result/5 report全部恢复、v1/v2文案66/124和包1/1不变。
+- 按“三轮失败停止”门禁，本轮停止。`scripts/tools/production-phase1-history-delete-20261009.sh`不得再次执行；下一步必须重写为逐表预计算主键直接DELETE的新controller，并先在恢复副本演练，不得继续现场试错。
+
+# 2026-10-09 00401 production全量staging基线同步完成（仅保留FB-219兼容补丁，GREEN）
+
+- 用户在精确staging后端因MySQL5.7校验失败并完整回滚后，明确选择“staging程序 + FB-219补丁”。最终候选因此锁定：后端继续使用已验证FB-219 SHA=`f850575b...`；前端使用staging精确index=`593d4a20...`/393文件；00401 v1/v2模板使用staging精确SHA=`54b167fc.../a814c36e...`；v1文案66条和批准包1条来自staging只读导出，题库与Schema无需写入。
+- 第二次受控发布创建新全量备份=`/opt/talent-assessment/backups/phase1_staging_sync_20261009212420`，controller结构验收PASS。随后真实E2E首次到报告生成阶段发现公开配置`PHASE1_WORD_REPORT_ENABLED`未启用；本轮候选、卷、结果、报告、审计、文件及Redis均精确清理，baseline完全恢复。
+- 经引用点核验后新增独立systemd drop-in，仅设置非秘密公开开关`PHASE1_WORD_REPORT_ENABLED=true`；重启后PID=`2367815`、NRestarts=0。最终完整production 00401 E2E PASS：发布2组/10维/90题、90答、提交幂等、v1/v2结果、筛选、三Sheet`2/91/91`、正式报告approved、10页PDF、审计2，exact cleanup全部0且所有表baseline完全一致。
+- 最终只读收据：server/process=`f850575b...`、index=`593d4a20...`、393前端文件、active paper0、10维/90题及两项题库SHA保持不变、00401历史0、v1/v2文案=`66/124`、包=`1/1`、文案SHA=`c52b2b19.../35cf08ee...`、模板=`54b167fc.../a814c36e...`、renderer=true、最近10分钟fatal/panic/permission=0。00401 production正式报告由RED转GREEN。
+
+# 2026-10-09 00401 production全量staging替换已自动回滚（真实E2E发现MySQL5.7兼容阻断）
+
+- staging SSH恢复后，同一只读inventory实测：server/process=`f2940fc5...`、index=`593d4a20...`、MySQL8.0.46、10维/90题及题库SHA与production完全相同、v1/v2文案=`66/124`、包=`1/1`、模板SHA分别=`54b167fc.../a814c36e...`。production对应v1为0/0/absent，v2文案SHA与staging一致但模板不同；production不存在00401版本元组或repo关系历史，故授权的00401历史删除闭包实际为0。
+- Schema逐行对比确认：staging仅多`el_competency_migration`标记表；其余列差异为MySQL5.7整数display width和MySQL8 `DEFAULT_GENERATED`元数据，FK SHA相同。production另有`el_qu.idx_qu_type_level_id(qu_type,level,id)`性能索引；未删除该生产安全增量，也未执行DDL。题库内容SHA相同，未重复写题库。
+- 受控controller先做active paper=0、00401历史=0、内容SHA和payload门禁，随后创建全量备份=`/opt/talent-assessment/backups/phase1_staging_sync_20261009211916`，再替换staging精确后端/前端/v1+v2模板并导入66条v1文案及production环境批准包。controller验收PASS：PID2366553、server/process=`f2940fc5...`、index=`593d4a20...`、模板=`54b167fc.../a814c36e...`、健康200。
+- 随后的真实production 00401完整E2E在创建测评入口被`管理特质保护校验失败，请稍后重试`拒绝；exact cleanup和全表baseline恢复均PASS。该失败证明用户已知并接受的FB-219回退仍会让staging FB-218后端在production MySQL5.7环境阻断公共exam保存，因此不能将controller结构验收当业务GREEN。
+- 按四阶段门禁立即从上述全量备份恢复数据库、server、dist和全部export templates。回滚后PID=`2366975`、NRestarts=0、server/process=`f850575b...`、index=`abf93dd1...`、健康200、active paper0、10维/90题不变、00401历史0、v1文案/包/模板继续0/0/absent、v2继续124/1及模板`f9859993...`。production当前状态与尝试前一致；release marker未移动。
+
+# 2026-10-09 00401 production全量staging替换预检BLOCKED（staging SSH不可达，零写）
+
+- 用户将此前“仅同步00401且保留较新production程序”的边界改为：完整使用staging后端和前端替换production，同时仅删除00401历史；接受production的FB-219及其他较新程序随整套程序回退。该高风险范围已经结构化确认，但尚未执行。
+- staging `20.200.136.133:22`的只读inventory上传首次及唯一重试均在SSH命令启动前connect timeout；staging远端脚本、SQL、上传、备份、替换、restart均为0。按两轮门禁停止继续重试，未用旧状态冒充实时staging事实。
+- 本地找到并逐字节核验与当前staging标记精确匹配的既存封存物：backend `Go-based Refactored System/bin/server-staging-fb218-v2-linux-amd64` SHA=`f2940fc5ea51edffc4f325df1f461f3ba4e86868df3aa0594af95764e880d61e`；frontend `Go-based Refactored System/bin/staging-dist.tar.gz` SHA=`a74789a88be767bb35fdabb738e214dad7bea7d9be0c4b09ff2bf974defa4ece`，393文件，内部`index.html` SHA=`593d4a20d890d73bf47f9a519a22fffbdb4b539afd5e1cc1dcc2fdebff73cfde`。这只证明封存字节匹配已有标记，不能替代当前staging DB/Schema/模板实时inventory。
+- 新增只读工具`scripts/tools/phase1-live-readonly-inventory-20261009.sh`，只输出非秘密运行时SHA、health、MySQL版本、00401 10维/90题分布与内容SHA、Schema SHA、报告包/模板及历史范围计数；临时MySQL client为0600并由trap删除。本次production运行PASS：PID=`2355899`、NRestarts=`0`、server/process=`f850575b...`、index=`abf93dd...`、MySQL5.7.44、active paper0、10维/90题及`90|90|80|10|62|18|10|90`分布、runtime refs0、v1文案/包/模板均0/absent、v2为124/1且模板SHA=`f9859993...`。production临时payload已清除，未备份、DDL、DML、替换或restart。
+- 结论：完整替换需要先取得同一时点的staging实时Schema/内容/模板收据并比较；SSH网络恢复前不能满足“以staging为基准检查后最终更新”，因此本轮fail-closed停在零写preflight。production继续保持原标记，不移动release marker。
+
+# 2026-10-09 00401 production正式报告同步PARTIAL（v2已安装，v1写前阻断）
+
+- 用户明确选择仅同步00401、保留较新的production程序和其他产品，允许沿用staging具名批准，并保留但不迁移旧00401历史数据。production先完成完整备份并安装staging精确v2资产：124条正式文案、production approved包、v2 DOCX SHA=`f98599939e3bf7923abf8bd457e30259cde3fa68d6c4e9dc9d3288de0a2eae16`；备份=`/opt/talent-assessment/backups/phase1_report_20261009_8af8c5dd2963418f`。后端/进程SHA保持`f850575b1dfa6eac3f5b4533148baf715eabc8afa13ccd32c7655d0507a7d600`且未重启。
+- 随后完整production 00401 E2E确认默认新卷查询v1版本元组，而production仅有v2包；报告验收RED，但finally精确删除本轮候选、卷、结果、run、报告、审计、文件及Redis token，所有业务表基线恢复。v2安装本身通过范围内验证并保留。
+- staging SSH两次在远端命令启动前超时。后续从仓库权威材料确定性重建v1：66条内容（5 overall、7 template、2 group、50 dimension、2 validity），内容SHA=`3060bf06f3f52715c7cf9b05f277e4ccd723a7f571785c5a26918cc98d8dbb42`；精确staging v1模板存在于`docs/competency-phase1-report-fb170-pie-labels-outside.docx`，536894 bytes/SHA=`54b167fcc02737ba44e0432a930e1f5657db57cec87d9063f1ee7c111c4932bf`，与B区旧副本SHA=`a6031417...`明确不同。新增production批准门禁SQL `competency_017_v1_report_content_production_approval.sql`，绑定题本SHA=`f33b878e...`、内容SHA、Liming双职责具名批准、production环境及完整免责声明。
+- v1部署未发生：第一轮controller把`state=0`误当全局active paper，第二轮又推测了不存在的`el_question/phase_order`结构；两次均在创建备份和业务写之前fail-closed，payload自动清除。只读诊断确认真实active paper=`state=1`且为0，服务PID=`2355899`、`NRestarts=0`、进程SHA不变、`REPORT_EFFECTIVE_ENV=production`。最终停止继续写入并清除payload/probe/receipt；production v1模板仍不存在，未新增备份、未导入v1文案、未重启。下一步必须先用实际表`el_competency_dimension.id`精确十ID和真实`el_qu/el_qu_repo/el_repo`关系完成一次全量零写preflight，再单次备份/部署/10页PDF E2E，不得继续猜Schema。
+
+# 2026-10-09 00401 production正式报告审批包准备完成（未上线）
+
+- 用户明确指定00401数据以staging为准，并确认客户在staging已测试通过。production待审批候选因此锁定为staging精确版本，不另造文案、规则或模板分支：内容源工作簿SHA=`edb9efd27ec86bc34db3a796c2022a99495fd9ec52e8a6580cd7404b2ab933b5`、内容语义SHA=`329409e408f10ec7f048a757e83c963b7736f66e41e8d601ff4397fd8545b48c`、124条内容、DOCX SHA=`f98599939e3bf7923abf8bd457e30259cde3fa68d6c4e9dc9d3288de0a2eae16`。
+- 审批包位于[00401-production-formal-report-approval-package-20261009.md](00401-production-formal-report-approval-package-20261009.md)，已列版本元组、不可变SHA、staging真实10页PDF证据、免责声明、独立审批栏、preflight/备份/恢复副本演练/发布/验收/回滚门禁。014 SQL文本INSERT计数实测124；审批包Markdown诊断0。
+- 该决定只关闭“采用哪套数据”的候选选择，不伪造production内容负责人/心理测量负责人姓名或时间，也不自动继承staging的`effective_environment='staging'`。本轮production写入、上传、重启均0；正式报告继续fail-closed，须取得production环境审批和上线授权后另行生成专用批准SQL并受控发布。
+
 # 2026-10-09 production受控发布完成（范围限定GREEN）
 
 - 精选提交已推送至GitHub，最终controller修正提交=`227bff9`。首个正式尝试在任何备份/写入前因payload成员比较错误失败；第二个尝试完成全备份并启动新程序，但错误地用port 80校验前端，acceptance失败后自动rollback=`ROLLBACK_OK=1`。回滚后主库MNG表0/005 repo0，server/process=`03397e0f…`、index=`f5cd615b…`、服务健康，证明数据库和运行时恢复成功。

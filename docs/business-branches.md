@@ -1,5 +1,48 @@
 # Business Branches
 
+## UF-057 — production 00401旧报告重生成版式（2026-10-09）
+
+| 分支 | 状态 | 证据/约束 |
+|---|---|---|
+| 首页隐藏时长控件值 | ✅ production GREEN | `result.userTime`保留输入合同但渲染写空；最终PDF无时长标签、单位或孤立数字 |
+| 页脚英文`Page`前缀 | ✅ production GREEN | LibreOffice 7.4/24.2兼容PAGE字段；封面无页码，正文数字1–9居中，字面Page计数0 |
+| 动态`计划执行：`字重 | ✅ production GREEN | selected-item标签使用模板粗体并移除7.4误解析wrapper；最终PDF XML粗体断言PASS |
+| 已生成旧报告覆盖 | ✅ 已完成 | report/current保持1/1，旧SHA=`7cd40b29...`、新SHA=`cf1385c5...`，精确备份和下载绑定验收PASS |
+| 新活动模板 | ✅ 未改动 | production/staging活动模板继续为SHA=`52e0020c...`；本次兼容修复位于renderer |
+
+## UF-056 — production 00401正式报告版式（2026-10-09）
+
+| 分支 | 状态 | 证据/约束 |
+|---|---|---|
+| 首页作答时长 | ✅ production活动模板已修复 | staging真实LibreOffice 10页PDF证明隐藏整项；production活动模板已发布同一SHA，保留旧PDF未重生成 |
+| 页码位置 | ✅ 无需修改 | 活动DOCX footer center，PDF页码坐标位于页脚中部；按用户要求保持 |
+| `胜任力综合表现`字重 | ✅ 无需修改 | 标题、优势项/待发展项、动态维度名按模板加粗，正文常规字重；按用户要求保持 |
+| production字体完整性 | ✅ 当前检查点无缺失 | PDF嵌入微软雅黑粗体/常规和宋体；楷体/黑体虽有fallback，但不参与本次异常页面 |
+| 模板环境一致性 | ✅ | production/staging活动v2模板现同SHA=`52e0020c...`；均从原共同基线`a814c36e...`生成 |
+
+## UF-055 — production根地址全站500（2026-10-09）
+
+| 分支 | 状态 | 证据/约束 |
+|---|---|---|
+| production公网根地址加载前端 | ✅ | 修复前500；修复后公网200/16155 bytes，真实浏览器进入登录页 |
+| production `/prod-api/health` | ✅ | 修复前后均200，证明后端代理链未故障 |
+| Nginx静态文件父目录穿越 | ✅ | `/opt`及应用目录0700→用户批准0755；worker `www`读取index通过，favicon公网200 |
+| Go服务、8092监听、journal | ✅ 无需修改 | active、8092=200、PID2370974、NRestarts0，未重启 |
+| 本轮staging基准检查 | ⚪ 零写 | 只执行SELECT、文件SHA、health读取和短时凭据文件trap清理；无部署/重启/业务写 |
+
+## UF-054 — production题库全局数量范围（2026-10-09）
+
+| 分支 | 状态 | 证据/约束 |
+|---|---|---|
+| admin打开题库列表，00401虚拟行 | ✅ | `RepoHandler.Paging`单独统计胜任力题；production receipt为90题 |
+| admin看到全局/其他物理题库题目仍存在 | 🔥 调研中 | 用户看到554且明确预期全局90；此前也是554，不是本次发布回归 |
+| 仅替换00401题库，其他产品题目保留 | ⚠️ 与当前预期冲突 | 既有授权只删除00401历史并保护其他产品；不能据此删除非00401题目 |
+| 删除全部非00401题目及关联 | 🔥 未授权 | 会影响001/002/003/005及历史试卷/答卷，必须先列完整引用闭包和取得明确破坏性授权 |
+
+[执行补充] 用户已授权“旧00401完整闭包”，但production删除在完整备份后连续被safe-update和MySQL临时目录权限拦截；最终全部历史恢复、当前90题未变。现有删除controller标记不可复用；下一候选必须逐表预计算主键、恢复副本先演练后再申请production执行。
+
+[关闭] 新controller以12条直接主键DELETE完成旧闭包清理：safe-update保持开启、外键检查保持开启、无TRUNCATE；当前90题及staging数量/分布/content SHA完全一致，传统858题保持。
+
 ## PRODUCTION-CORE-E2E — 2026-10-09 GREEN（范围限定）
 
 | 分支 | 状态 |

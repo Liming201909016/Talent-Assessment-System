@@ -33,6 +33,8 @@ var (
 	wordContentControlPattern    = regexp.MustCompile(`(?s)<w:sdt>.*?</w:sdt>`)
 	wordContentControlTagPattern = regexp.MustCompile(`<w:tag\s+w:val="([a-zA-Z0-9_.-]+)"\s*/>`)
 	wordTextPattern              = regexp.MustCompile(`(?s)(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)`)
+	phase1PageFieldInstruction   = regexp.MustCompile(`(?i)<w:instrText(?:\s[^>]*)?>\s*PAGE(?:\s+\\\*\s+MERGEFORMAT)?\s*</w:instrText>`)
+	phase1ParagraphAlignment     = regexp.MustCompile(`<w:jc\b[^>]*/>`)
 	wordParagraphPattern         = regexp.MustCompile(`(?s)<w:p(?:\s[^>]*)?>.*?</w:p>`)
 	numericChartBlockPattern     = regexp.MustCompile(`(?s)<c:(?:numCache|numLit)>.*?</c:(?:numCache|numLit)>`)
 	chartValuePattern            = regexp.MustCompile(`<c:v>[^<]*</c:v>`)
@@ -497,7 +499,7 @@ func removePhase1ChartExternalData(chart []byte) []byte {
 func normalizePhase1PageNumberFooter(footer []byte) ([]byte, error) {
 	content := string(footer)
 	upper := strings.ToUpper(content)
-	if !strings.Contains(upper, "NUMPAGES") {
+	if !strings.Contains(upper, "NUMPAGES") && !phase1PageFieldInstruction.MatchString(content) {
 		return footer, nil
 	}
 	for strings.Contains(upper, "NUMPAGES") {
@@ -532,10 +534,49 @@ func normalizePhase1PageNumberFooter(footer []byte) ([]byte, error) {
 		content = content[:removeStart] + content[fieldEnd:]
 		upper = strings.ToUpper(content)
 	}
-	if !strings.Contains(upper, ">PAGE<") && !strings.Contains(upper, "> PAGE <") {
+	if !phase1PageFieldInstruction.MatchString(content) {
 		return nil, errors.New("当前页字段PAGE不存在")
 	}
+	content = phase1PageFieldInstruction.ReplaceAllString(content, `<w:instrText xml:space="preserve"> PAGE </w:instrText>`)
+	pageFields := phase1PageFieldInstruction.FindAllStringIndex(content, -1)
+	for index := len(pageFields) - 1; index >= 0; index-- {
+		field := pageFields[index]
+		paragraphStart := lastPhase1WordParagraphStart(content[:field[0]])
+		paragraphEndOffset := strings.Index(content[field[1]:], "</w:p>")
+		if paragraphStart < 0 || paragraphEndOffset < 0 {
+			return nil, errors.New("当前页字段PAGE段落无效")
+		}
+		paragraphEnd := field[1] + paragraphEndOffset + len("</w:p>")
+		paragraph := content[paragraphStart:paragraphEnd]
+		if phase1ParagraphAlignment.MatchString(paragraph) {
+			paragraph = phase1ParagraphAlignment.ReplaceAllString(paragraph, `<w:jc w:val="center"/>`)
+		} else {
+			paragraphProperties := strings.Index(paragraph, "<w:pPr>")
+			if paragraphProperties >= 0 {
+				insertAt := paragraphProperties + len("<w:pPr>")
+				paragraph = paragraph[:insertAt] + `<w:jc w:val="center"/>` + paragraph[insertAt:]
+			} else {
+				paragraphOpenEnd := strings.Index(paragraph, ">")
+				if paragraphOpenEnd < 0 {
+					return nil, errors.New("当前页字段PAGE段落起点无效")
+				}
+				insertAt := paragraphOpenEnd + 1
+				paragraph = paragraph[:insertAt] + `<w:pPr><w:jc w:val="center"/></w:pPr>` + paragraph[insertAt:]
+			}
+		}
+		content = content[:paragraphStart] + paragraph + content[paragraphEnd:]
+	}
+	content = unwrapPhase1V2ContentControls(content)
 	return []byte(content), nil
+}
+
+func lastPhase1WordParagraphStart(content string) int {
+	withAttributes := strings.LastIndex(content, "<w:p ")
+	withoutAttributes := strings.LastIndex(content, "<w:p>")
+	if withoutAttributes > withAttributes {
+		return withoutAttributes
+	}
+	return withAttributes
 }
 
 func lastPhase1WordRunStart(content string) int {

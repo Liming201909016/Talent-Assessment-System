@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 import uuid
 import zipfile
+import xml.etree.ElementTree as ET
 from io import BytesIO
 from pathlib import Path
 
@@ -314,6 +315,62 @@ SELECT CONCAT(
                 pdf_info = subprocess.run(['pdfinfo', str(downloaded_pdf)], check=True, capture_output=True, text=True).stdout
                 if not re.search(r'^Pages:\s+10$', pdf_info, re.MULTILINE):
                     raise RuntimeError(f'approved report PDF is not 10 pages: {pdf_info}')
+                pdf_text = subprocess.run(
+                    ['pdftotext', '-f', '1', '-l', '1', '-layout', str(downloaded_pdf), '-'],
+                    check=True, capture_output=True, text=True,
+                ).stdout
+                if '时长：' in pdf_text or '分钟' in pdf_text:
+                    raise RuntimeError('approved report PDF still exposes the cover duration')
+                complete_pdf_text = subprocess.run(
+                    ['pdftotext', '-layout', str(downloaded_pdf), '-'],
+                    check=True, capture_output=True, text=True,
+                ).stdout
+                if re.search(r'(?i)\bpage\s*\d+\b', complete_pdf_text):
+                    raise RuntimeError('approved report PDF still exposes the English page prefix')
+                bbox_xml = subprocess.run(
+                    ['pdftotext', '-bbox-layout', str(downloaded_pdf), '-'],
+                    check=True, capture_output=True, text=True,
+                ).stdout
+                bbox_root = ET.fromstring(bbox_xml)
+                pages = [node for node in bbox_root.iter() if node.tag.endswith('page')]
+                if len(pages) != 10:
+                    raise RuntimeError(f'approved report bbox pages={len(pages)}, want 10')
+                cover_page = pages[0]
+                cover_height = float(cover_page.attrib['height'])
+                cover_footer_numbers = [
+                    node for node in cover_page.iter()
+                    if node.tag.endswith('word')
+                    and re.fullmatch(r'\d+', (node.text or '').strip())
+                    and float(node.attrib['yMin']) >= cover_height * 0.85
+                ]
+                if cover_footer_numbers:
+                    raise RuntimeError('approved report cover unexpectedly exposes a numeric footer')
+                for page_number, page in enumerate(pages[1:], start=1):
+                    page_width = float(page.attrib['width'])
+                    page_height = float(page.attrib['height'])
+                    footer_numbers = [
+                        node for node in page.iter()
+                        if node.tag.endswith('word')
+                        and (node.text or '').strip() == str(page_number)
+                        and float(node.attrib['yMin']) >= page_height * 0.85
+                    ]
+                    if len(footer_numbers) != 1:
+                        raise RuntimeError(f'numbered page {page_number} footer count={len(footer_numbers)}, want 1')
+                    footer = footer_numbers[0]
+                    footer_center = (float(footer.attrib['xMin']) + float(footer.attrib['xMax'])) / 2
+                    if abs(footer_center - page_width / 2) > page_width * 0.12:
+                        raise RuntimeError(f'numbered page {page_number} footer is not centered')
+                report_xml = subprocess.run(
+                    ['pdftohtml', '-xml', '-hidden', '-stdout', str(downloaded_pdf)],
+                    check=True, capture_output=True, text=True,
+                ).stdout
+                report_root = ET.fromstring(report_xml)
+                plan_labels = [
+                    node for node in report_root.iter()
+                    if node.tag == 'text' and '计划执行：' in ''.join(node.itertext())
+                ]
+                if not plan_labels or not any(any(child.tag == 'b' for child in node.iter()) for node in plan_labels):
+                    raise RuntimeError('approved report PDF does not render 计划执行 as a bold label')
             finally:
                 downloaded_pdf.unlink(missing_ok=True)
             report_counts = mysql(f"""
@@ -363,7 +420,7 @@ SELECT CONCAT(
         print('paging=good:1|questionable:0|ranking_default:complete_good')
         print('export=groups:true|validity:true|question_type:true')
         if report_approved:
-            print('report=approved_dto:10-pages/2-groups/10-dimensions|generate:completed|download:10-page-pdf|audits:2')
+            print('report=approved_dto:10-pages/2-groups/10-dimensions|generate:completed|download:10-page-pdf|cover_duration:hidden|page_prefix:absent|page_numbers:centered|plan_execution:bold|audits:2')
         else:
             print(f'report=report_data/generate/download:gated|packages:{package_count}|instances:0|audits:0')
     finally:

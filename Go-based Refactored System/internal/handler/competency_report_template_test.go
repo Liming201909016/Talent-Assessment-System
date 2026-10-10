@@ -133,6 +133,57 @@ func TestBugFB164_Phase1FooterUsesCurrentPageOnly(t *testing.T) {
 	}
 }
 
+// TestBugUF057_Phase1FooterUsesLibreOfficeCompatibleNumericPageField
+// 对应：docs/regression-tests.md #UF-057
+// 复现：LibreOffice 7.4把模板中的紧凑PAGE指令渲染为“Page2”，而24.2仅显示数字。
+// 期望：运行时把所有PAGE指令统一为兼容写法，页脚保持居中且没有英文Page文本。
+func TestBugUF057_Phase1FooterUsesLibreOfficeCompatibleNumericPageField(t *testing.T) {
+	footer := []byte(`<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pStyle w:val="a3"/></w:pPr><w:r><w:t xml:space="preserve"> </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>PAGE</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p></w:ftr>`)
+	normalized, err := normalizePhase1PageNumberFooter(footer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(normalized)
+	if !strings.Contains(content, `<w:jc w:val="center"/>`) {
+		t.Fatal("footer lost centered alignment")
+	}
+	if !strings.Contains(content, `<w:instrText xml:space="preserve"> PAGE </w:instrText>`) {
+		t.Fatalf("footer PAGE instruction is not LibreOffice-compatible: %s", content)
+	}
+	if strings.Contains(content, `<w:instrText>PAGE</w:instrText>`) || regexp.MustCompile(`(?i)<w:t[^>]*>\s*page\s*</w:t>`).MatchString(content) {
+		t.Fatalf("footer retained an English Page prefix: %s", content)
+	}
+	if strings.Contains(content, "<w:sdt") {
+		t.Fatal("footer retained content-control wrappers that LibreOffice 7.4 misparses")
+	}
+
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report-v2.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := renderPhase1V2WordTemplate(template, phase1V2WordTestFields(t, template), phase1V2WordTestCharts(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range wordPartNames(t, rendered, `^word/footer\d+\.xml$`) {
+		renderedFooter := string(readWordPart(t, rendered, name))
+		if strings.Contains(renderedFooter, `<w:instrText>PAGE</w:instrText>`) || !strings.Contains(renderedFooter, `<w:instrText xml:space="preserve"> PAGE </w:instrText>`) {
+			t.Fatalf("v2 renderer retained an incompatible PAGE instruction: %s", name)
+		}
+		for _, field := range phase1PageFieldInstruction.FindAllStringIndex(renderedFooter, -1) {
+			paragraphStart := lastPhase1WordParagraphStart(renderedFooter[:field[0]])
+			paragraphEndOffset := strings.Index(renderedFooter[field[1]:], "</w:p>")
+			if paragraphStart < 0 || paragraphEndOffset < 0 {
+				t.Fatalf("v2 renderer produced an invalid PAGE paragraph: %s", name)
+			}
+			paragraphEnd := field[1] + paragraphEndOffset + len("</w:p>")
+			if !strings.Contains(renderedFooter[paragraphStart:paragraphEnd], `<w:jc w:val="center"/>`) {
+				t.Fatalf("v2 renderer retained a non-centered PAGE paragraph: %s", name)
+			}
+		}
+	}
+}
+
 // TestBugFB162_V1TemplateRejectsExternalChartRelationships
 // 对应：docs/regression-tests.md #FB-162
 func TestBugFB162_V1TemplateRejectsExternalChartRelationships(t *testing.T) {

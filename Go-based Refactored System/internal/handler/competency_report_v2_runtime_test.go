@@ -129,7 +129,12 @@ func TestBugFB190_V2WordReportHonorsProfileEmptyStateAndApprovedText(t *testing.
 			t.Errorf("unconfigured profile label remains: %s", absent)
 		}
 	}
-	for _, required := range []string{"时长：", ">1<", "分钟", "暂无明显优势项", "批准免责声明", "本次测评作答效度良好"} {
+	for _, absent := range []string{"时长：", ">1<", "分钟"} {
+		if strings.Contains(document, absent) {
+			t.Errorf("rendered v2 document exposes hidden duration content %q", absent)
+		}
+	}
+	for _, required := range []string{"暂无明显优势项", "批准免责声明", "本次测评作答效度良好"} {
 		if !strings.Contains(document, required) {
 			t.Errorf("rendered v2 document missing %q", required)
 		}

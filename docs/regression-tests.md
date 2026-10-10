@@ -1,3 +1,21 @@
+# UF-057 — production 00401旧报告残留时长数字和Page前缀（2026-10-09）
+
+| 编号 | Bug描述 | 文件 | 状态 | 测试位置 |
+|---|---|---|---|---|
+| UF-057 | 首页隐藏时长后仍显示数字`1`；页脚显示`page2`/靠左；production动态`计划执行：`不加粗 | v2 renderer / `competency-phase1-report-v2.docx` | ✅ PRODUCTION GREEN；相关报告测试53项、staging真实90答/10页PDF、production LibreOffice 7.4确定性DOCX及指定历史PDF覆盖均PASS | `TestBugUF056_Phase1V2CoverHidesDuration`、`TestBugUF057_Phase1FooterUsesLibreOfficeCompatibleNumericPageField`、`TestBugFB193_V2OverviewPreservesLabelAndBodyStyles` |
+
+# UF-056 — production 00401首页时长隐藏（2026-10-09）
+
+| 编号 | Bug描述 | 文件 | 状态 | 测试位置 |
+|---|---|---|---|---|
+| UF-056 | v2正式报告首页仍显示作答时长；页码居中和模板既定粗体保持不变 | `competency-phase1-report-v2.docx` | ✅ PRODUCTION GREEN；专项1/1、v2 Word 5/5、handler 53/53、build、staging真实90答/LibreOffice 10页PDF、production模板SHA及HTTP验收PASS | `TestBugUF056_Phase1V2CoverHidesDuration` |
+
+# UF-055 — production静态站点父目录不可穿越（2026-10-09）
+
+| 编号 | Bug描述 | 文件/环境 | 状态 | 测试位置 |
+|---|---|---|---|---|
+| UF-055 | Nginx可代理后端health，但`/opt`和`/opt/talent-assessment`为0700，worker无法穿越到dist，根页面和静态资源返回500 | production文件权限 | ✅ GREEN；⚪ 代码RED N/A（运行配置/权限故障，无产品代码变更） | 公网root=200/16155、favicon=200/26900、API health=200/15；真实浏览器登录页PASS |
+
 # Regression Tests
 
 ## PRODUCTION-CORE-E2E-20261009 — 🟢 005 / 00401 GREEN（正式报告范围除外）

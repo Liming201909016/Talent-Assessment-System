@@ -20,6 +20,8 @@ var (
 	phase1V2WordRunPattern     = regexp.MustCompile(`(?s)<w:r(?:\s[^>]*)?>.*?</w:r>`)
 	phase1V2WordRunPrPattern   = regexp.MustCompile(`(?s)<w:rPr>.*?</w:rPr>`)
 	phase1V2WordBoldPattern    = regexp.MustCompile(`<w:b(?:Cs)?\b[^>]*/>`)
+	phase1V2SdtProperties      = regexp.MustCompile(`(?s)<w:sdt(?:End)?Pr>.*?</w:sdt(?:End)?Pr>`)
+	phase1V2SdtWrapper         = regexp.MustCompile(`</?w:sdt(?:Content)?(?:\s[^>]*)?>`)
 )
 
 func renderPhase1V2WordTemplate(template []byte, fields map[string]string, charts map[string][][]float64, requiredFields string) ([]byte, error) {
@@ -70,6 +72,12 @@ func renderPhase1V2WordTemplate(template []byte, fields map[string]string, chart
 			replaced, replaceErr := replacePhase1V2ContentControlValues(body, fields)
 			if replaceErr != nil {
 				return nil, fmt.Errorf("更新v2 Word报告内容控件失败：%s：%w", name, replaceErr)
+			}
+			parts[name] = replaced
+		} else if strings.HasPrefix(name, "word/footer") && strings.HasSuffix(name, ".xml") {
+			replaced, replaceErr := normalizePhase1PageNumberFooter(body)
+			if replaceErr != nil {
+				return nil, fmt.Errorf("更新v2 Word报告页码失败：%s：%w", name, replaceErr)
 			}
 			parts[name] = replaced
 		}
@@ -201,6 +209,9 @@ func replacePhase1V2ContentControlValues(part []byte, fields map[string]string) 
 		if !exists {
 			return nil, fmt.Errorf("字段值缺失：%s", tagMatch[1])
 		}
+		if tagMatch[1] == "result.userTime" {
+			value = ""
+		}
 		if (strings.HasPrefix(tagMatch[1], "rule.strength.") || strings.HasPrefix(tagMatch[1], "rule.development.")) && strings.Contains(value, "：") {
 			replaced, err := replacePhase1V2SelectedItemControl(control, value)
 			if err != nil {
@@ -252,6 +263,12 @@ func replacePhase1V2SelectedItemControl(control, value string) (string, error) {
 	if labelProperties == "" {
 		labelProperties = phase1V2WordRunPrPattern.FindString(runs[0])
 	}
+	labelProperties = phase1V2WordBoldPattern.ReplaceAllStringFunc(labelProperties, func(property string) string {
+		if strings.HasPrefix(property, "<w:bCs") {
+			return `<w:bCs w:val="true"/>`
+		}
+		return `<w:b w:val="true"/>`
+	})
 	if bodyProperties == "" {
 		bodyProperties = phase1V2WordBoldPattern.ReplaceAllString(labelProperties, "")
 	}
@@ -274,7 +291,12 @@ func replacePhase1V2SelectedItemControl(control, value string) (string, error) {
 	}
 	replacement := "<w:r>" + labelProperties + "<w:t>" + escapedLabel + "</w:t></w:r>" +
 		"<w:r>" + bodyProperties + "<w:t>" + escapedDescription + "</w:t></w:r>"
-	return control[:contentBodyStart] + replacement + control[contentEnd:], nil
+	return unwrapPhase1V2ContentControls(control[:contentBodyStart] + replacement + control[contentEnd:]), nil
+}
+
+func unwrapPhase1V2ContentControls(content string) string {
+	content = phase1V2SdtProperties.ReplaceAllString(content, "")
+	return phase1V2SdtWrapper.ReplaceAllString(content, "")
 }
 
 func resolvePhase1V2BusinessChartParts(parts map[string][]byte) (map[string]string, error) {
