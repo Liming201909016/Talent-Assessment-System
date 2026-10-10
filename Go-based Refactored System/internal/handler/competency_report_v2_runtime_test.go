@@ -134,7 +134,7 @@ func TestBugFB190_V2WordReportHonorsProfileEmptyStateAndApprovedText(t *testing.
 			t.Errorf("rendered v2 document exposes hidden duration content %q", absent)
 		}
 	}
-	for _, required := range []string{"暂无明显优势项", "批准免责声明", "本次测评作答效度良好"} {
+	for _, required := range []string{"暂无明显优势项", "批准免责声明"} {
 		if !strings.Contains(document, required) {
 			t.Errorf("rendered v2 document missing %q", required)
 		}

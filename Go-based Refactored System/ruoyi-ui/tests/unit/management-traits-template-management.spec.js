@@ -37,13 +37,26 @@ describe('00501/00502 shared report template management', () => {
       contentControls: 90,
       businessCharts: 6,
       numericLabels: 5,
-      externalLinks: 0
+      externalLinks: 0,
+      semanticFields: [{ key: 'participant.name', name: '姓名', description: '受测者姓名', repeatable: true }]
     } })
     const vm = { ...ReportTemplates.data(), $message: { error: vi.fn() } }
     await ReportTemplates.methods.fetchManagementTraitsTemplate.call(vm)
     expect(fetchManagementTraitsTemplateInfo).toHaveBeenCalledTimes(1)
     expect(vm.managementTraitsTemplate).toEqual(expect.objectContaining({ valid: true, productCodes: ['00501', '00502'], contentControls: 90 }))
+    expect(vm.managementTraitsTemplate.semanticFields).toHaveLength(1)
     expect(vm.managementTraitsTemplateLoading).toBe(false)
+  })
+
+  it('opens the 00501/00502 semantic-field dialog and explains repeated tags', () => {
+    const vm = {
+      ...ReportTemplates.data(),
+      managementTraitsTemplate: { semanticFields: [{ key: 'overall.diagnosis', name: '总体诊断', description: '总体表现诊断', repeatable: true }] }
+    }
+    ReportTemplates.methods.openManagementTraitsSemanticFields.call(vm)
+    expect(vm.semanticFieldDialogVisible).toBe(true)
+    expect(vm.semanticFieldDialogTitle).toContain('00501 / 00502')
+    expect(vm.semanticFieldRows[0]).toEqual(expect.objectContaining({ repeatable: true }))
   })
 
   it('downloads the shared DOCX with a hash-qualified file name', async () => {

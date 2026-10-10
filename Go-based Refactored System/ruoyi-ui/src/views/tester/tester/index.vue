@@ -58,7 +58,13 @@
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <el-table v-loading="loading" :data="testerList" border @selection-change="handleSelectionChange">
+    <el-table
+      v-loading="loading"
+      :data="testerList"
+      :empty-text="queryParams.examId ? '暂无测评人员' : '请先选择测评'"
+      border
+      @selection-change="handleSelectionChange"
+    >
       <el-table-column type="selection" width="50" align="center" />
       <el-table-column label="测评名称" align="center" min-width="220" prop="title" show-overflow-tooltip>
         <template slot-scope="scope">
@@ -374,6 +380,12 @@ export default {
     /** 查询用户列表 */
     getList() {
       this.loading = true;
+      if (!this.queryParams.examId) {
+        this.testerList = [];
+        this.total = 0;
+        this.loading = false;
+        return;
+      }
       getListTester(this.queryParams).then(response => {
         this.testerList = response.rows;
         this.total = response.total;
@@ -407,6 +419,10 @@ export default {
     },
     /** 查询按钮操作 */
     handleQuery() {
+      if (!this.queryParams.examId) {
+        this.$modal.msgWarning("请先选择测评");
+        return;
+      }
       this.queryParams.pageNum = 1;
       this.getList();
     },

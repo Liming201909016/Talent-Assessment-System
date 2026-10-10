@@ -1,5 +1,110 @@
 # Business Branches
 
+## UF-067 / FB-231 — 测评人员页查询范围（2026-10-10）
+
+| 分支 | 状态 | 预期合同 |
+|---|---|---|
+| 页面初次进入、examId空 | ✅ STAGING GREEN | 不调用`/exam/api/tester/list`，空表停止loading，提示先选测评；发布后日志403=0 |
+| 选择具体封闭测评 | ✅ 保持 | 携带精确examId查询该测评人员 |
+| 管理特质新版实体 | ✅ 后端保持严格 | 禁止通过旧无范围集合读取，继续要求专用入口 |
+| 新增/编辑后刷新 | ✅ 保持 | 使用当前已选examId刷新，不退回空范围请求 |
+| 导入/导出 | ✅ 保持 | 必须先选择测评，继续携带精确examId |
+
+## UF-066 — 总体环图中心语义字段（2026-10-10）
+
+| 分支 | 状态 | 预期合同 |
+|---|---|---|
+| 环图形状 | ✅ STAGING可见 | chart1按总体分/补数显示绿色环形 |
+| 固定标签“总体评价” | ✅ STAGING GREEN | 环图中心显示 |
+| 动态`overall.score` | ✅ STAGING GREEN | 当前真实总体分60.94以两位小数显示 |
+| 固定单位“分” | ✅ STAGING GREEN | 与动态分值共同显示 |
+| 修复器解组 | ✅ 已修复 | 独立inline chart上叠加无边框中心语义层，保留动态内容控件 |
+| 视觉门禁 | ✅ 已补 | 结构、渲染DOCX、目标PDF文本和实图共同验证标签/分值/单位 |
+
+## UF-065 — 客户v2模板LibreOffice可见性（2026-10-10）
+
+| 分支 | 状态 | 预期合同 |
+|---|---|---|
+| 第二节first footer | ✅ STAGING GREEN | 最终移除页码节的first引用/titlePg，使用default普通居中PAGE；LO24.2物理第2页显示“第 1 页” |
+| 第二节default footer | ✅ 现场可见 | 后续物理第3页显示“第 2 页”，PAGE计算和默认footer有效 |
+| 总体环图数据 | ✅ 正确 | `chart1.xml`为68.125/31.875，与报告数据一致 |
+| 总体环图对象 | ✅ STAGING GREEN | 解组为普通inline；LO24.2真实报告概览环图可见 |
+| 十维对比图 | ✅ 现场可见 | 已解组为普通inline，物理第5页正常显示 |
+| 现有上传/合同门禁 | ✅ 已补 | 拒绝总体环图wpg组合及PAGE位于WPS/AlternateContent；保留Word实开和LO视觉收据 |
+
+## UF-064 / FB-228 — 00401批量下载current绑定（2026-10-10）
+
+| 分支 | 状态 | 预期合同 |
+|---|---|---|
+| v2 current存在 | ✅ STAGING GREEN | 使用current指向的completed报告及其completed v2 run，不按legacy v1版本元组查找 |
+| current绑定漂移 | ✅ 失败关闭 | report/run/paper/audience/版本任一不一致时失败关闭 |
+| current不存在 | ✅ 保持兼容 | 继续按legacy冻结版本元组查找原报告 |
+| 文件路径与字节 | ✅ 保持严格 | 继续校验允许目录、普通文件和非零大小 |
+| 批量审计 | ✅ STAGING GREEN | ZIP成功后才逐份记录download审计；真实验收19→20 |
+
+## UF-063 / FB-227 — staging前端API基路径缺失（2026-10-10）
+
+| 分支 | 状态 | 预期合同 |
+|---|---|---|
+| 无Token访问根地址 | ✅ STAGING GREEN | 进入登录页，验证码请求走`/prod-api/captchaImage`并显示120×40有效图片 |
+| 有Token访问根地址 | ✅ STAGING GREEN | 无效旧Token精确请求`/prod-api/getInfo`，401后清Token并回到登录页，page error为0 |
+| 重复提交/405提示 | ✅ STAGING GREEN | 正确API基路径后不再因首页HTML误响应触发重复提交和405通知风暴 |
+| 后端与数据 | ✅ 无需修改 | `/prod-api/captchaImage`及health已验证HTTP200；本修复不改后端、Schema或业务数据 |
+| production | ⚪ 不在范围 | 用户反馈和发布回归仅发生在staging，不自动发布production |
+
+## FB-226 — 模板字段清单与重复语义字段（2026-10-10）
+
+| 分支 | 状态 | 预期合同 |
+|---|---|---|
+| 00401字段清单 | ✅ LOCAL GREEN | 模板元数据返回60个已注册字段的Tag、名称、描述，字段均可选且清单非nil |
+| 00501/00502字段清单 | ✅ LOCAL GREEN | 共用模板元数据返回95个可填充字段，其中90个当前必需、5个数字标签同义可选字段 |
+| 页面查看字段 | ✅ LOCAL GREEN | 两张模板卡分别提供“模板字段”按钮，以可搜索弹窗显示Tag、名称和描述 |
+| 同Tag重复 | ✅ LOCAL GREEN | 00401与005报告渲染均填充所有重复位置为相同文本；重复不算未知字段或合同错误 |
+| 未知Tag | ✅ 保持严格 | 继续拒绝，防止拼写错误静默输出空内容 |
+
+
+## UF-062 — 客户最新00401模板替换评估（2026-10-10）
+
+| 分支 | 状态 | 证据/约束 |
+|---|---|---|
+| 客户原件 | ✅ 保留 | 原件SHA=`83bb2c89...`，未覆盖或修改 |
+| 可见时长 | ✅ 候选通过 | 移除重复空白控件，保留一个隐藏`result.userTime`；12页A4 PDF提取文本无“时长/分钟” |
+| 对比图兼容 | ❌ RED | `chart.dimension.comparison`仍位于`mc:AlternateContent/wpg`组合，严格LibreOffice格式合同失败 |
+| 语义字段合同 | ✅ FB-224 LOCAL GREEN | 最多60个已注册Tag均可选；候选59/60及缺`validity.text`不再单独阻断 |
+| 页码字段合同 | ❌ RED | 页脚含v2上传门禁禁止的`NUMPAGES` |
+| 当前v2上传门禁 | ⚠️ 部分有效 | 已拒绝缺`validity.text`和`NUMPAGES`；但未检查对比图的`mc:AlternateContent/wpg`祖先，补完前两项后仍可能接受LibreOffice会丢图的模板，登记FB-223 |
+| 已注册内容控件存在 | ✅ FB-224 LOCAL GREEN | 使用报告DTO对应值填充并保持既有value-only样式行为 |
+| 已注册内容控件缺失 | ✅ FB-224 LOCAL GREEN | 忽略且不在渲染时重建；包括`report.disclaimer`、`validity.text`及参与者字段 |
+| 未知内容控件 | ✅ 保持严格 | 继续拒绝，避免误拼字段名静默生成错误报告 |
+| 非字段合同 | ✅ 保持严格 | 12张图、图表可写性、外链、可见占位符及`NUMPAGES`门禁不放宽；FB-223组合图缺口另行修复 |
+| 活动模板替换 | ⚪ 未执行 | 当前结论NO-GO；活动模板SHA=`52e0020c...`保持不变，未部署远端 |
+| 客户基准修复候选 | ✅ LOCAL GREEN | SHA=`75b79b93...`；59个可选Tag、12图value-only、对比图解组、三页脚PAGE-only、隐藏时长；本地9页PDF通过 |
+| staging零写预检 | ✅ PASS | SSH恢复；旧后端/index/模板SHA、三服务、内外health、active paper0及磁盘写前核验通过，DB写0 |
+| staging发布/真实报告 | ✅ GREEN | 后端=`e221ab45...`、index=`16455aef...`、模板=`75b79b93...`；认证字段清单60/95通过；指定真实v2报告重生成PDF 820207 bytes/SHA=`7150a3a8...`、A4 10页、文本无时长/分钟/总页提示，视觉抽检通过；production未改 |
+
+## UF-061 — v2待发展项使用Excel对应等级短评（2026-10-10）
+
+| 分支 | 状态 | 证据/约束 |
+|---|---|---|
+| 最低两项选择 | ✅ 无需修改 | 继续按十维精确分数最低两项及固定同分顺序，FB-198选择规则保持 |
+| 待发展项正文 | ✅ FB-222 LOCAL GREEN | 精确查询同维度、同等级、同版本、同受众的`development`内容，即Excel等级评价G/I/K列；缺行失败关闭，不用`dimension`完整表现评估或跨条件回退 |
+| 维度详情表现评估 | ✅ 无需修改 | 继续使用Excel F/H/J/L/N列的完整`dimension`文案 |
+| 优势项正文 | ✅ 无需修改 | 用户本次只确认待发展项来源，优势项保持现有行为，不扩范围 |
+| production精确`development`行存在 | 🔥 UF-068 RED | `逻辑思维/good`当前缺行，生成报告返回受控“新版结果服务暂不可用”；必须补齐正式内容并验证，不允许空值或跨等级/类型回退 |
+
+## UF-058 — production 00401动态字段字体漂移（2026-10-10）
+
+| 分支 | 状态 | 证据/约束 |
+|---|---|---|
+| 模板固定正文与标签 | ✅ 微软雅黑 | 活动模板SHA=`52e0020c...`；免责声明标签、字段run、段落run均显式`w:rFonts=微软雅黑` |
+| 通用动态内容控件 | ✅ STAGING GREEN / production待部署 | 填充前完成Tag合同校验；填充后仅移除可见字段wrapper，保留内部run及`w:rPr`；staging真实重生成PDF无SimSun |
+| 优势/待发展动态项 | ✅ 对照GREEN | UF-057后移除wrapper；同一PDF中标签和正文映射到MicrosoftYaHei，证明字体文件和模板run属性可用 |
+| Renderer值替换 | ✅ 不改`w:rPr` | 聚焦测试通过；模板与渲染后免责声明label/value/paragraph三组run属性一致 |
+| production字体安装 | ✅ | `微软雅黑→MSYH.TTC`、`宋体→SIMSUN.TTC`，两者均可被fontconfig精确解析；不是缺字体fallback |
+| LibreOffice 7.4临时转换 | ✅ ZERO-DB PREFLIGHT | 10页、免责声明font=MicrosoftYaHei、SimSun=0、Page前缀0、`计划执行：`粗体1/1；远端probe自动清理 |
+| staging LibreOffice 24.2真实报告 | ✅ STAGING GREEN | report=`7426a5dc...`重生成后814516 bytes/SHA=`e9eb405c...`；10页、免责声明MicrosoftYaHei、SimSun=0、Page前缀0、计划执行粗体1/1、report/current=1、audit24 |
+| production发布与历史PDF覆盖 | ✅ PRODUCTION GREEN | server/process=`13d5f07e...`；指定report=`103d9a0d...`为709795 bytes/SHA=`89896d6f...`，10页、免责声明MicrosoftYaHei、SimSun0、Page前缀0、计划执行粗体2/2、绑定下载一致；双回滚备份保留 |
+
 ## UF-057 — production 00401旧报告重生成版式（2026-10-09）
 
 | 分支 | 状态 | 证据/约束 |
@@ -473,6 +578,26 @@ Q1=A（同一授权账号分别双签），Q2=B（精确获批的完整新版TES
 | MT-F24 | local批准误使production启用/非002/00401/MBTI/旧PDF | ❌ production关；越范围零修改、旧资产字节保持 |
 
 下一由主协调者一次收Q1～Q3，定稿后再分切片实现；本轮不更新回归bug、反馈、覆盖率账本或工作流完成态，不运行任何旧harness。
+
+### 2026-10-10 MT-FORMAL slice2：正式资产只读preview（实施前RED）
+
+本切片只提供local受控目录的只读资产预览；不登记版本、不写数据库、不批准、不启用、不生成PDF、不改TEST/reissue。用户在原10类分支上补充00501/00502范围、路径不泄露、空列表非null、读取竞态和预算边界。
+
+| ID | preview条件分支 | 实施前状态/验收重点 |
+|---|---|---|
+| MT-FP01 | 未配置、非local、context取消 | ✅ 503关闭；PreviewAssets不依赖DB |
+| MT-FP02 | 未登录、普通权限、伪actor | ✅ 401/403；复用正式管理员边界 |
+| MT-FP03 | null/空串/重复键/未知字段/路径型assetKey | ✅ 400；请求只允许repoCode+assetKey |
+| MT-FP04 | repoCode为00501/00502或002/其他产品 | ✅ 仅00501/00502可预览；不从名称推断 |
+| MT-FP05 | content缺失/非普通文件/空/超20MiB/读取中身份或大小变化 | ✅ 受控reason；三阶段身份/大小复核，不返回服务器路径 |
+| MT-FP06 | 工作簿SHA/结构/205规则无效 | ✅ content_contract_invalid；不自动修订或批准客户内容 |
+| MT-FP07 | template缺失 | ✅ HTTP成功返回可登记draft、不可审批；所有集合为空数组非null |
+| MT-FP08 | template坏ZIP/部件数或解压预算/XML深度超限/宏/外链/关系逃逸/字段代码/TEST文案 | ✅ 稳定受控reason；严格门禁不放宽 |
+| MT-FP09 | 88 tags/6 charts/5数字槽缺失、重复或结构漂移 | ✅ template_contract_invalid；不输出内部XML或路径 |
+| MT-FP10 | 候选完全符合 | ✅ 返回4项SHA、205规则、88/6/5计数及readyForRegistration/Approval=true；所有集合非nil |
+| MT-FP11 | preview调用前后 | ✅ 代码路径零DB/零文件写；TEST/reissue及其他产品代码未改，全Go回归通过 |
+
+[完成补充] slice2先RED：服务缺PreviewAssets/formalReadAssetChecked导致编译失败，HTTP为404；GREEN为formal专项35项、Go全量及server build通过。仅LOCAL代码能力，未生成当前合格客户候选、未批准内容/模板、未执行DDL/远端/部署。完整证据见[正式资产preview报告](management-traits-formal-assets-preview-local-20261010.md)。
 
 ## 2026-10-06T14:29Z freeze-only分支局部关闭；完整及正式门禁保持
 
@@ -1409,7 +1534,7 @@ RED缺API→GREEN九顶层/含子项365通过；仅调用者提供模型的自�
 | Module overview | two or three modules tie | P0 | ✅ FB-177 | Tie order is task → interpersonal → self |
 | Strengths | any combination of dimension levels | P0 | ✅ FB-198 STAGING | Ignore level categories and always select the three highest exact scores; real varied-score PDF selected self-discipline, achievement orientation and plan execution |
 | Development | any combination of dimension levels | P0 | ✅ FB-198 STAGING | Ignore level categories and always select the two lowest exact scores; a real tie at 53.125 used fixed order and selected logical reasoning after dedication |
-| Selected-item text | selected dimension is in any of the five levels | P0 | ✅ FB-198 STAGING | Real PDF contains all five corresponding complete approved performance texts; no cross-category fallback or new content package |
+| Selected-item text | selected dimension is in any of the five levels | P0 | ✅ FB-198 STAGING / FB-222 LOCAL | 排名选择覆盖任意等级；优势项保持现有完整文案，待发展项经FB-222纠正为Excel G/I/K对应等级`development`短评，缺行失败关闭 |
 | Overall advice | overall is excellent/good/qualified | P0 | ✅ FB-177 | Select the lowest two dimensions independently of report development slots |
 | Overall advice | overall is weak/insufficient | P0 | ✅ FB-177 | Select the lowest three dimensions independently of report development slots |
 | Invalid selector input | a module/dimension is incomplete or metadata/level is inconsistent | P0 | ✅ FB-177 | Selector fails closed and does not emit partial report choices; module rows are recomputed to reject cross-source mixtures |
@@ -1805,8 +1930,10 @@ RED缺API→GREEN九顶层/含子项365通过；仅调用者提供模型的自�
 | Phase-1 Word chart data | embedded workbook or chart relationship is missing/malformed | P0 | ✅ | Candidate passes the existing 49-control/12-chart upload contract; embedded workbook/relationship/formula contract tests reject structural drift. Active staging template remains unchanged pending explicit activation |
 | Result UI | one or more complete rows selected for batch generation | P1 | ✅ | Component test verifies one generation call per selected paper, loading cleanup and summary feedback |
 | Result UI | one or more complete rows selected for batch download | P1 | ✅ FB-157 staging GREEN | One authenticated request submits a frozen selection snapshot and produces one ZIP browser download; real staging ZIP contains both selected current PDFs under unique sanitized participant+paper names and adds two download audits. Missing/unapproved/invalid-path reports reject before download |
+| Result UI | selected complete row has no current completed report when batch download starts | P0 | ✅ FB-220 LOCAL GREEN | Frozen selection is prepared sequentially with idempotent `force:false` generation before one ZIP request; existing reports reuse current files, missing reports are generated, and any preparation failure prevents ZIP/saveAs while preserving the backend business message |
 | Result UI | selection changes while batch generation/download is running | P1 | ✅ | FB-082 captures a filtered/shallow-copied complete-result snapshot at task start; loops, progress and totals never read live selectedRows afterward |
 | Result UI | row view/answer-detail/download actions | P1 | ✅ | Source/component tests verify legacy labels/order while retaining competency report, detail and download APIs |
+| Result UI | completed phase-1 paper has a completed v2 percentage result run | P0 | ✅ FB-221 LOCAL GREEN | Management list/sort and isolated detail prefer validated persisted v2 overall/module/dimension/validity scores and expose `scoreScale=percentage`; legacy/generic rows without v2 run preserve old values and labels; v1 report-data path remains unchanged |
 | Result UI | result list score columns | P1 | ✅ FB-159 staging GREEN: Nginx-served result-list resources contain no “评价均值”; overall score, selected dimension score, details, exports, reports and persisted scoring data retained |
 | Result UI | mobile viewport under 768px | P2 | ✅ | FB-087 wraps heading/toolbars, makes filters full width, preserves table scrolling and opens a full-screen one-column detail dialog |
 

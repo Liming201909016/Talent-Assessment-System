@@ -273,7 +273,7 @@ func (h *CompetencyRuntimeHandler) ResultDetail(c *gin.Context) {
 		response.RestErr(c, "paperId 为空")
 		return
 	}
-	data, err := h.svc.ResultDetail(body.PaperID)
+	data, err := h.svc.ManagementResultDetail(body.PaperID)
 	if err != nil {
 		response.RestErr(c, err.Error())
 		return

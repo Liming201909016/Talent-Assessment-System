@@ -34,41 +34,17 @@
       "presentation": { "reveal": "always", "panel": "shared" }
     },
     {
-      "label": "Test: API Quick Regression (chain-batch)",
+      "label": "Test: Competency Participant E2E",
       "type": "shell",
-      "command": "node scripts/test/chain-batch.js",
+      "command": "node scripts/test/competency-mobile-ui-test.js; node scripts/test/competency-answer-flow-e2e.js; node scripts/test/competency-submit-guard-e2e.js",
       "group": "test",
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "shared" }
     },
     {
-      "label": "Test: Business Rules (51 items)",
+      "label": "Test: Phase-1 Template Contracts",
       "type": "shell",
-      "command": "node scripts/test/business-rules-test.js",
-      "group": "test",
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared" }
-    },
-    {
-      "label": "Test: Requirements (R01-R12)",
-      "type": "shell",
-      "command": "node scripts/test/requirement-tests.js",
-      "group": "test",
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared" }
-    },
-    {
-      "label": "Test: Browser E2E (40 items)",
-      "type": "shell",
-      "command": "node scripts/test/browser-e2e-v2.js",
-      "group": "test",
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared" }
-    },
-    {
-      "label": "Test: Screenshot Chain (HTML report)",
-      "type": "shell",
-      "command": "node scripts/test/screenshot-chain-test.js",
+      "command": "cd 'Go-based Refactored System'; go test ./internal/handler -run 'TestBugFB1(54|55|60|61|62)|TestPhase1CustomerWordTemplateHasCompleteStableContract' -count=1",
       "group": "test",
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "shared" }
@@ -85,14 +61,6 @@
       "label": "UX: Run Chain + Expert Review",
       "type": "shell",
       "command": "node scripts/test/ux-chain-runner.js ${input:chainId}",
-      "group": "test",
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared" }
-    },
-    {
-      "label": "Test: Full Regression (7 suites)",
-      "type": "shell",
-      "command": "node scripts/test/chain-batch.js; node scripts/test/business-rules-test.js; node scripts/test/exam-fields-test.js; node scripts/test/requirement-tests.js; node scripts/test/browser-e2e-v2.js; node scripts/test/exam-form-candidate-test.js; node scripts/test/screenshot-chain-test.js",
       "group": "test",
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "shared" }
@@ -136,7 +104,7 @@
     {
       "id": "pagePath",
       "type": "promptString",
-      "description": "页面路径 (如 /#/exam/exam)",
+      "description": "页面路径（例如 /#/exam/exam）",
       "default": "/#/index"
     },
     {

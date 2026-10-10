@@ -130,9 +130,14 @@ func filterPhase1V2WordProfileRows(document []byte, requiredFields string) ([]by
 		"participant.telephone": "telephone", "participant.affiliation": "affiliation", "participant.post": "post",
 	}
 	content := string(document)
-	profileAt := strings.Index(content, `w:val="participant.name"`)
+	profileAt := -1
+	for tag := range tagToField {
+		if at := strings.Index(content, `w:val="`+tag+`"`); at >= 0 && (profileAt < 0 || at < profileAt) {
+			profileAt = at
+		}
+	}
 	if profileAt < 0 {
-		return nil, errors.New("v2 Word报告模板缺少个人信息表")
+		return document, nil
 	}
 	tableStart := strings.LastIndex(content[:profileAt], "<w:tbl>")
 	tableEnd := strings.Index(content[profileAt:], "</w:tbl>")
@@ -174,7 +179,6 @@ func validatePhase1V2WordFields(parts map[string][]byte, fields map[string]strin
 	for _, key := range expected {
 		known[key] = true
 	}
-	seen := make(map[string]bool, len(expected))
 	for name, body := range parts {
 		if name != "word/document.xml" && !(strings.HasPrefix(name, "word/header") && strings.HasSuffix(name, ".xml")) {
 			continue
@@ -184,12 +188,6 @@ func validatePhase1V2WordFields(parts map[string][]byte, fields map[string]strin
 			if !known[key] {
 				return fmt.Errorf("v2 Word报告模板包含未知字段：%s", key)
 			}
-			seen[key] = true
-		}
-	}
-	for _, key := range expected {
-		if !seen[key] {
-			return fmt.Errorf("v2 Word报告模板缺少字段：%s", key)
 		}
 	}
 	return nil
@@ -227,6 +225,9 @@ func replacePhase1V2ContentControlValues(part []byte, fields map[string]string) 
 		replaced, err := replaceWordContentControlText(control, escaped.String())
 		if err != nil {
 			return nil, fmt.Errorf("内容控件无效：%s", tagMatch[1])
+		}
+		if tagMatch[1] != "result.userTime" {
+			replaced = unwrapPhase1V2ContentControls(replaced)
 		}
 		content = content[:bounds[0]] + replaced + content[bounds[1]:]
 	}
@@ -331,24 +332,56 @@ func resolvePhase1V2BusinessChartParts(parts map[string][]byte) (map[string]stri
 		known[key] = true
 	}
 	resolved := make(map[string]string, len(expected))
-	for _, drawing := range wordDrawingPattern.FindAll(document, -1) {
-		titleMatch := wordDrawingTitlePattern.FindSubmatch(drawing)
-		chartMatch := wordDrawingChartIDPattern.FindSubmatch(drawing)
-		if len(titleMatch) != 2 || len(chartMatch) != 2 || !strings.HasPrefix(string(titleMatch[1]), "chart.") {
-			continue
-		}
-		key := string(titleMatch[1])
+	register := func(key, relationID string) error {
 		if !known[key] {
-			return nil, fmt.Errorf("v2 Word报告模板包含未知图表键：%s", key)
+			return fmt.Errorf("v2 Word报告模板包含未知图表键：%s", key)
 		}
 		if resolved[key] != "" {
-			return nil, fmt.Errorf("v2 Word报告模板图表键重复：%s", key)
+			return fmt.Errorf("v2 Word报告模板图表键重复：%s", key)
 		}
-		part := relationTargets[string(chartMatch[1])]
+		part := relationTargets[relationID]
 		if part == "" || len(parts[part]) == 0 {
-			return nil, fmt.Errorf("v2 Word报告模板图表关系无效：%s", key)
+			return fmt.Errorf("v2 Word报告模板图表关系无效：%s", key)
 		}
 		resolved[key] = part
+		return nil
+	}
+	groupPattern := regexp.MustCompile(`(?s)<mc:AlternateContent>.*?</mc:AlternateContent>`)
+	groupTitlePattern := regexp.MustCompile(`<wpg:cNvPr\b[^>]*\btitle="([a-zA-Z0-9_.-]+)"[^>]*/>`)
+	groups := groupPattern.FindAllIndex(document, -1)
+	remaining := make([]byte, 0, len(document))
+	lastGroupEnd := 0
+	for _, bounds := range groups {
+		remaining = append(remaining, document[lastGroupEnd:bounds[0]]...)
+		group := document[bounds[0]:bounds[1]]
+		titles := groupTitlePattern.FindAllSubmatch(group, -1)
+		charts := wordDrawingChartIDPattern.FindAllSubmatch(group, -1)
+		if len(titles) == 1 && len(charts) == 1 && strings.HasPrefix(string(titles[0][1]), "chart.") {
+			if err := register(string(titles[0][1]), string(charts[0][1])); err != nil {
+				return nil, err
+			}
+		} else {
+			remaining = append(remaining, group...)
+		}
+		lastGroupEnd = bounds[1]
+	}
+	remaining = append(remaining, document[lastGroupEnd:]...)
+	titleMatches := wordDrawingTitlePattern.FindAllSubmatchIndex(remaining, -1)
+	for index, titleMatch := range titleMatches {
+		if len(titleMatch) != 4 || !strings.HasPrefix(string(remaining[titleMatch[2]:titleMatch[3]]), "chart.") {
+			continue
+		}
+		segmentEnd := len(remaining)
+		if index+1 < len(titleMatches) {
+			segmentEnd = titleMatches[index+1][0]
+		}
+		chartMatch := wordDrawingChartIDPattern.FindSubmatch(remaining[titleMatch[1]:segmentEnd])
+		if len(chartMatch) != 2 {
+			continue
+		}
+		if err := register(string(remaining[titleMatch[2]:titleMatch[3]]), string(chartMatch[1])); err != nil {
+			return nil, err
+		}
 	}
 	for _, key := range expected {
 		if resolved[key] == "" {

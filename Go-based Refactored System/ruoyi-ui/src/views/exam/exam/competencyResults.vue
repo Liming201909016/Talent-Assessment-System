@@ -91,7 +91,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="整体分" prop="overallScore" width="100" align="center" sortable="custom">
+      <el-table-column :label="usesPercentageScores ? '整体分（百分制）' : '整体分'" prop="overallScore" width="130" align="center" sortable="custom">
         <template slot-scope="scope">{{ formatScore(scope.row.overallScore) }}</template>
       </el-table-column>
     <el-table-column label="效度状态" width="110" align="center">
@@ -134,17 +134,17 @@
         <el-descriptions v-if="selectedRow" :column="$store.state.app.device === 'mobile' ? 1 : 4" border size="small">
           <el-descriptions-item label="姓名">{{ selectedRow.participantName }}</el-descriptions-item>
           <el-descriptions-item label="手机号">{{ selectedRow.participantTelephone || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="整体分">{{ formatScore(selectedRow.overallScore) }}</el-descriptions-item>
+          <el-descriptions-item :label="usesPercentageScores ? '整体分（百分制）' : '整体分'">{{ formatScore(selectedRow.overallScore) }}</el-descriptions-item>
           <el-descriptions-item label="完整性">{{ selectedRow.isComplete === 1 ? '完整' : '不完整' }}</el-descriptions-item>
         </el-descriptions>
         <el-tabs v-if="detail" v-model="detailTab" style="margin-top:16px">
-          <el-tab-pane label="一级维度" name="groups">
+          <el-tab-pane :label="usesPercentageScores ? '模块得分' : '一级维度'" name="groups">
           <el-table :data="detail.groups" border size="mini">
-            <el-table-column label="一级维度" prop="groupName" min-width="150" />
+            <el-table-column :label="usesPercentageScores ? '模块' : '一级维度'" prop="groupName" min-width="150" />
             <el-table-column label="完成维度" width="110" align="center">
             <template slot-scope="scope">{{ scope.row.effectiveDimensionCount }}/{{ scope.row.totalDimensionCount }}</template>
             </el-table-column>
-            <el-table-column label="一级得分" prop="groupScore" width="100" align="center">
+            <el-table-column :label="usesPercentageScores ? '模块分（百分制）' : '一级得分'" prop="groupScore" width="140" align="center">
               <template slot-scope="scope">{{ formatScore(scope.row.groupScore) }}</template>
             </el-table-column>
             <el-table-column label="等级" prop="levelCode" width="100" align="center" />
@@ -160,7 +160,7 @@
               <el-table-column label="得分合计" prop="scoreSum" width="100" align="center">
                 <template slot-scope="scope">{{ formatScore(scope.row.scoreSum) }}</template>
               </el-table-column>
-              <el-table-column label="维度分" prop="dimensionScore" width="100" align="center">
+              <el-table-column :label="usesPercentageScores ? '维度分（百分制）' : '维度分'" prop="dimensionScore" width="140" align="center">
                 <template slot-scope="scope">{{ formatScore(scope.row.dimensionScore) }}</template>
               </el-table-column>
               <el-table-column label="等级" prop="levelCode" width="100" align="center" />
@@ -236,6 +236,11 @@ export default {
   created() {
     this.loadExam()
     this.loadResults()
+  },
+  computed: {
+    usesPercentageScores() {
+      return this.rows.some(row => row.scoreScale === 'percentage') || Boolean(this.detail && this.detail.scoreScale === 'percentage')
+    }
   },
   methods: {
     formatScore(value) {
@@ -367,6 +372,10 @@ export default {
       this.reportLoading = true
       this.reportAction = 'download'
       try {
+        for (let index = 0; index < targetRows.length; index++) {
+          this.reportProgress = `正在准备测评报告（${index + 1}/${targetRows.length}）`
+          await generateCompetencyReport({ paperId: targetRows[index].paperId, force: false })
+        }
         this.reportProgress = `正在打包测评报告（共${targetRows.length}份）`
         const blob = await downloadCompetencyReportsArchive(targetRows.map(row => row.paperId))
         saveAs(blob, this.reportArchiveFileName())

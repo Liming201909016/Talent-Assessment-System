@@ -95,15 +95,14 @@ describe('UF-049 owned tester preparation before its profile freeze', () => {
     expect(vm.loading).toBe(false)
     expect(vm.testerList).toEqual([])
   })
-  it('retains the old unfiltered request as a negative scope observation', async () => {
-    const { vm, lists } = personnel()
-    vm.handleAdd()
-    Object.assign(vm.form, { examId: 'owned-draft', name: 'Synthetic owned tester' })
-    vm.submitForm()
+  it('UF-067 direct personnel page does not issue the protected unfiltered legacy request', async () => {
+    const { vm, api, lists } = personnel()
+    vm.getList()
     await flush()
-    expect(lists).toHaveLength(1)
-    expect(lists[0].examId).toBe('')
-    // HTTP403 is verified separately by the real Go guard tests. This mock
-    // proves request scope only and must never claim a real HTTP200/403.
+    expect(api.getListTester).not.toHaveBeenCalled()
+    expect(lists).toHaveLength(0)
+    expect(vm.loading).toBe(false)
+    expect(vm.testerList).toEqual([])
+    expect(vm.total).toBe(0)
   })
 })

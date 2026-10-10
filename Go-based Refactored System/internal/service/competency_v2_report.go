@@ -162,7 +162,7 @@ func BuildPhase1V2ReportData(resultRunID string, scores Phase1V2ScoreResult, mod
 	if err != nil {
 		return Phase1V2ReportData{}, err
 	}
-	developmentViews, err := buildPhase1V2SelectedDimensionViews(overview.Developments, CompetencyReportContentDimension, lookup)
+	developmentViews, err := buildPhase1V2SelectedDimensionViews(overview.Developments, CompetencyReportContentV2Development, lookup)
 	if err != nil {
 		return Phase1V2ReportData{}, err
 	}

@@ -237,6 +237,12 @@ func renderManagementTraitsTestWordWithSHA(template []byte, expectedSHA string, 
 	stage = "controls"
 	edits := make([]mngWordEdit, 0, 100)
 	seen := map[string]int{}
+	requiredFields := map[string]bool{}
+	for _, field := range managementTraitsTemplateSemanticFields() {
+		if field.Required {
+			requiredFields[field.Key] = true
+		}
+	}
 	for _, sdt := range doc.all(mngWordNS, "sdt") {
 		tags := sdt.all(mngWordNS, "tag")
 		text := sdt.all(mngWordNS, "t")
@@ -261,8 +267,10 @@ func renderManagementTraitsTestWordWithSHA(template []byte, expectedSHA string, 
 			edits = append(edits, e)
 		}
 	}
-	if len(doc.all(mngWordNS, "sdt")) != 90 || len(seen) != 90 || seen["report.testTitle"] != 1 || seen["report.testLabel"] != 1 {
-		return fail()
+	for key := range requiredFields {
+		if seen[key] == 0 {
+			return fail()
+		}
 	}
 	stage = "relationships"
 	rels, err := mngWordTree(parts["word/_rels/document.xml.rels"])

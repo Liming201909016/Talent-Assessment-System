@@ -1,3 +1,46 @@
+# UF-062 — 客户最新00401模板替换门禁 — 2026-10-10 🔴 DIRECT REPLACEMENT NO-GO
+
+| FB-232 | production缺少`逻辑思维/good/development`正式内容，FB-222精确查询按设计失败关闭并对用户显示“新版结果服务暂不可用” | production内容完整性 / 单份报告 / 批量准备 | 🔥 RED待修复 | 新增十维×所需等级`development`完整性检查；补数据后验证目标paper单份生成、批量准备/ZIP及PDF，禁止回退`dimension`或跨等级 |
+
+| FB-231 | `/#/qu/tester`创建时以空examId调用受保护旧全量人员接口，管理特质隔离门禁按设计返回403 | `ruoyi-ui/src/views/tester/tester/index.vue` | 🟢 STAGING GREEN | RED API调用1次→GREEN 0次；人员专项8/8、前端617项/build；远端chunk同SHA、发布后tester/list 403=0；index=`0e8e02aa...` |
+| FB-230 | FB-229解组总体环图时只重建chart，删除了中心“总体评价”+动态`overall.score`+“分” | 客户00401 v2模板修复器/合同 | 🟢 STAGING GREEN | 结构及渲染RED→GREEN；最终模板SHA=`ef92bfba...`；真实PDF中心显示“总体评价 / 60.94 分”，页码与十维图保持；Go全量/build通过 |
+| FB-229 | 客户v2模板的节首页PAGE位于空Fallback的WPS浮动文本框，且总体环图仍在wpg组合对象中，LibreOffice PDF分别漏页码和漏图 | 客户00401 v2模板修复器/合同 | 🟢 STAGING GREEN | 结构与目标引擎两轮RED→GREEN；最终SHA=`b8d67662...`；Word实开；LO24.2真实PDF物理2/3页=`第1/2页`，总体环图/十维图可见；Go全量/build通过 |
+| FB-228 | 00401历史v1结果已生成并绑定v2 current报告，但批量ZIP仍按legacy v1版本元组查找，误报“报告尚未生成” | `internal/handler/competency_report.go` | 🟢 STAGING GREEN | `TestBugFB228_BatchDownloadUsesCurrentV2ReportBinding` RED→GREEN；专项、Go全量/build通过；真实paper批量ZIP 693998 bytes/1 PDF，PDF SHA=`99c40ab...`，download audit19→20 |
+| FB-227 | 隔离release worktree缺少被忽略的`.env.production`，前端bundle把API请求发到站点根路径，Token用户首页读取空`user.avatar`崩溃，无Token用户验证码破损 | 前端发布构建环境 | ⚪ 代码RED N/A／🟢 STAGING GREEN | 配置/构建输入故障，不修改产品逻辑；前端616项、production build及bundle`/prod-api`门禁通过；真实浏览器验证码120×40、旧Token `/prod-api/getInfo`→401→正常登录页，零page error；index=`b0576cc2...` |
+
+| FB-226 | 模板上传页面没有语义字段清单，005模板也拒绝同Tag重复 | 00401/005模板元数据、渲染器、模板管理页面 | 🟢 LOCAL GREEN | 后端返回60/95项字段名称与描述；00401重复Tag两处同值；005构造92控件验证重复姓名及新增总体分；前端可搜索弹窗；Go全量/build、Vue616项/build通过，未部署 |
+
+| 编号 | 评估范围 | 候选 | 状态 | 证据 |
+|---|---|---|---|---|
+| UF-062 | 客户最新DOCX剔除时长后是否可替换活动v2模板 | `docs/261010胜任力待完善/最新胜任力报告模板-剔除时长-候选.docx` | 时长/渲染GREEN；直接替换RED | ZIP有效；仅`word/document.xml`变化；隐藏`result.userTime`保留；12页A4 PDF无“时长/分钟”；严格合同因组合对比图失败，另缺`validity.text`且含`NUMPAGES` |
+| FB-223 | v2上传门禁未拒绝`mc:AlternateContent/wpg`内的十维对比图 | `validatePhase1V2WordTemplateUpload()` / `resolvePhase1V2BusinessChartParts()` | 🔴 已确认、未修复 | 现有门禁会拒绝缺`validity.text`和`NUMPAGES`，但会把组合内`wp:inline/wp:anchor`图表计入12图；严格合同对候选命中FB-192组合图RED。需新增专用Go RED测试后补门禁 |
+| FB-224 | 00401 v2模板把全部60个内容控件设为必需，客户删除不需要的字段后无法上传/渲染 | `validatePhase1V2WordTemplateUpload()` / `validatePhase1V2WordFields()` / `filterPhase1V2WordProfileRows()` | 🟢 LOCAL GREEN | `TestBugFB224_Phase1V2TemplateAllowsMissingContentControls`：已注册字段存在则填充，缺失则忽略；未知字段、12图、外链、页码等门禁不放宽；Go全量/build通过，未部署 |
+| FB-225 | 以客户最新00401模板为基准生成可测试候选并发布staging | 客户候选DOCX / v2上传与渲染合同 | 🟡 LOCAL GREEN / STAGING BLOCKED | `TestBugFB225_CustomerV2TemplateCandidateUploadAndRenderContract`及`customer-competency-v2-template-contract-test.py`通过；本地9页PDF无时长/总页且对比图可见；staging SSH两次超时，零远端写，尚未发布 |
+
+# FB-222 — 待发展项误用维度完整表现评估 — 2026-10-10 🟢 LOCAL GREEN
+
+| 编号 | Bug描述 | 文件 | 状态 | 测试位置 |
+|---|---|---|---|---|
+| FB-222 | v2报告已导入Excel G/I/K列的对应等级待发展短评，但DTO查询`dimension`完整表现评估，未使用专用`development`内容 | `Go-based Refactored System/internal/service/competency_v2_report.go` | 🟢 LOCAL GREEN；精确使用`development`，缺行失败关闭；聚焦4项、service、Go全量/build通过，远端未部署 | `TestBugFB222_Phase1V2DevelopmentUsesWorkbookShortAssessment`; `TestBugFB222_Phase1V2ReportRequiresDevelopmentTextsForSelectedItems`; `TestBugFB198_Phase1V2SelectedItemsUseCorrespondingLevelTexts` |
+
+# FB-221 — 胜任力管理结果仍显示旧1–5评分 — 2026-10-10 🟢 LOCAL GREEN
+
+| 编号 | Bug描述 | 文件 | 状态 | 测试位置 |
+|---|---|---|---|---|
+| FB-221 | v2百分制结果已持久化并供报告/导出使用，但管理列表和详情继续读取v1整体分合计与1–5维度均分，导致同一答卷显示口径不一致 | `Go-based Refactored System/internal/service/competency_runtime.go`; `internal/handler/competency_runtime.go`; `ruoyi-ui/src/views/exam/exam/competencyResults.vue` | 🟢 LOCAL GREEN；completed v2 run优先投影overall/3模块/10维/效度及排序，无v2 run回退legacy；管理详情与v1报告详情隔离。专项、affected、Go全量/build、前端614项/build通过，远端未部署 | `TestBugFB221_ManagementResultsUseLatestPercentageScores`; `TestBugFB221_ResultPagingPrefersV2PercentageScores`; `competency-results.spec.js::labels the latest overall, module and dimension results as percentage scores` |
+
+# FB-220 — 胜任力批量下载未自动补齐缺失报告 — 2026-10-10 🟢 LOCAL GREEN
+
+| 编号 | Bug描述 | 文件 | 状态 | 测试位置 |
+|---|---|---|---|---|
+| FB-220 | 完整答卷尚无completed报告时，结果页直接请求批量ZIP，后端整体返回“报告尚未生成”，导致已启用的“批量下载”无法完成 | `Go-based Refactored System/ruoyi-ui/src/views/exam/exam/competencyResults.vue` | 🟢 LOCAL GREEN；RED为611通过/1失败；GREEN为35文件613项全过及production build完成。批量下载先逐份`force:false`幂等准备，再一次请求ZIP；准备失败时ZIP/saveAs均为0。远端未部署 | `competency-results.spec.js::generates missing reports before requesting the batch-download archive; does not request a partial archive when preparing one selected report fails` |
+
+# UF-058 — production 00401动态填充字段字体漂移（2026-10-10）
+
+| 编号 | Bug描述 | 文件 | 状态 | 测试位置 |
+|---|---|---|---|---|
+| UF-058 | 模板动态字段显式微软雅黑，但production LibreOffice 7.4将保留`w:sdt` wrapper的免责声明等填充值输出为宋体 | `competency_report_v2_word.go` | ✅ PRODUCTION GREEN；RED、专项、Go全量、build、LO7.4零DB、staging LO24.2及production LO7.4真实报告均PASS；最终10页/MicrosoftYaHei/SimSun0/Page前缀0/粗体2/2、绑定下载一致 | `TestBugUF058_Phase1V2VisibleFieldsDropLibreOfficeFontChangingWrappers` |
+
 # UF-057 — production 00401旧报告残留时长数字和Page前缀（2026-10-09）
 
 | 编号 | Bug描述 | 文件 | 状态 | 测试位置 |
@@ -688,7 +731,7 @@ CodeReviewer三项confirmed仅当前管理UI：未知/跨exam/矛盾类型生命
 | FB-195 | UI template management sends the active v2 DOCX through the legacy v1 field/workbook validator and rejects valid semantic tags such as `dimension.cooperation.score` | template management API and UI | 🟢 STAGING GREEN | `TestBugFB195_V2TemplateUsesDedicatedUploadContract` and `competency-template-management.spec.js`; RED was missing v2 contract plus 3/4 frontend failures. GREEN adds separate administrator-protected v2 metadata/download/upload routes targeting `v2TemplatePath`, exact body+header 60-field/12-chart value-only validation, and a v2 UI card/API. Real multipart API upload of attached SHA `f9859993...`, metadata refresh, authenticated download, atomic backup and subsequent A4 10-page report generation all pass; v1 SHA remains unchanged. |
 | FB-196 | comparison-chart bar colors are fixed by dimension position, so equal score bands can render in different colors | v2 Word chart renderer | 🟢 STAGING GREEN | `TestBugFB196_V2ComparisonBarsUseFiveScoreBandColors`; RED was the missing color function, then adjacent FB-179 caught the new approved style exception. GREEN replaces all ten score-series `c:dPt` fills from exact bands `>=90 #00A651`, `>=70 #38B86A`, `>=30 #A8D889`, `>=10 #F2A45F`, `<10 #E88937`; only point fills are dynamic and the orange normal-line series is byte-preserved apart from values. Real staging PDF shows qualified bars consistently light green, good bars green and excellent dark green; A4 10 pages and full regressions pass. |
 | FB-197 | competency result export still reads v1 1–5/10–50 tables and two legacy groups, so it disagrees with the v2 percentage report | competency export workbook | 🟢 STAGING GREEN | `TestBugFB197_Phase1ExportUsesCompletedV2ResultRuns`, `TestBugFB197_Phase1ExportDoesNotFallBackToV1Results`, `TestBugFB197_Phase1ExportDispatchesToV2OnlyBuilder` plus `competency-v2-export-xlsx-test.py`; real exam with 3 v2 runs produced identical workbooks from both endpoints: summary 3×75, answers 270×20, dictionary 90×14. All 42 persisted overall/module/dimension/validity facts match; another phase-1 exam without v2 runs produced headers only on all sheets, proving no v1 fallback. |
-| FB-198 | v2 report strengths/developments are filtered by score level, so some reports do not show the highest three and lowest two dimensions | v2 overview selector and report DTO | 🟢 STAGING GREEN | `TestBugFB198_Phase1V2OverviewAlwaysUsesHighestThreeAndLowestTwoScores`, `TestBugFB198_Phase1V2SelectedItemsUseCompletePerformanceTexts`; RED returned zero strengths when all ten dimensions were below good. GREEN ranks all ten exact scores, always takes top 3/bottom 2, uses stable dimension order for ties, and reuses each selected dimension's approved five-level performance text. Real varied-score PDF selected `自律性/成就导向/计划执行` as top three and `敬业奉献/逻辑思维` as bottom two; all five full approved texts and column order match DB. PDF is A4 10 pages, 814637 bytes, SHA=`e981f5de...`; full local suite/build and staging health/log gates pass. |
+| FB-198 | v2 report strengths/developments are filtered by score level, so some reports do not show the highest three and lowest two dimensions | v2 overview selector and report DTO | 🟢 STAGING GREEN / development文案被FB-222纠正 | `TestBugFB198_Phase1V2OverviewAlwaysUsesHighestThreeAndLowestTwoScores`, `TestBugFB198_Phase1V2SelectedItemsUseCorrespondingLevelTexts`; RED returned zero strengths when all ten dimensions were below good. GREEN ranks all ten exact scores, always takes top 3/bottom 2 and uses stable dimension order for ties. [纠正 - 2026-10-10] 最高3/最低2选择仍有效；“五项均用完整dimension文案”被FB-222纠正，待发展两项必须使用Excel G/I/K列的`development`短评。 |
 | FB-199 | Isolated runtime verification rejects a valid already-running private Redis after captcha/login keys exist | Go-based Refactored System/bin/mng005-runtime/main.go | 🟢 LOCAL GREEN | `TestVerifyRuntimeAllowsExistingPrivateRedisKeys`, `TestVerifyRuntimeRejectsInvalidRedisMetadata`; RED failed to compile because the validator was absent. GREEN accepts any nonnegative authenticated private DBSIZE while preserving exact owned-schema/current-user, source-SELECT-1142, cross-schema-FK0, loopback and secret-isolation gates. Real post-login `VerifyRuntime` returned exit0 with redisKeys=1; this does not weaken or replace database/network isolation checks. |
 | FB-200 | Local dev runtime accepted any Redis process that knew the password, without proving exact loopback listener PID, executable, private config identity or config secret | Go-based Refactored System/bin/mng005-runtime/main.go; scripts/tools/mng005-local-debug.ps1 | 🟢 LOCAL GREEN | `TestBugFB200_RedisRuntimeRequiresExactOwnedProcessAndConfig`; RED did not compile because `redisRuntimeBinding`/`verifyRedisRuntime` were absent. GREEN rejects wrong host/port/PID/listener/executable/private ACL/config SHA/requirepass. Actual listener PID12324, Memurai executable, private nonreparse config and SHA all match persisted DPAPI metadata. |
 | FB-201 | Short-lived verifier and normal backend startup did not share one authenticated live Redis ownership gate | Go-based Refactored System/bin/mng005-runtime/main.go; scripts/tools/mng005-local-debug.ps1 | 🟢 LOCAL GREEN | `TestBugFB201_RedisRuntimeRequiresAuthenticatedLiveState`; rejects PING/auth failure, DBSIZE failure and negative metadata. All runtime modes now execute the same gate before mode-specific DB work or router/Worker startup. Rebuilt backend PID20036 passed verify plus direct/proxy/captcha/NOAUTH live contract; no UI rerun, remote DB write or deployment. |

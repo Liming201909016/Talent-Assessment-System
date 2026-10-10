@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/talent-assessment/refactored/internal/model"
 )
 
@@ -258,6 +259,66 @@ func TestCompetencyResultPaging_ProjectsStartAndDurationForManagement(t *testing
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("result paging management projection missing %q", required)
+		}
+	}
+}
+
+// TestBugFB221_ManagementResultsUseLatestPercentageScores
+// 对应：docs/regression-tests.md #FB-221
+// 复现：管理结果列表与详情仍显示v1整体分合计及1-5维度均分。
+// 期望：存在completed v2 result run时，管理响应使用其百分制总体、模块、维度和效度结果。
+func TestBugFB221_ManagementResultsUseLatestPercentageScores(t *testing.T) {
+	legacyOverall := decimal.RequireFromString("30.375000")
+	legacyDimension := decimal.RequireFromString("2.875000")
+	data := map[string]any{
+		"result":     model.CompetencyResult{PaperID: "paper-1", OverallScore: &legacyOverall},
+		"groups":     []model.CompetencyGroupResult{{GroupCode: "legacy-group"}},
+		"dimensions": []model.CompetencyDimensionResult{{DimensionID: "legacy-dimension", DimensionScore: &legacyDimension}},
+		"validity":   &model.CompetencyValidityResult{},
+	}
+	percentageOverall := decimal.RequireFromString("67.187500")
+	percentageModule := decimal.RequireFromString("70.000000")
+	percentageDimension := decimal.RequireFromString("71.875000")
+	validityScore := decimal.RequireFromString("29.000000")
+	overall := model.CompetencyResultRunOverall{OverallScore: &percentageOverall, IsComplete: 1}
+	modules := []model.CompetencyResultRunModule{{ModuleCode: "task_management", ModuleName: "任务管理", ModuleScore: &percentageModule, IsComplete: 1}}
+	dimensions := []model.CompetencyResultRunDimension{{DimensionID: "competency-plan-execution", DimensionCode: "A1-02", DimensionName: "计划执行", DimensionScore: &percentageDimension, IsComplete: 1}}
+	validity := model.CompetencyResultRunValidity{ValidityScore: &validityScore, IsComplete: 1}
+
+	applyPhase1V2ManagementScores(data, overall, modules, dimensions, validity)
+
+	result := data["result"].(model.CompetencyResult)
+	if result.OverallScore == nil || !result.OverallScore.Equal(percentageOverall) {
+		t.Fatalf("overallScore=%v, want percentage %s", result.OverallScore, percentageOverall)
+	}
+	if got := data["groups"].([]model.CompetencyGroupResult); len(got) != 1 || got[0].GroupScore == nil || !got[0].GroupScore.Equal(percentageModule) {
+		t.Fatalf("modules=%+v", got)
+	}
+	if got := data["dimensions"].([]model.CompetencyDimensionResult); len(got) != 1 || got[0].DimensionScore == nil || !got[0].DimensionScore.Equal(percentageDimension) {
+		t.Fatalf("dimensions=%+v", got)
+	}
+	projectedValidity := data["validity"].(*model.CompetencyValidityResult)
+	if data["scoreScale"] != "percentage" || projectedValidity.ValidityScore == nil || !projectedValidity.ValidityScore.Equal(validityScore) {
+		t.Fatalf("scoreScale/validity not projected: %+v", data)
+	}
+}
+
+func TestBugFB221_ResultPagingPrefersV2PercentageScores(t *testing.T) {
+	source, err := os.ReadFile("competency_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, required := range []string{
+		"LEFT JOIN el_competency_result_run rr",
+		"LEFT JOIN el_competency_result_run_overall ro",
+		"ro.overall_score AS v2_overall_score",
+		"LEFT JOIN el_competency_result_run_dimension rd",
+		"rd.dimension_score AS v2_sort_dimension_score",
+		`ScoreScale = "percentage"`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("v2 management score projection missing %q", required)
 		}
 	}
 }

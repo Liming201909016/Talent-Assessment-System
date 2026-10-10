@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -71,11 +72,43 @@ func TestManagementTraitsSharedTemplateMetadataAndDownload(t *testing.T) {
 	if !body.Data.Exists || !body.Data.Valid || body.Data.FileName != managementTraitsSharedTemplateFileName || body.Data.ContentControls != 90 || body.Data.BusinessCharts != 6 || body.Data.NumericLabels != 5 || body.Data.ExternalLinks != 0 || strings.Join(body.Data.ProductCodes, ",") != "00501,00502" || len(body.Data.SHA256) != 64 {
 		t.Fatalf("metadata=%+v", body.Data)
 	}
+	if len(body.Data.SemanticFields) != 95 {
+		t.Fatalf("semantic fields=%d, want 95", len(body.Data.SemanticFields))
+	}
 
 	download := httptest.NewRecorder()
 	router.ServeHTTP(download, httptest.NewRequest(http.MethodGet, "/template/download", nil))
 	if download.Code != http.StatusOK || !strings.Contains(download.Header().Get("Content-Type"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document") || !strings.Contains(download.Header().Get("Content-Disposition"), "filename*=UTF-8''") || download.Header().Get("Cache-Control") != "no-store, no-cache, must-revalidate" || !bytes.HasPrefix(download.Body.Bytes(), []byte("PK")) {
 		t.Fatalf("download status=%d headers=%v bytes=%d", download.Code, download.Header(), download.Body.Len())
+	}
+}
+
+func TestBugFB226_ManagementTraitsTemplateAllowsRepeatedSemanticField(t *testing.T) {
+	template, err := os.ReadFile(filepath.Join("..", "..", "configs", "export-templates", "management-traits-002-test-only-v2.docx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(readWordPart(t, template, "word/document.xml"))
+	control := regexp.MustCompile(`(?s)<w:sdt>.*?<w:tag w:val="participant\.name".*?</w:sdt>`).FindString(document)
+	if control == "" {
+		t.Fatal("participant.name control missing")
+	}
+	overallScoreControl := strings.Replace(control, `w:val="participant.name"`, `w:val="overall.score"`, 1)
+	repeated := replaceWordFixturePart(t, template, "word/document.xml", []byte(strings.Replace(document, control, control+control+overallScoreControl, 1)))
+	digest := sha256.Sum256(repeated)
+	rendered, err := renderManagementTraitsTestWordWithSHA(repeated, hex.EncodeToString(digest[:]), managementTraitsTemplateProbeData())
+	if err != nil {
+		t.Fatalf("repeated semantic field rejected: %v", err)
+	}
+	if count := strings.Count(string(readWordPart(t, rendered, "word/document.xml")), "模板校验"); count < 2 {
+		t.Fatalf("repeated participant.name filled %d times", count)
+	}
+	if !strings.Contains(string(readWordPart(t, rendered, "word/document.xml")), ">50.00</w:t>") {
+		t.Fatal("new optional overall.score control was not filled")
+	}
+	info, err := validateManagementTraitsTemplate(repeated)
+	if err != nil || info.ContentControls != 92 {
+		t.Fatalf("expanded template controls=%d err=%v", info.ContentControls, err)
 	}
 }
 

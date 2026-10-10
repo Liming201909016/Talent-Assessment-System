@@ -95,6 +95,27 @@ func TestBugFB157_BatchDownloadBuildsOneZipWithEverySelectedReport(t *testing.T)
 	}
 }
 
+// TestBugFB228_BatchDownloadUsesCurrentV2ReportBinding
+// 对应：docs/regression-tests.md #FB-228
+// 复现：v1历史结果已重算为v2报告，单份下载使用current指针成功，批量下载仍按v1版本元组查找并提示报告尚未生成。
+// 期望：批量下载优先使用current→completed report→completed v2 run绑定；仅无current时回退legacy版本元组。
+func TestBugFB228_BatchDownloadUsesCurrentV2ReportBinding(t *testing.T) {
+	source := readSourceFile(t, "competency_report.go")
+	loader := extractFunctionBody(t, source, "func (h *CompetencyReportHandler) loadCompetencyReportArchiveEntries(paperIDs []string) ([]competencyReportArchiveEntry, error) {")
+	for _, required := range []string{
+		"var currents []model.CompetencyReportCurrent",
+		"paper_id IN ? AND audience = ?",
+		"currentByPaper",
+		"reportByID",
+		"runByID",
+		"ValidatePhase1ReportContentApprovalForEnvironment",
+	} {
+		if !strings.Contains(loader, required) {
+			t.Fatalf("batch download current-v2 binding missing %q", required)
+		}
+	}
+}
+
 // TestBugFB080_SamePaperGenerationIsSerialized
 // 对应：docs/regression-tests.md #FB-080
 // 复现：同一 paperId 的并发请求可同时进入实例查询、Chromium 渲染和文件替换。

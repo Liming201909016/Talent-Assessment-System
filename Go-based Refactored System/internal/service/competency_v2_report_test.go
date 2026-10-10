@@ -36,7 +36,7 @@ func TestBugFB178_Phase1V2ReportDTOFreezesVersionsScoresAndExactTexts(t *testing
 	if got := reportItemKeys(dto.Strengths); !reflect.DeepEqual(got, []string{"digital_application", "truth_pragmatism", "self_discipline"}) {
 		t.Fatalf("strengths=%v", got)
 	}
-	if dto.Strengths[0].RuleText != "performance:digital_application:good" || dto.Developments[0].RuleText != "performance:achievement_orientation:qualified" {
+	if dto.Strengths[0].RuleText != "performance:digital_application:good" || dto.Developments[0].RuleText != "development:achievement_orientation:qualified" {
 		t.Fatalf("category texts=%+v/%+v", dto.Strengths, dto.Developments)
 	}
 	if got := reportItemKeys(dto.AdviceDimensions); !reflect.DeepEqual(got, []string{"achievement_orientation", "communication"}) || dto.Overall.AdviceText != "advice:qualified" {
@@ -96,7 +96,7 @@ func TestBugFB178_Phase1V2ReportTextNeverFallsBackOrDuplicates(t *testing.T) {
 	}
 }
 
-func TestBugFB178_Phase1V2ReportDTOAlwaysPopulatesScoreRankings(t *testing.T) {
+func TestBugFB222_Phase1V2ReportRequiresDevelopmentTextsForSelectedItems(t *testing.T) {
 	scores, modules := phase1V2SelectorFixture(t, []int{31, 31, 31, 31, 31, 31, 31, 31, 31, 31})
 	rows := phase1V2ReportTextRows(scores, modules, CompetencyPhase1ValidityQuestionable)
 	filtered := make([]model.CompetencyReportText, 0, len(rows))
@@ -105,19 +105,16 @@ func TestBugFB178_Phase1V2ReportDTOAlwaysPopulatesScoreRankings(t *testing.T) {
 			filtered = append(filtered, row)
 		}
 	}
-	dto, err := BuildPhase1V2ReportData("run-v2-2", scores, modules, CompetencyPhase1ValidityQuestionable, filtered)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dto.Developments) != 2 || len(dto.Strengths) != 3 || dto.Validity.DisplayText != "validity:questionable" {
-		t.Fatalf("score-ranked dto=%+v", dto)
+	_, err := BuildPhase1V2ReportData("run-v2-2", scores, modules, CompetencyPhase1ValidityQuestionable, filtered)
+	if err == nil || !strings.Contains(err.Error(), "contentType=development") {
+		t.Fatalf("error=%v", err)
 	}
 }
 
-// TestBugFB198_Phase1V2SelectedItemsUseCompletePerformanceTexts
+// TestBugFB198_Phase1V2SelectedItemsUseCorrespondingLevelTexts
 // Corresponds to docs/regression-tests.md FB-198.
-// Score-only selection can choose any level, so selected items must use the complete five-level performance text set.
-func TestBugFB198_Phase1V2SelectedItemsUseCompletePerformanceTexts(t *testing.T) {
+// Score-only selection can choose any level; development items use the workbook's corresponding-level short assessment.
+func TestBugFB198_Phase1V2SelectedItemsUseCorrespondingLevelTexts(t *testing.T) {
 	scores, modules := phase1V2SelectorFixture(t, []int{24, 23, 22, 21, 20, 19, 18, 17, 16, 15})
 	rows := phase1V2ReportTextRows(scores, modules, CompetencyPhase1ValidityGood)
 	dto, err := BuildPhase1V2ReportData("run-v2-score-ranking", scores, modules, CompetencyPhase1ValidityGood, rows)
@@ -127,7 +124,21 @@ func TestBugFB198_Phase1V2SelectedItemsUseCompletePerformanceTexts(t *testing.T)
 	if len(dto.Strengths) != 3 || dto.Strengths[0].RuleText != "performance:logical_reasoning:qualified" {
 		t.Fatalf("strengths=%+v", dto.Strengths)
 	}
-	if len(dto.Developments) != 2 || dto.Developments[0].RuleText != "performance:dedication:weak" {
+	if len(dto.Developments) != 2 || dto.Developments[0].RuleText != "development:dedication:weak" {
+		t.Fatalf("developments=%+v", dto.Developments)
+	}
+}
+
+// TestBugFB222_Phase1V2DevelopmentUsesWorkbookShortAssessment
+// Corresponds to docs/regression-tests.md FB-222.
+func TestBugFB222_Phase1V2DevelopmentUsesWorkbookShortAssessment(t *testing.T) {
+	scores, modules := phase1V2SelectorFixture(t, []int{30, 28, 34, 24, 32, 26, 28, 33, 33, 30})
+	rows := phase1V2ReportTextRows(scores, modules, CompetencyPhase1ValidityGood)
+	dto, err := BuildPhase1V2ReportData("run-v2-development-text", scores, modules, CompetencyPhase1ValidityGood, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dto.Developments) != 2 || dto.Developments[0].RuleText != "development:achievement_orientation:qualified" {
 		t.Fatalf("developments=%+v", dto.Developments)
 	}
 }

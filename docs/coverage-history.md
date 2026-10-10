@@ -1,5 +1,21 @@
 # 覆盖率与验收历史
 
+## 2026-10-10 FB-222待发展项Excel短评映射（非覆盖率，LOCAL GREEN）
+
+本轮未生成新覆盖率百分比。RED聚焦4项全部失败：待发展RuleText仍为`performance:*`，删除`development`行仍成功。GREEN精确查询工作簿G/I/K列生成的`contentType=development`；聚焦4项、service完整包、Go全量及server build通过，目标Go文件诊断0。未访问数据库、真实报告、浏览器、staging或production。
+
+## 2026-10-10 FB-221管理结果百分制投影（非覆盖率，LOCAL GREEN）
+
+本轮未生成新覆盖率百分比。RED因`applyPhase1V2ManagementScores`缺失编译失败；GREEN覆盖v2 overall/module/dimension/validity管理投影、分页v2 JOIN及legacy回退、前端百分制条件标签。FB-221专项通过，service/handler affected通过，最终Go全量与server build通过；前端35文件614项及production build通过，build仅既有2类体积warning，5个目标代码/测试文件诊断0。未执行真实DB、浏览器、staging或production验证。
+
+## 2026-10-10 FB-220批量下载自动补齐报告（非覆盖率，LOCAL GREEN）
+
+本轮未生成新覆盖率百分比。新增2项实际组件方法回归：缺失报告时对冻结选择逐份`force:false`准备并在全部成功后只请求一次ZIP；任一准备失败时ZIP/saveAs均为0且loading清理。RED为前端全量35文件611通过/1失败；GREEN为35文件613项全部通过，production build完成并只保留既有2类体积warning，目标Vue/测试文件诊断0。未访问数据库、远端服务或真实浏览器，staging/production未部署。
+
+## 2026-10-10 全项目待办评估覆盖率快照（LOCAL GREEN / 治理待办）
+
+本地执行Go全量原子覆盖率测试，exit0，总statements=`45.7%`，相对2026-10-09有效基线`44.3%`上升`1.4`个百分点；包级主要盲区为handler=`32.7%`、config=`3.0%`、repository/db/redis=`0.0%`、pdfgen=`1.6%`。Go server build exit0。Vue覆盖率执行35 files/611 tests全过，statements/branches/functions/lines=`60.25/95.53/39.13/60.25`，与上一有效比例相同；production build exit0。当前优先Top 10：匿名部门考试授权、CORS来源、路径边界、数据库错误处理、分页上限、N+1、JWT占位密钥门禁、MBTI/00401失败恢复、CI阻断、race/真实MySQL并发。完整范围和验收标准见[project-backlog-assessment-20261010.md](project-backlog-assessment-20261010.md)。本轮未运行远端、真实浏览器、native download、race或生产失败注入。
+
 ## 2026-10-09 主要新版链staging完整验收（非覆盖率，GREEN）
 
 本轮未生成新覆盖率百分比。00401真实执行90题全链及10页报告；MBTI真实执行48题、评分、完整版/简版报告并以FB-218完成RED→GREEN与staging部署；00501/00502对保留基线执行结果/报告/view/download并精确清理新增报告。全Go任务与前端35文件602项通过。所有临时业务链恢复基线，legacy dump SHA前后相同；本地清理54个明确生成文件13,616,966 bytes，远端清理2个失败测试LibreOffice profile。本轮不是production验证。

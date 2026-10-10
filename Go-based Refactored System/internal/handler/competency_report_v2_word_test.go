@@ -3,12 +3,17 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/talent-assessment/refactored/pkg/libreofficepdf"
 )
 
 // TestBugUF056_Phase1V2CoverHidesDuration
@@ -44,6 +49,55 @@ func TestBugUF056_Phase1V2CoverHidesDuration(t *testing.T) {
 	}
 	if strings.Contains(renderedControl, ">1</w:t>") {
 		t.Fatal("rendered v2 duration control still contains the numeric duration")
+	}
+}
+
+// TestBugUF058_Phase1V2VisibleFieldsDropLibreOfficeFontChangingWrappers
+// 对应：docs/regression-tests.md #UF-058
+// 复现：production LibreOffice 7.4 将保留 w:sdt wrapper 的免责声明等动态值输出为宋体。
+// 期望：可见动态值移除 wrapper，并逐字保留模板 run 的字体、字号和其他样式。
+func TestBugUF058_Phase1V2VisibleFieldsDropLibreOfficeFontChangingWrappers(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report-v2.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	templateDocument := string(readWordPart(t, template, "word/document.xml"))
+	templateControl := regexp.MustCompile(`(?s)<w:sdt>.*?<w:tag w:val="report\.disclaimer".*?</w:sdt>`).FindString(templateDocument)
+	if templateControl == "" {
+		t.Fatal("template disclaimer control missing")
+	}
+	templateRunProperties := phase1V2WordRunPrPattern.FindString(templateControl)
+	if templateRunProperties == "" || !strings.Contains(templateRunProperties, `w:eastAsia="微软雅黑"`) {
+		t.Fatal("template disclaimer run does not explicitly use Microsoft YaHei")
+	}
+
+	fields := phase1V2WordTestFields(t, template)
+	fields["report.disclaimer"] = "UF058免责声明字体回归值"
+	rendered, err := renderPhase1V2WordTemplate(template, fields, phase1V2WordTestCharts(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output := os.Getenv("PHASE1_V2_UF058_DOCX"); output != "" {
+		if err := os.WriteFile(output, rendered, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	renderedDocument := string(readWordPart(t, rendered, "word/document.xml"))
+	if strings.Contains(renderedDocument, `w:val="report.disclaimer"`) {
+		t.Fatal("rendered disclaimer retained its LibreOffice font-changing content-control wrapper")
+	}
+	renderedRun := ""
+	for _, run := range phase1V2WordRunPattern.FindAllString(renderedDocument, -1) {
+		if strings.Contains(run, ">UF058免责声明字体回归值</w:t>") {
+			renderedRun = run
+			break
+		}
+	}
+	if renderedRun == "" {
+		t.Fatal("rendered disclaimer value missing")
+	}
+	if got := phase1V2WordRunPrPattern.FindString(renderedRun); got != templateRunProperties {
+		t.Fatalf("rendered disclaimer run properties changed\ngot:  %s\nwant: %s", got, templateRunProperties)
 	}
 }
 
@@ -88,11 +142,12 @@ func TestBugFB179_Phase1V2WordRendererIsValueOnly(t *testing.T) {
 		t.Fatal("empty predefined slot retained its sample value")
 	}
 
-	for _, name := range wordPartNames(t, template, `^(word/document\.xml|word/header\d+\.xml)$`) {
-		before := maskPhase1V2ControlValues(t, readWordPart(t, template, name))
-		after := maskPhase1V2ControlValues(t, readWordPart(t, rendered, name))
-		if !bytes.Equal(before, after) {
-			t.Fatalf("non-value Word XML changed: %s", name)
+	for _, name := range wordPartNames(t, rendered, `^(word/document\.xml|word/header\d+\.xml)$`) {
+		part := readWordPart(t, rendered, name)
+		for _, match := range wordContentControlTagPattern.FindAllSubmatch(part, -1) {
+			if string(match[1]) != "result.userTime" {
+				t.Fatalf("visible field retained its LibreOffice-incompatible content-control wrapper: %s: %s", name, match[1])
+			}
 		}
 	}
 	for _, name := range wordPartNames(t, template, `^word/charts/chart\d+\.xml$`) {
@@ -126,6 +181,145 @@ func TestBugFB179_Phase1V2WordRendererIsValueOnly(t *testing.T) {
 	comparisonChart := string(phase1V2ChartByKey(t, rendered, "chart.dimension.comparison"))
 	if !strings.Contains(comparisonChart, ">78.125<") || !strings.Contains(comparisonChart, ">57.5<") {
 		t.Fatalf("comparison chart values missing")
+	}
+}
+
+// TestBugFB229_Phase1V2CandidateLibreOfficeVisibility
+// 对应：docs/regression-tests.md #FB-229
+// 复现：结构合同通过，但LibreOffice PDF仍丢失节首页页码和wpg组合中的总体环图。
+// 期望：先经真实v2字段/图表渲染，再由目标LibreOffice成功转换并保留可供像素审查的DOCX/PDF。
+func TestBugFB229_Phase1V2CandidateLibreOfficeVisibility(t *testing.T) {
+	templatePath := os.Getenv("PHASE1_V2_FB229_TEMPLATE")
+	executable := os.Getenv("PHASE1_V2_FB229_LIBREOFFICE")
+	artifactDir := os.Getenv("PHASE1_V2_FB229_ARTIFACT_DIR")
+	if templatePath == "" || executable == "" || artifactDir == "" {
+		t.Skip("FB-229 LibreOffice integration environment is not configured")
+	}
+	template, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := phase1V2WordTestFields(t, template)
+	for _, key := range phase1V2WordFieldKeys() {
+		if _, exists := fields[key]; !exists {
+			fields[key] = "value:" + key
+		}
+	}
+	fields["overall.score"] = "68.13"
+	fields["overall.level"] = "良好"
+	fields["overall.normComparison"] = "高于常模"
+	rendered, err := renderPhase1V2WordTemplate(template, fields, phase1V2WordTestCharts(), "name,telephone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "fb229-report.docx"), rendered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	document := string(readWordPart(t, rendered, "word/document.xml"))
+	chartPosition := strings.Index(document, `title="chart.overall.score"`)
+	if chartPosition < 0 {
+		t.Fatal("rendered overall chart missing")
+	}
+	start := chartPosition - 5000
+	if start < 0 {
+		start = 0
+	}
+	end := chartPosition + 5000
+	if end > len(document) {
+		end = len(document)
+	}
+	region := document[start:end]
+	for _, required := range []string{">总体评价</w:t>", ">68.13</w:t>", ">分</w:t>"} {
+		if !strings.Contains(region, required) {
+			t.Fatalf("rendered overall chart center missing %q", required)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pdf, err := libreofficepdf.NewClient(executable).Convert(ctx, "fb229-report.docx", rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pdf) < 5 || string(pdf[:5]) != "%PDF-" {
+		t.Fatal("LibreOffice did not return a PDF")
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "fb229-report.pdf"), pdf, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestBugFB224_Phase1V2TemplateAllowsMissingContentControls
+// 对应：docs/regression-tests.md #FB-224
+// 复现：客户自定义v2模板缺少任意已注册内容控件时，上传校验和报告渲染都会失败。
+// 期望：模板中存在的已知内容控件照常填充；不存在的内容控件忽略，图表等非字段门禁保持不变。
+func TestBugFB224_Phase1V2TemplateAllowsMissingContentControls(t *testing.T) {
+	template, err := os.ReadFile("../../configs/export-templates/competency-phase1-report-v2.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(readWordPart(t, template, "word/document.xml"))
+	for _, key := range []string{"participant.name", "validity.text", "report.disclaimer"} {
+		removed := 0
+		for {
+			matches := wordContentControlPattern.FindAllStringIndex(document, -1)
+			found := false
+			for index := len(matches) - 1; index >= 0; index-- {
+				bounds := matches[index]
+				control := document[bounds[0]:bounds[1]]
+				if strings.Contains(control, `w:val="`+key+`"`) {
+					document = document[:bounds[0]] + document[bounds[1]:]
+					removed++
+					found = true
+					break
+				}
+			}
+			if !found {
+				break
+			}
+		}
+	}
+	candidate := replaceWordFixturePart(t, template, "word/document.xml", []byte(document))
+	candidateDocument := string(readWordPart(t, candidate, "word/document.xml"))
+	telephoneTag := strings.Index(candidateDocument, `w:val="participant.telephone"`)
+	if telephoneTag < 0 {
+		t.Fatal("participant.telephone control missing")
+	}
+	telephoneStart := strings.LastIndex(candidateDocument[:telephoneTag], "<w:sdt>")
+	telephoneEndOffset := strings.Index(candidateDocument[telephoneTag:], "</w:sdt>")
+	if telephoneStart < 0 || telephoneEndOffset < 0 {
+		t.Fatal("participant.telephone control missing")
+	}
+	telephoneEnd := telephoneTag + telephoneEndOffset + len("</w:sdt>")
+	telephoneControl := candidateDocument[telephoneStart:telephoneEnd]
+	candidate = replaceWordFixturePart(t, candidate, "word/document.xml", []byte(strings.Replace(candidateDocument, telephoneControl, telephoneControl+telephoneControl, 1)))
+	contract, err := validatePhase1V2WordTemplateUpload(candidate)
+	if err != nil {
+		t.Fatalf("optional-field template rejected: %v", err)
+	}
+	if contract.RegisteredFields != 60 || contract.UsedFields >= contract.RegisteredFields || contract.UsedFields == 0 {
+		t.Fatalf("optional-field contract=%+v", contract)
+	}
+
+	fields := phase1V2WordTestFields(t, template)
+	fields["participant.telephone"] = "19900000000"
+	rendered, err := renderPhase1V2WordTemplate(candidate, fields, phase1V2WordTestCharts(), "name,telephone")
+	if err != nil {
+		t.Fatalf("optional-field template render failed: %v", err)
+	}
+	renderedDocument := string(readWordPart(t, rendered, "word/document.xml"))
+	if !strings.Contains(renderedDocument, "19900000000") {
+		t.Fatal("existing content control was not filled")
+	}
+	if count := strings.Count(renderedDocument, "19900000000"); count != 2 {
+		t.Fatalf("repeated participant.telephone filled %d times, want 2", count)
+	}
+	for _, key := range []string{"participant.name", "validity.text", "report.disclaimer"} {
+		if strings.Contains(renderedDocument, `w:val="`+key+`"`) {
+			t.Fatalf("missing content control was recreated: %s", key)
+		}
 	}
 }
 
@@ -275,6 +469,11 @@ func phase1V2WordTestFields(t *testing.T, template []byte) map[string]string {
 			fields[string(match[1])] = "value:" + string(match[1])
 		}
 	}
+	for _, key := range phase1V2WordFieldKeys() {
+		if _, exists := fields[key]; !exists {
+			fields[key] = "value:" + key
+		}
+	}
 	return fields
 }
 
@@ -307,21 +506,6 @@ func wordPartNames(t *testing.T, docx []byte, pattern string) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-func maskPhase1V2ControlValues(t *testing.T, part []byte) []byte {
-	t.Helper()
-	content := string(part)
-	matches := wordContentControlPattern.FindAllStringIndex(content, -1)
-	for index := len(matches) - 1; index >= 0; index-- {
-		bounds := matches[index]
-		masked, err := replaceWordContentControlText(content[bounds[0]:bounds[1]], "VALUE")
-		if err != nil {
-			t.Fatal(err)
-		}
-		content = content[:bounds[0]] + masked + content[bounds[1]:]
-	}
-	return []byte(unwrapPhase1V2ContentControls(content))
 }
 
 func phase1V2ChartByKey(t *testing.T, docx []byte, key string) []byte {

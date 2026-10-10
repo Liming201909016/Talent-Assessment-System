@@ -1,6 +1,8 @@
 # 002管理特质正式报告与两端UI：实施契约
 
-日期：2026-10-06。状态：**POLICY CONFIRMED；slice1正式版本登记/审批/启用/撤销后端本地已实现；正式PDF和两端UI尚未实现。**
+日期：2026-10-06；2026-10-10更新。状态：**POLICY CONFIRMED；slice1正式版本登记/审批/启用/撤销与slice2正式资产只读preview后端均已LOCAL GREEN；正式候选批准、正式PDF和两端UI尚未实现。**
+
+[slice2完成证据](management-traits-formal-assets-preview-local-20261010.md)：新增local-only、仅00501/00502的受控资产preview，返回205规则、88 Tag、6图、5数字槽、四项SHA及稳定阻断原因；零DB写、零批准、零PDF。原Register/Change仍重新读取资产，不信任preview。当前客户原始V2.8模板仍不满足正式门禁，本切片不生成或批准替代资产。
 
 最新政策：Q1=A，同一授权系统账号允许分别完成内容与心理测量两项独立签署；Q2=B，精确匹配获批题本/评分/常模的完整新版TEST run可追加独立正式PDF，TEST原PDF/current不覆盖、legacy历史不转换；Q3=B，撤销禁止新生成/新启用，但授权管理员可继续view/download历史formal原PDF，明确revoked并保文件及audit。用户选择政策不构成205条内容或模板的正式批准。
 

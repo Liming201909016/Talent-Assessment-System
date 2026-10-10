@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -47,6 +48,83 @@ type ManagementTraitsFormalReadiness struct {
 	BlockedReason                     string                                 `json:"blockedReason"`
 	GenerationBlockedReason           string                                 `json:"generationBlockedReason"`
 	RevokedHistoricalAdminReadAllowed bool                                   `json:"revokedHistoricalAdminReadAllowed"`
+}
+
+type ManagementTraitsFormalAssetPreview struct {
+	RepoCode             string   `json:"repoCode"`
+	AssetKey             string   `json:"assetKey"`
+	ContentPresent       bool     `json:"contentPresent"`
+	TemplatePresent      bool     `json:"templatePresent"`
+	ContentRuleCount     int      `json:"contentRuleCount"`
+	WorkbookSHA          string   `json:"workbookSha"`
+	NormalizedContentSHA string   `json:"normalizedContentSha"`
+	TemplateSHA          string   `json:"templateSha"`
+	BindingSHA           string   `json:"bindingSha"`
+	TagCount             int      `json:"tagCount"`
+	ChartCount           int      `json:"chartCount"`
+	NumericLabelCount    int      `json:"numericLabelCount"`
+	Tags                 []string `json:"tags"`
+	Charts               []string `json:"charts"`
+	NumericLabels        []string `json:"numericLabels"`
+	ReadyForRegistration bool     `json:"readyForRegistration"`
+	ReadyForApproval     bool     `json:"readyForApproval"`
+	BlockedReasons       []string `json:"blockedReasons"`
+}
+
+func newManagementTraitsFormalAssetPreview(repoCode, assetKey string) ManagementTraitsFormalAssetPreview {
+	return ManagementTraitsFormalAssetPreview{RepoCode: repoCode, AssetKey: assetKey, Tags: make([]string, 0), Charts: make([]string, 0), NumericLabels: make([]string, 0), BlockedReasons: make([]string, 0)}
+}
+
+// PreviewAssets validates controlled candidate files without reading or writing
+// registry tables. A preview is evidence for review only; Register and Change
+// always re-read the files and enforce the full source/version gates.
+func (s *ManagementTraitsFormalRegistry) PreviewAssets(ctx context.Context, repoCode, assetKey string) (ManagementTraitsFormalAssetPreview, error) {
+	out := newManagementTraitsFormalAssetPreview(repoCode, assetKey)
+	if repoCode != "00501" && repoCode != "00502" || !formalKey.MatchString(assetKey) {
+		return out, ErrManagementTraitsFormalInvalid
+	}
+	if s == nil || ctx == nil || ctx.Err() != nil || s.environment != "local" || !filepath.IsAbs(s.assetRoot) {
+		return out, ErrManagementTraitsFormalClosed
+	}
+	content, err := formalReadAsset(s.assetRoot, assetKey, "content.xlsx")
+	if err != nil {
+		reason := formalAssetReason(err, "content_read_failed")
+		if os.IsNotExist(err) {
+			reason = "content_missing"
+		}
+		out.BlockedReasons = append(out.BlockedReasons, reason)
+		return out, nil
+	}
+	out.ContentPresent = true
+	out.NormalizedContentSHA, out.WorkbookSHA, out.ContentRuleCount, err = managementTraitsFormalContentIdentity(content)
+	if err != nil {
+		out.BlockedReasons = append(out.BlockedReasons, formalAssetReason(err, "content_contract_invalid"))
+		return out, nil
+	}
+	out.ReadyForRegistration = true
+	template, err := formalReadAsset(s.assetRoot, assetKey, "template.docx")
+	if err != nil {
+		reason := formalAssetReason(err, "template_read_failed")
+		if os.IsNotExist(err) {
+			reason = "template_missing"
+		}
+		out.BlockedReasons = append(out.BlockedReasons, reason)
+		return out, nil
+	}
+	out.TemplatePresent = true
+	binding, err := validateManagementTraitsFormalTemplateBinding(template)
+	if err != nil {
+		out.BlockedReasons = append(out.BlockedReasons, formalAssetReason(err, "template_contract_invalid"))
+		return out, nil
+	}
+	out.TemplateSHA = formalSHA(template)
+	out.BindingSHA = binding.SHA
+	out.Tags = append(out.Tags, binding.Tags...)
+	out.Charts = append(out.Charts, binding.Charts...)
+	out.NumericLabels = append(out.NumericLabels, binding.NumericLabels...)
+	out.TagCount, out.ChartCount, out.NumericLabelCount = len(out.Tags), len(out.Charts), len(out.NumericLabels)
+	out.ReadyForApproval = true
+	return out, nil
 }
 
 func formalReadiness(v model.ManagementTraitsFormalVersion, approvals []model.ManagementTraitsFormalApproval, assets bool) ManagementTraitsFormalReadiness {

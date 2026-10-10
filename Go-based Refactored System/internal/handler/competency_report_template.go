@@ -39,13 +39,14 @@ type phase1WordTemplateContract struct {
 }
 
 type phase1WordTemplateInfo struct {
-	Exists          bool   `json:"exists"`
-	FileName        string `json:"fileName"`
-	Size            int64  `json:"size"`
-	ModTime         string `json:"modTime"`
-	SHA256          string `json:"sha256"`
-	Valid           bool   `json:"valid"`
-	ValidationError string `json:"validationError,omitempty"`
+	Exists          bool                    `json:"exists"`
+	FileName        string                  `json:"fileName"`
+	Size            int64                   `json:"size"`
+	ModTime         string                  `json:"modTime"`
+	SHA256          string                  `json:"sha256"`
+	Valid           bool                    `json:"valid"`
+	ValidationError string                  `json:"validationError,omitempty"`
+	SemanticFields  []templateSemanticField `json:"semanticFields"`
 	phase1WordTemplateContract
 }
 
@@ -306,7 +307,7 @@ func (h *CompetencyReportHandler) UploadPhase1Template(c *gin.Context) {
 }
 
 func readPhase1WordTemplateInfo(path string) (phase1WordTemplateInfo, error) {
-	info := phase1WordTemplateInfo{FileName: phase1WordTemplateFileName}
+	info := phase1WordTemplateInfo{FileName: phase1WordTemplateFileName, SemanticFields: make([]templateSemanticField, 0)}
 	stat, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return info, nil
@@ -334,7 +335,7 @@ func readPhase1WordTemplateInfo(path string) (phase1WordTemplateInfo, error) {
 }
 
 func readPhase1V2WordTemplateInfo(path string) (phase1WordTemplateInfo, error) {
-	info := phase1WordTemplateInfo{FileName: phase1V2WordTemplateFileName}
+	info := phase1WordTemplateInfo{FileName: phase1V2WordTemplateFileName, SemanticFields: phase1V2TemplateSemanticFields()}
 	stat, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return info, nil
@@ -406,11 +407,6 @@ func validatePhase1V2WordTemplateUpload(data []byte) (phase1WordTemplateContract
 			}
 			seenFields[key] = true
 			controls++
-		}
-	}
-	for _, key := range expectedFields {
-		if !seenFields[key] {
-			return contract, fmt.Errorf("缺少v2内容控件Tag：%s", key)
 		}
 	}
 	chartParts, err := resolvePhase1V2BusinessChartParts(parts)

@@ -37,6 +37,7 @@ describe('phase-one competency report template management', () => {
       embeddedWorkbooks: 1,
       externalLinks: 0,
       visibleTokens: 0,
+      semanticFields: [{ key: 'participant.name', name: '姓名', description: '受测者姓名', repeatable: true }],
       valid: true
     } })
     const vm = {
@@ -46,7 +47,19 @@ describe('phase-one competency report template management', () => {
     await ReportTemplates.methods.fetchPhase1Template.call(vm)
     expect(fetchPhase1V2WordTemplate).toHaveBeenCalled()
     expect(vm.phase1Template).toEqual(expect.objectContaining({ valid: true, schemaVersion: 'competency-phase1-template-schema-v2', registeredFields: 75, businessCharts: 12 }))
+    expect(vm.phase1Template.semanticFields).toEqual([expect.objectContaining({ key: 'participant.name', name: '姓名' })])
     expect(vm.phase1Loading).toBe(false)
+  })
+
+  it('opens the 00401 semantic-field dialog with names and descriptions', () => {
+    const vm = {
+      ...ReportTemplates.data(),
+      phase1Template: { semanticFields: [{ key: 'validity.text', name: '效度说明', description: '效度评价说明；可选' }] }
+    }
+    ReportTemplates.methods.openPhase1SemanticFields.call(vm)
+    expect(vm.semanticFieldDialogVisible).toBe(true)
+    expect(vm.semanticFieldDialogTitle).toContain('00401')
+    expect(vm.semanticFieldRows).toEqual([expect.objectContaining({ key: 'validity.text', name: '效度说明', description: expect.any(String) })])
   })
 
   it('explains the transparent V2 field and chart contract', () => {

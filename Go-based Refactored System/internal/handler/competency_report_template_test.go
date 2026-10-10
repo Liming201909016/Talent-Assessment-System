@@ -62,11 +62,65 @@ func TestBugFB195_V2TemplateUsesDedicatedUploadContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if contract.SchemaVersion != "competency-phase1-report-template-v2" || contract.RegisteredFields != 60 || contract.UsedFields != 60 || contract.BusinessCharts != 12 || contract.ExternalLinks != 0 {
+	if contract.SchemaVersion != "competency-phase1-report-template-v2" || contract.RegisteredFields != 60 || contract.UsedFields != 59 || contract.BusinessCharts != 12 || contract.ExternalLinks != 0 {
 		t.Fatalf("v2 contract=%+v", contract)
 	}
 	if _, err := validatePhase1WordTemplateUpload(data); err == nil || !strings.Contains(err.Error(), "未支持的内容控件Tag") {
 		t.Fatalf("fixture no longer proves the legacy-validator mismatch: %v", err)
+	}
+}
+
+func TestBugFB226_Phase1V2TemplateInfoListsSemanticFields(t *testing.T) {
+	info, err := readPhase1V2WordTemplateInfo("../../configs/export-templates/competency-phase1-report-v2.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.SemanticFields) != 60 {
+		t.Fatalf("semantic fields=%d, want 60", len(info.SemanticFields))
+	}
+	for _, field := range info.SemanticFields {
+		if field.Key == "" || field.Name == "" || field.Description == "" || !field.Repeatable {
+			t.Fatalf("invalid semantic field=%+v", field)
+		}
+	}
+}
+
+// TestBugFB225_CustomerV2TemplateCandidateUploadAndRenderContract
+// 对应：docs/regression-tests.md #FB-225
+// 复现：客户最新模板仍含组合对比图和NUMPAGES，不能作为staging活动模板。
+// 期望：修复候选通过可选字段v2上传合同，并可由真实renderer填充现存字段及12张图表。
+func TestBugFB225_CustomerV2TemplateCandidateUploadAndRenderContract(t *testing.T) {
+	path := os.Getenv("PHASE1_V2_TEMPLATE_CANDIDATE_PATH")
+	if path == "" {
+		t.Skip("PHASE1_V2_TEMPLATE_CANDIDATE_PATH is not configured")
+	}
+	template, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, _, err = sanitizePhase1WordTemplateUpload(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := validatePhase1V2WordTemplateUpload(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contract.RegisteredFields != 60 || contract.UsedFields == 0 || contract.UsedFields > 60 || contract.BusinessCharts != 12 || contract.ExternalLinks != 0 || contract.VisibleTokens != 0 {
+		t.Fatalf("customer v2 candidate contract=%+v", contract)
+	}
+	activeTemplate, err := os.ReadFile("../../configs/export-templates/competency-phase1-report-v2.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := renderPhase1V2WordTemplate(template, phase1V2WordTestFields(t, activeTemplate), phase1V2WordTestCharts(), "name,telephone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output := os.Getenv("PHASE1_V2_TEMPLATE_RENDER_OUTPUT"); output != "" {
+		if err := os.WriteFile(output, rendered, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

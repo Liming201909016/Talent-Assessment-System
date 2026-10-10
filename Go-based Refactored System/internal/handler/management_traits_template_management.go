@@ -23,18 +23,19 @@ const maxManagementTraitsTemplateBytes = 20 << 20
 const opcRelationshipNS = "http://schemas.openxmlformats.org/package/2006/relationships"
 
 type managementTraitsTemplateInfo struct {
-	Exists          bool     `json:"exists"`
-	FileName        string   `json:"fileName"`
-	Size            int64    `json:"size"`
-	ModTime         string   `json:"modTime"`
-	SHA256          string   `json:"sha256"`
-	Valid           bool     `json:"valid"`
-	ValidationError string   `json:"validationError,omitempty"`
-	ProductCodes    []string `json:"productCodes"`
-	ContentControls int      `json:"contentControls"`
-	BusinessCharts  int      `json:"businessCharts"`
-	NumericLabels   int      `json:"numericLabels"`
-	ExternalLinks   int      `json:"externalLinks"`
+	Exists          bool                    `json:"exists"`
+	FileName        string                  `json:"fileName"`
+	Size            int64                   `json:"size"`
+	ModTime         string                  `json:"modTime"`
+	SHA256          string                  `json:"sha256"`
+	Valid           bool                    `json:"valid"`
+	ValidationError string                  `json:"validationError,omitempty"`
+	ProductCodes    []string                `json:"productCodes"`
+	ContentControls int                     `json:"contentControls"`
+	BusinessCharts  int                     `json:"businessCharts"`
+	NumericLabels   int                     `json:"numericLabels"`
+	ExternalLinks   int                     `json:"externalLinks"`
+	SemanticFields  []templateSemanticField `json:"semanticFields"`
 }
 
 func (h *ManagementTraitsRuntimeHandler) managementTraitsTemplatePath() (string, error) {
@@ -115,8 +116,35 @@ func managementTraitsTemplateProbeData() service.ManagementTraitsTestReportData 
 	return data
 }
 
+func managementTraitsTemplateContentControlCount(data []byte) int {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return 0
+	}
+	for _, file := range reader.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+		rc, openErr := file.Open()
+		if openErr != nil {
+			return 0
+		}
+		body, readErr := io.ReadAll(io.LimitReader(rc, maxManagementTraitsTemplateBytes+1))
+		closeErr := rc.Close()
+		if readErr != nil || closeErr != nil {
+			return 0
+		}
+		tree, parseErr := mngWordTree(body)
+		if parseErr != nil {
+			return 0
+		}
+		return len(tree.all(mngWordNS, "sdt"))
+	}
+	return 0
+}
+
 func validateManagementTraitsTemplate(data []byte) (managementTraitsTemplateInfo, error) {
-	info := managementTraitsTemplateInfo{FileName: managementTraitsSharedTemplateFileName, ProductCodes: []string{"00501", "00502"}}
+	info := managementTraitsTemplateInfo{FileName: managementTraitsSharedTemplateFileName, ProductCodes: []string{"00501", "00502"}, SemanticFields: managementTraitsTemplateSemanticFields()}
 	if len(data) == 0 || len(data) > maxManagementTraitsTemplateBytes {
 		return info, errors.New("模板文件大小无效")
 	}
@@ -158,14 +186,14 @@ func validateManagementTraitsTemplate(data []byte) (managementTraitsTemplateInfo
 	}
 	info.SHA256 = sha
 	info.Valid = true
-	info.ContentControls = 90
+	info.ContentControls = managementTraitsTemplateContentControlCount(data)
 	info.BusinessCharts = 6
 	info.NumericLabels = 5
 	return info, nil
 }
 
 func readManagementTraitsTemplateInfo(path string) (managementTraitsTemplateInfo, error) {
-	info := managementTraitsTemplateInfo{FileName: managementTraitsSharedTemplateFileName, ProductCodes: []string{"00501", "00502"}}
+	info := managementTraitsTemplateInfo{FileName: managementTraitsSharedTemplateFileName, ProductCodes: []string{"00501", "00502"}, SemanticFields: managementTraitsTemplateSemanticFields()}
 	stat, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return info, nil

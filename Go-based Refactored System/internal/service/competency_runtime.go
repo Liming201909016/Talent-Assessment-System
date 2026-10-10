@@ -832,6 +832,95 @@ func (s *CompetencyRuntimeService) ResultDetail(paperID string) (map[string]any,
 	return map[string]any{"result": result, "groups": groups, "dimensions": dimensions, "validity": validity, "questions": audit, "reportTextReady": false, "reportTextMessage": "正式解读文案待配置"}, nil
 }
 
+func applyPhase1V2ManagementScores(data map[string]any, overall model.CompetencyResultRunOverall, modules []model.CompetencyResultRunModule, dimensions []model.CompetencyResultRunDimension, validity model.CompetencyResultRunValidity) {
+	result := data["result"].(model.CompetencyResult)
+	result.OverallScore = overall.OverallScore
+	result.EffectiveDimensionCount = overall.EffectiveDimensionCount
+	result.EvaluationLevel = overall.LevelCode
+	result.IsComplete = overall.IsComplete
+	result.SubmitType = overall.SubmitType
+	result.SubmittedAt = overall.SubmittedAt
+	data["result"] = result
+
+	groups := make([]model.CompetencyGroupResult, 0, len(modules))
+	for _, module := range modules {
+		groups = append(groups, model.CompetencyGroupResult{
+			ID: module.ID, PaperID: result.PaperID, GroupCode: module.ModuleCode, GroupName: module.ModuleName,
+			DisplayOrder: module.DisplayOrder, TotalDimensionCount: module.TotalDimensionCount,
+			EffectiveDimensionCount: module.EffectiveDimensionCount, GroupScore: module.ModuleScore,
+			LevelCode: module.LevelCode, IsComplete: module.IsComplete, ScoringVersion: CompetencyPhase1ScoringVersionV2,
+		})
+	}
+	managementDimensions := make([]model.CompetencyDimensionResult, 0, len(dimensions))
+	for _, dimension := range dimensions {
+		managementDimensions = append(managementDimensions, model.CompetencyDimensionResult{
+			ID: dimension.ID, PaperID: result.PaperID, DimensionID: dimension.DimensionID,
+			DimensionCode: dimension.DimensionCode, DimensionName: dimension.DimensionName, DisplayOrder: dimension.DisplayOrder,
+			TotalQuestionCount: dimension.TotalQuestionCount, AnsweredQuestionCount: dimension.AnsweredQuestionCount,
+			ScoreSum: dimension.ScoreSum, DimensionScore: dimension.DimensionScore, LevelCode: dimension.LevelCode,
+			IsComplete: dimension.IsComplete, CreateTime: dimension.CreateTime,
+		})
+	}
+	managementValidity := &model.CompetencyValidityResult{
+		PaperID: result.PaperID, TotalQuestionCount: validity.TotalQuestionCount,
+		AnsweredQuestionCount: validity.AnsweredQuestionCount, ValidityScore: validity.ValidityScore,
+		ValidityStatus: validity.ValidityStatus, IsComplete: validity.IsComplete,
+		ScoringVersion: CompetencyPhase1ScoringVersionV2, CreateTime: validity.CreateTime, UpdateTime: validity.UpdateTime,
+	}
+	data["groups"] = groups
+	data["dimensions"] = managementDimensions
+	data["validity"] = managementValidity
+	data["scoreScale"] = "percentage"
+}
+
+// ManagementResultDetail keeps the legacy report-data contract isolated while
+// showing administrators the latest completed v2 percentage result when present.
+func (s *CompetencyRuntimeService) ManagementResultDetail(paperID string) (map[string]any, error) {
+	data, err := s.ResultDetail(paperID)
+	if err != nil {
+		return nil, err
+	}
+	ready, err := s.phase1V2ResultRunSchemaState()
+	if err != nil {
+		return nil, phase1V2ResultRunError(err)
+	}
+	if !ready {
+		return data, nil
+	}
+	var run model.CompetencyResultRun
+	err = s.db.Where("paper_id = ? AND scoring_version = ?", paperID, CompetencyPhase1ScoringVersionV2).Take(&run).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return data, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePhase1V2FormalRunHeader(run, paperID); err != nil {
+		return nil, err
+	}
+	var overall model.CompetencyResultRunOverall
+	if err := s.db.Where("result_run_id = ?", run.ID).Take(&overall).Error; err != nil {
+		return nil, err
+	}
+	modules := make([]model.CompetencyResultRunModule, 0, 3)
+	if err := s.db.Where("result_run_id = ?", run.ID).Order("display_order ASC").Find(&modules).Error; err != nil {
+		return nil, err
+	}
+	dimensions := make([]model.CompetencyResultRunDimension, 0, 10)
+	if err := s.db.Where("result_run_id = ?", run.ID).Order("display_order ASC").Find(&dimensions).Error; err != nil {
+		return nil, err
+	}
+	var validity model.CompetencyResultRunValidity
+	if err := s.db.Where("result_run_id = ?", run.ID).Take(&validity).Error; err != nil {
+		return nil, err
+	}
+	if _, _, _, err := phase1V2ReportInputsFromRunRows(overall, modules, dimensions, validity); err != nil {
+		return nil, err
+	}
+	applyPhase1V2ManagementScores(data, overall, modules, dimensions, validity)
+	return data, nil
+}
+
 func (s *CompetencyRuntimeService) FormalReportData(paperID string) (map[string]any, error) {
 	var result model.CompetencyResult
 	if err := s.db.Where("paper_id = ?", paperID).Take(&result).Error; err != nil {
@@ -1031,6 +1120,9 @@ type CompetencyResultPageRow struct {
 	DimensionScore       *decimal.Decimal `gorm:"column:sort_dimension_score" json:"sortDimensionScore"`
 	ValidityScore        *decimal.Decimal `gorm:"column:validity_score" json:"validityScore"`
 	ValidityStatus       *string          `gorm:"column:validity_status" json:"validityStatus"`
+	V2OverallScore       *decimal.Decimal `gorm:"column:v2_overall_score" json:"-"`
+	V2DimensionScore     *decimal.Decimal `gorm:"column:v2_sort_dimension_score" json:"-"`
+	ScoreScale           string           `gorm:"-" json:"scoreScale,omitempty"`
 }
 
 type competencyResultSort struct {
@@ -1152,6 +1244,10 @@ func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest)
 	if err != nil {
 		return nil, 0, err
 	}
+	resultRunReady, err := s.phase1V2ResultRunSchemaState()
+	if err != nil {
+		return nil, 0, phase1V2ResultRunError(err)
+	}
 	if sortSpec.DimensionID != "" {
 		var dimensionCount int64
 		if err := s.db.Model(&model.ExamCompetencyDimension{}).
@@ -1177,8 +1273,16 @@ func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest)
 			NULL AS sort_dimension_score,
 			(SELECT vr.validity_score FROM el_competency_validity_result vr WHERE vr.paper_id = r.paper_id) AS validity_score,
 			(SELECT vr.validity_status FROM el_competency_validity_result vr WHERE vr.paper_id = r.paper_id) AS validity_status`
+	if resultRunReady {
+		selectClause += ", ro.overall_score AS v2_overall_score"
+	}
 	if sortSpec.DimensionID != "" {
-		selectClause = strings.Replace(selectClause, "NULL AS sort_dimension_score", "dr.dimension_score AS sort_dimension_score", 1)
+		if resultRunReady {
+			selectClause = strings.Replace(selectClause, "NULL AS sort_dimension_score", "dr.dimension_score AS sort_dimension_score, rd.dimension_score AS v2_sort_dimension_score", 1)
+			sortSpec.OrderClause = strings.ReplaceAll(sortSpec.OrderClause, "dr.dimension_score", "COALESCE(rd.dimension_score, dr.dimension_score)")
+		} else {
+			selectClause = strings.Replace(selectClause, "NULL AS sort_dimension_score", "dr.dimension_score AS sort_dimension_score", 1)
+		}
 	}
 	query := s.db.Table("el_competency_result r").
 		Select(selectClause).
@@ -1186,14 +1290,36 @@ func (s *CompetencyRuntimeService) ResultPaging(req CompetencyResultPageRequest)
 		Joins("LEFT JOIN el_candidate c ON c.paper_id = r.paper_id").
 		Joins("LEFT JOIN el_tester t ON t.paper_id = r.paper_id").
 		Where("r.exam_id = ?", req.ExamID)
+	if resultRunReady {
+		query = query.Joins("LEFT JOIN el_competency_result_run rr ON rr.paper_id = r.paper_id AND rr.scoring_version = ? AND rr.status = ?", CompetencyPhase1ScoringVersionV2, phase1V2ResultRunStatusCompleted).
+			Joins("LEFT JOIN el_competency_result_run_overall ro ON ro.result_run_id = rr.id")
+	}
 	query = applyCompetencyResultFilters(query, filters)
 	if sortSpec.DimensionID != "" {
 		query = query.Joins("LEFT JOIN el_competency_dimension_result dr ON dr.paper_id = r.paper_id AND dr.dimension_id = ?", sortSpec.DimensionID)
+		if resultRunReady {
+			dimensionID := sortSpec.DimensionID
+			if definition, mapErr := MapPhase1V1DimensionToV2(sortSpec.DimensionID); mapErr == nil {
+				dimensionID = definition.ID
+			}
+			query = query.Joins("LEFT JOIN el_competency_result_run_dimension rd ON rd.result_run_id = rr.id AND rd.dimension_id = ?", dimensionID)
+		}
 	}
 	err = query.Order(sortSpec.OrderClause).
 		Offset((req.Current - 1) * req.Size).
 		Limit(req.Size).
 		Scan(&rows).Error
+	if err == nil {
+		for index := range rows {
+			if rows[index].V2OverallScore != nil {
+				rows[index].OverallScore = rows[index].V2OverallScore
+				rows[index].ScoreScale = "percentage"
+			}
+			if rows[index].V2DimensionScore != nil {
+				rows[index].DimensionScore = rows[index].V2DimensionScore
+			}
+		}
+	}
 	return rows, total, err
 }
 

@@ -131,6 +131,17 @@ describe('Competency result management', () => {
     expect(source).toContain('prop="scoreSum"')
   })
 
+  // TestBugFB221_ManagementResultsLabelPercentageScores
+  // 对应：docs/regression-tests.md #FB-221
+  it('labels the latest overall, module and dimension results as percentage scores', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/exam/exam/competencyResults.vue'), 'utf8')
+    for (const label of ['整体分（百分制）', '模块分（百分制）', '维度分（百分制）']) {
+      expect(source).toContain(label)
+    }
+    expect(source).toContain("row.scoreScale === 'percentage'")
+    expect(source).toContain("this.detail.scoreScale === 'percentage'")
+  })
+
   // TestBugFB159_ResultListHidesEvaluationAverage
   // 对应：docs/regression-tests.md #FB-159
   // 范围：只删除胜任力结果列表列，不改变报告、详情、导出或评分字段。
@@ -209,7 +220,11 @@ describe('Competency result management', () => {
     await wrapper.vm.batchGenerateReports()
     expect(generateCompetencyReport).toHaveBeenCalledTimes(2)
     expect(generateCompetencyReport).toHaveBeenNthCalledWith(1, { paperId: 'paper-1', force: true })
+    generateCompetencyReport.mockClear()
     await wrapper.vm.batchDownloadReports()
+    expect(generateCompetencyReport).toHaveBeenCalledTimes(2)
+    expect(generateCompetencyReport).toHaveBeenNthCalledWith(1, { paperId: 'paper-1', force: false })
+    expect(generateCompetencyReport).toHaveBeenNthCalledWith(2, { paperId: 'paper-2', force: false })
     expect(downloadCompetencyReportsArchive).toHaveBeenCalledTimes(1)
     expect(downloadCompetencyReportsArchive).toHaveBeenCalledWith(['paper-1', 'paper-2'])
     expect(saveAs).toHaveBeenCalledTimes(1)
@@ -238,6 +253,50 @@ describe('Competency result management', () => {
     expect(downloadCompetencyReportsArchive).toHaveBeenCalledWith(['paper-zip-1', 'paper-zip-2'])
     expect(saveAs).toHaveBeenCalledTimes(1)
     expect(wrapper.vm.$message.success).toHaveBeenCalledWith('批量下载完成，共2份，已打包为ZIP')
+  })
+
+  // TestBugFB220_BatchDownloadGeneratesMissingReports
+  // 对应：docs/regression-tests.md #FB-220
+  // 复现：完整答卷尚未生成报告时直接点击“批量下载”，ZIP接口返回“报告尚未生成”。
+  // 期望：批量下载先为冻结的所选答卷幂等确保报告存在，再请求一次ZIP。
+  it('generates missing reports before requesting the batch-download archive', async () => {
+    generateCompetencyReport.mockClear()
+    downloadCompetencyReportsArchive.mockClear()
+    const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
+    wrapper.vm.$message = { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
+    wrapper.vm.selectedRows = [
+      { paperId: 'paper-missing-1', participantName: '甲', isComplete: 1 },
+      { paperId: 'paper-missing-2', participantName: '乙', isComplete: 1 }
+    ]
+
+    await wrapper.vm.batchDownloadReports()
+
+    expect(generateCompetencyReport).toHaveBeenCalledTimes(2)
+    expect(generateCompetencyReport).toHaveBeenNthCalledWith(1, { paperId: 'paper-missing-1', force: false })
+    expect(generateCompetencyReport).toHaveBeenNthCalledWith(2, { paperId: 'paper-missing-2', force: false })
+    expect(downloadCompetencyReportsArchive).toHaveBeenCalledTimes(1)
+    expect(generateCompetencyReport.mock.invocationCallOrder[1]).toBeLessThan(downloadCompetencyReportsArchive.mock.invocationCallOrder[0])
+  })
+
+  it('does not request a partial archive when preparing one selected report fails', async () => {
+    generateCompetencyReport.mockReset()
+      .mockResolvedValueOnce({ data: { id: 'report-1' } })
+      .mockRejectedValueOnce(new Error('报告内容未批准'))
+    downloadCompetencyReportsArchive.mockClear()
+    saveAs.mockClear()
+    const wrapper = mountPage({ loadExam: vi.fn(), loadResults: vi.fn() })
+    wrapper.vm.$message = { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
+    wrapper.vm.selectedRows = [
+      { paperId: 'paper-ready', participantName: '甲', isComplete: 1 },
+      { paperId: 'paper-blocked', participantName: '乙', isComplete: 1 }
+    ]
+
+    await wrapper.vm.batchDownloadReports()
+
+    expect(downloadCompetencyReportsArchive).not.toHaveBeenCalled()
+    expect(saveAs).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('报告内容未批准')
+    expect(wrapper.vm.reportLoading).toBe(false)
   })
 
   // TestBugFB082_BatchGenerationUsesSelectionSnapshot

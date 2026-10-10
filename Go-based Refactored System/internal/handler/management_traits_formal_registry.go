@@ -24,10 +24,28 @@ func NewManagementTraitsFormalRegistryHandler(db *gorm.DB) *ManagementTraitsForm
 
 func (h *ManagementTraitsFormalRegistryHandler) RegisterRoutes(group *gin.RouterGroup) {
 	group.GET("/versions", h.List)
+	group.POST("/assets/preview", h.PreviewAssets)
 	group.POST("/versions/register", h.Register)
 	group.POST("/versions/approve", h.Approve)
 	group.POST("/versions/activate", h.Activate)
 	group.POST("/versions/revoke", h.Revoke)
+}
+
+func (h *ManagementTraitsFormalRegistryHandler) PreviewAssets(c *gin.Context) {
+	if _, ok := formalRegistryActor(c); !ok {
+		return
+	}
+	body, ok := formalRegistryBody(c, "repoCode", "assetKey")
+	if !ok {
+		managementTraitsRuntimeHTTPError(c, 400, "参数格式错误：仅允许005产品代码及受控资产标识")
+		return
+	}
+	data, err := h.registry.PreviewAssets(c.Request.Context(), body["repoCode"], body["assetKey"])
+	if errors.Is(err, service.ErrManagementTraitsFormalInvalid) {
+		managementTraitsRuntimeHTTPError(c, 400, "仅允许00501或00502及合法受控资产标识")
+		return
+	}
+	formalRegistryRespond(c, data, err)
 }
 
 // Deliberately retain the existing management-traits administrator boundary.

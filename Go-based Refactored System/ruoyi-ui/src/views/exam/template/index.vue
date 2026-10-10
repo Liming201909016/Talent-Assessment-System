@@ -9,7 +9,7 @@
       <div slot="header" class="card-header">
         <div>
           <strong>00401 一期胜任力 v2 报告模板</strong>
-          <span class="card-subtitle">基层员工版 · 60字段 · 12业务图表 · value-only</span>
+          <span class="card-subtitle">基层员工版 · 60个可选语义字段 · 12业务图表 · value-only</span>
         </div>
         <el-tag v-if="phase1Template.exists" :type="phase1Template.valid ? 'success' : 'danger'" size="small">
           {{ phase1Template.valid ? '校验通过' : '校验失败' }}
@@ -27,6 +27,7 @@
       <el-alert v-if="phase1Template.validationError" :title="phase1Template.validationError" type="error" :closable="false" show-icon class="contract-alert" />
 
       <div class="phase1-actions">
+        <el-button icon="el-icon-document" @click="openPhase1SemanticFields">模板字段</el-button>
         <el-button icon="el-icon-download" :loading="phase1Downloading" :disabled="!phase1Template.exists" @click="downloadPhase1Template">下载模板</el-button>
         <el-upload
           ref="phase1Upload"
@@ -42,7 +43,7 @@
         <span class="selected-file" :title="phase1File ? phase1File.name : ''">{{ phase1File ? phase1File.name : '未选择文件' }}</span>
         <el-button type="primary" icon="el-icon-upload2" :loading="phase1Uploading" :disabled="!phase1File" @click="uploadPhase1Template">上传并生效</el-button>
       </div>
-      <p class="upload-hint">仅支持 20MB 以内 DOCX。系统将严格校验正文与页眉中的 60 个 v2 业务字段、12 个业务图表、零公式/引用/外部链接及页码契约；通过后备份旧 v2 模板并原子替换，不影响历史 v1 模板。</p>
+      <p class="upload-hint">仅支持 20MB 以内 DOCX。60个语义字段均可按需添加，同一Tag可在多处重复并显示相同内容；系统仍严格校验已使用Tag、12个业务图表、零公式/引用/外部链接及页码契约。</p>
     </el-card>
 
     <el-card class="management-traits-card" shadow="never" v-loading="managementTraitsTemplateLoading">
@@ -67,6 +68,7 @@
       <el-alert v-if="managementTraitsTemplate.validationError" :title="managementTraitsTemplate.validationError" type="error" :closable="false" show-icon class="contract-alert" />
 
       <div class="phase1-actions">
+        <el-button icon="el-icon-document" @click="openManagementTraitsSemanticFields">模板字段</el-button>
         <el-button icon="el-icon-download" :loading="managementTraitsTemplateDownloading" :disabled="!managementTraitsTemplate.exists" @click="downloadManagementTraitsTemplate">下载模板</el-button>
         <el-upload
           ref="managementTraitsTemplateUpload"
@@ -81,8 +83,27 @@
         <span class="selected-file" :title="managementTraitsTemplateFile ? managementTraitsTemplateFile.name : ''">{{ managementTraitsTemplateFile ? managementTraitsTemplateFile.name : '未选择文件' }}</span>
         <el-button type="primary" icon="el-icon-upload2" :loading="managementTraitsTemplateUploading" :disabled="!managementTraitsTemplateFile" @click="uploadManagementTraitsTemplate">上传并生效</el-button>
       </div>
-      <p class="upload-hint">仅支持20MB以内DOCX。系统校验90个内容控件、6个业务图表、5个数字标签、零外部关系，并在备份旧模板后原子替换。上传后仅影响新生成或重发报告，历史PDF保持不变。</p>
+      <p class="upload-hint">仅支持20MB以内DOCX。模板支持95个可填充语义字段，同一Tag可重复使用；系统校验必需字段、6个业务图表、5个数字标签和零外部关系。上传后仅影响新生成或重发报告。</p>
     </el-card>
+
+    <el-dialog
+      :title="semanticFieldDialogTitle"
+      :visible.sync="semanticFieldDialogVisible"
+      width="760px"
+      custom-class="semantic-field-dialog"
+      append-to-body
+    >
+      <el-alert title="在 Word“开发工具 → 控件属性 → 标记”中填写Tag。同一Tag可添加到多个位置，生成报告时这些位置会显示相同内容。" type="info" :closable="false" show-icon />
+      <el-input v-model.trim="semanticFieldKeyword" clearable prefix-icon="el-icon-search" placeholder="搜索Tag、名称或描述" class="semantic-field-search" />
+      <el-table :data="filteredSemanticFields" border size="mini" max-height="460" empty-text="暂无匹配字段">
+        <el-table-column label="Tag" prop="key" min-width="230" show-overflow-tooltip>
+          <template slot-scope="scope"><code>{{ scope.row.key }}</code></template>
+        </el-table-column>
+        <el-table-column label="名称" prop="name" min-width="130" show-overflow-tooltip />
+        <el-table-column label="描述" prop="description" min-width="260" show-overflow-tooltip />
+      </el-table>
+      <span slot="footer"><el-button type="primary" @click="semanticFieldDialogVisible = false">关闭</el-button></span>
+    </el-dialog>
 
     <div style="margin: 16px 0 8px;">
       <h3 style="margin:0 0 4px; font-size:15px">MBTI 报告模板管理</h3>
@@ -183,7 +204,8 @@ export default {
         businessCharts: 0,
         embeddedWorkbooks: 0,
         externalLinks: 0,
-        visibleTokens: 0
+        visibleTokens: 0,
+        semanticFields: []
       },
       managementTraitsTemplateLoading: false,
       managementTraitsTemplateDownloading: false,
@@ -201,8 +223,13 @@ export default {
         contentControls: 0,
         businessCharts: 0,
         numericLabels: 0,
-        externalLinks: 0
-      }
+        externalLinks: 0,
+        semanticFields: []
+      },
+      semanticFieldDialogVisible: false,
+      semanticFieldDialogTitle: '',
+      semanticFieldKeyword: '',
+      semanticFieldRows: []
     }
   },
   computed: {
@@ -223,6 +250,11 @@ export default {
     managementTraitsContractText() {
       if (!this.managementTraitsTemplate.exists) return '—'
       return `${this.managementTraitsTemplate.contentControls || 0} 控件 / ${this.managementTraitsTemplate.businessCharts || 0} 图表 / ${this.managementTraitsTemplate.numericLabels || 0} 数字标签 / ${this.managementTraitsTemplate.externalLinks || 0} 外链`
+    },
+    filteredSemanticFields() {
+      const keyword = (this.semanticFieldKeyword || '').toLowerCase()
+      if (!keyword) return this.semanticFieldRows
+      return this.semanticFieldRows.filter(field => [field.key, field.name, field.description].some(value => String(value || '').toLowerCase().includes(keyword)))
     }
   },
   created() {
@@ -231,6 +263,18 @@ export default {
     this.fetchManagementTraitsTemplate()
   },
   methods: {
+    openPhase1SemanticFields() {
+      this.semanticFieldDialogTitle = '00401 胜任力模板字段'
+      this.semanticFieldKeyword = ''
+      this.semanticFieldRows = [...(this.phase1Template.semanticFields || [])]
+      this.semanticFieldDialogVisible = true
+    },
+    openManagementTraitsSemanticFields() {
+      this.semanticFieldDialogTitle = '00501 / 00502 共用模板字段'
+      this.semanticFieldKeyword = ''
+      this.semanticFieldRows = [...(this.managementTraitsTemplate.semanticFields || [])]
+      this.semanticFieldDialogVisible = true
+    },
     async fetchPhase1Template() {
       this.phase1Loading = true
       try {
@@ -465,9 +509,12 @@ export default {
 .phase1-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .selected-file { flex: 1; min-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #606266; }
 .upload-hint { margin-top: 8px; }
+.semantic-field-search { margin: 12px 0 8px; }
+.semantic-field-dialog code { color: #303133; font-size: 12px; }
 @media (max-width: 767px) {
   .card-header, .phase1-actions { align-items: flex-start; flex-wrap: wrap; }
   .selected-file { flex-basis: 100%; }
   .phase1-actions .el-button { min-height: 40px; }
+  ::v-deep .semantic-field-dialog { width: calc(100% - 24px) !important; margin-top: 4vh !important; }
 }
 </style>

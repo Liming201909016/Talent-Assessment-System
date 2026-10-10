@@ -6,6 +6,130 @@
 - 历史`PARTIAL/BLOCKED/未部署`若已被后续同范围真实证据关闭，保留作过程证据，但不再是当前状态。禁止删除失败历史或覆写原收据。
 - 当前待办已按P0/P1/P2整理在[遗漏事项](project-status.md#5-仍需处理的遗漏事项)；不要从下方两千余行历史中重新猜当前待办。
 
+# 2026-10-10 UF-068 production新版结果服务不可用
+
+- 发布后用户反馈“新版结果服务暂不可用”。只读production journal在23:40:36、23:40:48、23:41:06三次记录同一内部原因：缺少`contentVersion=competency-phase1-content-v2`、`audience=frontline_employee`、`contentType=development`、`identity=competency-logical-reasoning`、`condition=good`。
+- 该提示是`ErrPhase1V2ResultRunUnavailable`对内部错误的受控脱敏，不表示进程、数据库或全部结果服务宕机。FB-222已将最低两项改为精确读取Excel G/I/K对应的`development`短评并对缺行失败关闭；production代码已生效，但对应正式内容数据未随代码发布补齐。
+- 当前结论：部署资产与既有758份历史PDF保护收据继续有效；命中“逻辑思维/良好”的新报告生成及批量准备为RED。用户尚未提供触发步骤、影响范围及exam/paper ID；本轮只读查日志，DB写0、报告重生成0、服务操作0。后续必须先补RED完整性检查，再按正式内容批准边界备份、补数据、验证并回写。
+
+# 2026-10-10 日终清理与交接
+
+- 仅清理可再生过程产物：B区`bin`约3.18GB、`tmp`约186MB、明确标注的临时00401 PDF，以及215个被忽略的LibreOffice `user`运行profile；恢复误变更的跟踪coverage文件和个人Python环境设置。保留`scripts/test/results`、正式备份、客户原件、评审报告及可复核视觉证据，不把证据当垃圾删除。
+- Git worktree仅保留主工作区；隔离release worktree已不存在，执行prune后无陈旧登记。最终诊断0、`git diff --check`退出0；Go全量、server build、前端35文件616项和production build均通过。
+- 首次前端验证调用不存在的`npm run build`而退出1；查明仓库实际脚本为`build:prod`后执行成功，原失败作为命令选择错误保留，不是产品构建失败。
+
+# 2026-10-10 FB-220～FB-231 production累计发布完成
+
+- 用户明确选择“本轮全部staging变更”，且00401历史报告处理为“只换模板”。production写前收据：MySQL5.7.44，server/process=`13d5f07e...`，index=`593d4a20...`/393，模板=`52e0020c...`，state1=0、未过期state0=0，内外health200。
+- 精确冻结staging server=`6c878c88...`、front index=`0e8e02aa...`/393及活动模板=`d4daf935...`。模板合同实际RED：缺总体环图中心“总体评价”语义；未盲目推广。用户明确选择此前Word/LibreOffice/staging报告已验收的608305-byte模板`ef92bfba...`，合同复验59字段/12图PASS。
+- 受限payload三项SHA在production写前复核；完整回滚备份=`/opt/talent-assessment/backups/production-fb220-fb231-20261010233739`，含旧server、旧template及可解包POSIX前端tar。单次停启原子切换，rollback未触发，payload/previous/next残留0。
+- 最终production server/process=`6c878c88...`、index=`0e8e02aa...`/393、template=`ef92bfba...`；PID2382320→2394050，NRestarts0。8092 health、8090 root/API均200；captcha API code200/base64长度1132，真实浏览器登录页验证码120×40且无undefined。发布后关键日志0、Nginx5xx0、tester/list请求0。
+- 严格遵守“不重生成历史报告”：非backup范围758份PDF数量不变，逐文件SHA清单写前后均`fa8925a8167016cf0feedd8552320548490ed8c9a01e7b242e7267ac75ace263`；DB写0、报告生成0。未使用管理员业务凭据，因此本轮未在production重新执行认证后的批量ZIP、模板元数据或人员页DOM流程；这些功能沿精确部署字节及既有local/staging验收收据。
+
+# 2026-10-10 UF-062 客户最新00401模板剔除时长与替换评估
+
+- [staging关闭 - 2026-10-10 23:27 / UF-067 / FB-231] 首次前端发布preflight在写前因template期望ef92、实际d4daf935漂移而失败；payload已本地生成但远端写0。确认FB-231只拥有front后，重新门禁server6c878c88/front b0576cc/393/health/active0，显式记录template observed d4daf935/action preserve。POSIX tar备份并原子发布index0e8e02aa/393，备份=`/opt/talent-assessment/backups/fb231-staging-frontend-20261010232709`，restart0/DB0/rollback未触发。远端lazy chunk `chunk-2002bfee.2f3f7071.js` SHA=`f229a113...`与本地测试包精确相等；发布后tester/list日志0、403=0。浏览器mock动态路由尝试因集成页会话/路由层未完成DOM验收，不冒真实认证浏览器PASS；用户刷新并选测评后的人工复核仍可补充。template d4daf935原样保留，来源未在本任务追溯，production0。
+- [本地修复 - 2026-10-10 / UF-067 / FB-231] 五问确认direct `/#/qu/tester`、所有管理员/测评感知、无examId；日志23:14～23:20六次unfiltered tester/list403。根因不是权限，而是SFC created先调用getList，空examId触发AllLegacy保护。已有测试还故意要求保留坏请求，先纠正后RED1/8；最小修复空examId零API、清列表/total/loading，查询提示和empty-text，后端guard不动。专项8/8、全前端617、build0，候选index=`0e8e02aa...`/393。未部署，staging旧index=`b0576cc...`仍RED，等待用户明确staging发布。
+- [staging关闭 - 2026-10-10 23:05 / UF-066 / FB-230] 新RED要求standalone overall chart附近保留标签、动态overall.score、单位，渲染DOCX必须含真实替换值。修复器在inline环图段落叠加WPS shape无边框文字层，含固定“总体评价”、repeatable overall.score控件和“分”；本地真实68.13视觉居中。最终模板SHA=`ef92bfba...`/608305，Word9页无写回，合同、聚焦、Go全量/build通过。发布备份=`/opt/talent-assessment/backups/fb230-staging-template-20261010230534`；报告备份=`/opt/talent-assessment/backups/fb230-staging-report-20261010230551`。真实paper当前score=60.94，report PDF=`c6fbd4bb...`/813847/10页/audit57；目标实图中心标签/60.94/分、physical2/3页码、十维图均通过。远端中文grep受locale返回0，失败门禁保留；下载PDF本地文本label1、60.94分2并以实图独立确认。PID3394/NRestarts0、server/front不变、health/log/active/temp全GREEN，production0。
+- [纠正 - 2026-10-10 / UF-066] FB-229的“总体环图可见”仅证明图形恢复，不能代表中心语义完整。用户指出“总体评价68.13分”消失后，字节核验确认源模板overall.score标签10/总体评价4/68.13示例5，最终模板分别6/2/3，最终PDF总体评价0/68.13为0。根因是`ungroup_overall_chart()`用整段替换，仅生成inline chart，丢弃同组的固定标签、动态overall.score内容控件和单位。评分值仍在chart1与DTO，不是数据丢失。UF-065总体结论纠正为：页码GREEN、环图形状GREEN、中心语义RED；当前不轻率修改，未触碰远端或数据。
+- [staging关闭 - 2026-10-10 22:48 / UF-065 / FB-229] 用户批准部署。写前server=`6c878c88...`、front=`b0576cc...`、template=`75b79b93...`、active0。首轮模板备份=`/opt/talent-assessment/backups/fb229-staging-template-20261010224608`，首次报告备份=`/opt/talent-assessment/backups/fb229-staging-report-20261010224628`；generate实际success=true/code0并写成PDF=`86cfbfd6...`，但wrapper错误断言code200而exit1，session仍cleanup0。实图证明环图恢复但physical2页码仍缺，未冒PASS。定位为LO24.2抑制`titlePg+first footer`，新增RED后最终模板SHA=`b8d67662...`，二次模板备份=`/opt/talent-assessment/backups/fb229-staging-template-v2-20261010224819`，中间报告备份=`/opt/talent-assessment/backups/fb229-staging-report-v2-20261010224840`。最终同report重生成812318 bytes/SHA=`f677860b...`/10页/audit42；实图physical2第1页、physical3第2页、physical4环图、physical5十维图均PASS。server/front不变、restart0、DB写仅两次受控report generate/audit，Redis/temp0，production0。
+- [本地修复 - 2026-10-10 / UF-065 / FB-229] 先用新合同对活动候选取得RED（overall wpg、footer WPS）。首版修复结构合同/LO视觉通过但Word报损坏；隔离四转换确认chart materialization是唯一Word破坏源，footer-only/overall-only/comparison-only均Word9页，materialize-only失败。将ElementTree图表重序列化改为精确字节级numRef/strRef cache→literal、externalData/relationship删除后，最终候选SHA=`3ae478fe...`/608023可由Word实开9页且无写回。v2 renderer+LO26.2 PDF=`0fb868f0...`/750385/A4 9页；实图physical2=`第1页`、physical3=`第2页`、overview环图/十维图可见。全Go/build通过。测试曾因活动客户模板59字段暴露5条陈旧“60物理控件/必须validity.text”假设，按已批准FB-224政策改为DTO始终60、模板物理59且validity.text可缺。仅local更新模板，不远端发布/重生成。
+- [只读分析 - 2026-10-10 22:17 / UF-065] staging exam1790563924752356969唯一current PDF为820207 bytes/SHA=`979610a1...`、LO24.2/A4 10页。实图：physical2无页码、physical3显示“第 2 页”、physical4总体评价左框空白、physical5十维图正常。模板结构证明第二节`titlePg/start=1`的first footer2与default footer1分离；footer2 PAGE在`mc:AlternateContent/wps`浮动文本框且Fallback空，LO未显示首节页脚对象，而footer1后续可见。总体环图`chart.overall.score`仍在`mc:AlternateContent/wpg`组合，rId26/chart1已正确写68.125/31.875；LO丢图不是数据错误。修复器只解组comparison，合同只测PAGE存在和chart XML，均漏掉PDF可见性。首次证据目录由sudo创建导致普通SSH清理permission denied，随后sudo精确清理PASS；模板空白probe归档两次因实际文件名/远端shell quoting失败，最终远端目录清0，不将该probe冒充证据。未改代码/模板/PDF/DB/配置，按用户要求停止在分析。
+- [关闭 - 2026-10-10 22:03 / UF-064 / FB-228] 用户给出paper=`24504b9c-1874-4bbd-af09-f9d0d83abb16`真实批量下载仍报未生成。首次只读SQL错误引用不存在的`el_paper.is_complete`而exit1，未产生DB写；随后先查information_schema再用真实列，确认current/report/v2 run完整且legacy result仍v1。根因是batch loader按legacy tuple键取报告，与单份下载current语义不一致。新增源码合同RED后，批量预载current、completed reports和run（无N+1），current分支验证paper/audience/report/run/v2四版本和环境批准，无current保持旧兼容。专项、全Go、全build GREEN；Linux SHA=`6c878c88...`，备份=`/opt/talent-assessment/backups/fb228-staging-backend-20261010220324`。真实认证ZIP=693998 bytes/1 entry，PDF=820207 bytes/SHA=`99c40ab...`，audit19→20，Redis/temp0；PID3394/NRestarts0。production0。
+- [关闭 - 2026-10-10 21:48 / UF-063 / FB-227] 用户五问确认本次发布后所有账号、新开页面访问根地址均被阻断且没有到登录页。部署前端来自隔离worktree，而`ruoyi-ui/.env.production`被父级`.gitignore`排除；未显式注入时Axios baseURL为空。前端616项通过后以`VUE_APP_BASE_API=/prod-api`重建，候选bundle先断言前缀存在；原子前端only发布，index=`b0576cc2...`/393，POSIX tar回滚备份=`/opt/talent-assessment/backups/fb227-staging-frontend-20261010214846`。浏览器实际验证码120×40/无破图，请求`/prod-api/captchaImage`；合成无效旧Token请求`/prod-api/getInfo`返回401后清Token回登录页，pageErrors0、无avatar/405/重复提交。后端/模板/Schema/DB未改，backend restart0、production0。npm依赖恢复曾输出155个既有依赖审计项，不在本次单一构建配置修复范围，未执行自动升级。
+- [纠正 - 2026-10-10 21:41 / staging浏览器部署检查] 真实浏览器打开`http://20.200.136.133/#/`两次均加载登录页和静态资源，但验证码图片为破图，控制台`ERR_INVALID_URL`。活动前端请求`/captchaImage`，HTTP200响应实际为16290-byte `text/html`首页；随后登录页按源码拼为`data:image/gif;base64,undefined`（naturalWidth/Height=0）。同源`/prod-api/captchaImage`为HTTP200 JSON，`captchaOnOff=true`、PNG base64长度1112并有uuid，证明后端验证码正常而已发布前端API base路径错误。故21:36 exact-byte republish的服务/SHA/元数据收据仍有效，但其浏览器登录结论纠正为NO-GO；health200不能代表登录可用。本轮纯只读，未尝试登录、未修改远端或production。
+- [staging重新发布 - 2026-10-10 21:36 / FB-226] 用户要求“重新发布”，范围沿当前对话明确为20.200.136.133 staging；未扩大至production。写前只读门禁确认PID25353、NRestarts0、后端/进程=`e221ab45...`、index=`16455aef...`/393、模板=`75b79b93...`、三服务/内外health GREEN、active paper0。以当前已验收字节生成受限payload和新备份`/opt/talent-assessment/backups/fb226-staging-republish-20261010213613`；dist备份使用POSIX tar并在写前解出index核SHA，rollback首句`trap - ERR`。原子重装三项并重启后PID26356/NRestarts0，三项SHA不变，内外/公网health200、关键日志0、临时残留0、DB写0/rollback未触发。认证元数据复验00401=60、005=95/required90、repeatable=true，临时Redis会话清理后EXISTS0。该操作是exact-byte republish，不替代前一轮真实报告验收，也未再次生成报告。
+- [staging完成 - 2026-10-10 / FB-224～FB-226 / UF-059～UF-061] 精确隔离候选发布：后端/进程SHA=`e221ab4512724e9c7748f4d78c88618930bb3e29fdd64eb99a5c0c66550cffd0`（50238404 bytes），前端index SHA=`16455aefeec9df8fda97298b32f0cfe90d1fa83860b0f9433e500e81e0c3d86f`/393文件，00401 v2模板SHA=`75b79b93e36a3a8dee83abb1d822faa5fae49a500597389c5bc5c63f2c3cd6dc`。认证元数据00401=60全可选可重复、005=95（90必需+5可选）全可重复；临时Redis管理员会话删除后EXISTS=0。指定paper=`24504b9c-1874-4bbd-af09-f9d0d83abb16`经真实generate force重生成，report=`7426a5dc-3020-4917-9f65-0b0f14b86cb0`，PDF=820207 bytes/SHA=`7150a3a85a987a34a0a371acd5bbbf93f27f1708295c5fe418816b2f74605b3a`、A4 10页、时长/分钟/页共匹配0；10页图片生成并抽检封面/图表/末页后，远端临时文件清0。最终PID25353/NRestarts0/三服务active/内外health200/active0/关键日志0。备份：`/opt/talent-assessment/backups/fb226-staging-20261010212040`及报告备份`/opt/talent-assessment/backups/fb226-staging-report-20261010212600`。production未修改。
+- [失败保留 - 2026-10-10 / FB-226部署] 首次部署回滚函数在`ERR` trap内未先取消trap，恢复后端/模板并启动服务时继续递归触发，最终造成systemd start-limit；同时Windows `Compress-Archive`生成ZIP使用反斜杠，Linux unzip未还原真实目录，旧dist先被清空且备份zip为空。实际恢复顺序：确认旧server/template精确SHA→上传POSIX tar的新dist并恢复前端/旧服务→使用先`trap - ERR`的非递归回滚函数部署新server/template→全门禁通过。以后跨Windows/Linux前端发布禁止`Compress-Archive`，必须用POSIX tar；rollback函数第一句必须取消ERR trap。本地隔离worktree首次标准删除又因Windows文件名过长失败；执行`git worktree prune`并使用长路径前缀删除后，候选目录已确认不存在。
+- [新增 - 2026-10-10 / FB-226] 模板元数据新增统一`semanticFields[{key,name,description,required,repeatable}]`。影响消费者闭包：00401 v2 info/upload返回及模板管理页/单测同步修改；005 info/upload返回及同一页面/单测同步修改；v1共享结构初始化非nil空数组，无其他调用点需修改。00401清单60项全部可选；005清单95项中90项保持必需，`overall.score`和四个`module.*.score`可作为内容控件新增，也继续支持原固定数字标签。
+- [新增 - 2026-10-10 / FB-226] 005 renderer原以“内容控件总数=90且唯一键=90”判定合同，导致同Tag重复和新增已支持可选Tag被拒。现改为逐项要求90个必需键至少出现一次；所有已知Tag可重复并逐个写入同一字段值，未知Tag继续失败关闭。回归实际构造92控件模板（`participant.name`重复+新增`overall.score`），验证两处姓名同值、总体分填充及元数据控件数92。
+- [新增 - 2026-10-10 / FB-226] 前端两张模板卡各新增普通层级“模板字段”按钮，一个760px可搜索弹窗复用展示；移动端宽度为视口减24px，表格最大高460px。RED为两个方法不存在；GREEN为聚焦10项、前端全量35文件616项、production build通过（仅既有资源体积warning）。Go聚焦、全量与server build通过；编辑器诊断0。未访问数据库、浏览器远端或部署。
+- [补充 - 2026-10-10 / FB-225] 用户要求以客户模板为基准、不补`validity.text`并发布staging。新增定向修复器只处理已确认阻断：清除24项Word图表外链产物、将12图缓存引用物化为value-only、解组十维对比图、三份页脚移除NUMPAGES/“共”总页显示；不新增可选语义字段。最终候选617264 bytes/SHA=`75b79b93e36a3a8dee83abb1d822faa5fae49a500597389c5bc5c63f2c3cd6dc`，相对客户原件变化28个OOXML部件（12 chart XML、12 chart rels、document及3 footer）。
+- [补充 - 2026-10-10 / FB-225] `resolvePhase1V2BusinessChartParts()`现兼容客户Word组合对象使用`wpg:cNvPr`保存标题，同时按关系解析总体图；十维对比图候选本身已拆为普通inline。RED依次暴露外链、组合图关系、NUMPAGES、总体图组合解析、图表引用和footer3静态总页数；GREEN为Python全包XML/59字段/12图合同、Go上传与完整60字段DTO渲染、Go全量/build。Linux候选50240955 bytes/SHA=`b30e08de1f8fdab92e8a4a12a2243a37126e7ae5bb5ea9cb40bece92816e1e92`。
+- [补充 - 2026-10-10 / FB-225] LibreOffice本地9页PDF=762589 bytes/SHA=`27ce7da07255d5200d27829c5c0b741038db94bf79a7b2fb8236a3ad52b3fe96`，文本无时长/分钟/总页提示，页面抽检确认十维柱、常模线、等级图和当前页码可见。首次两轮本地转换分别“无PDF”和“source file could not be loaded”，推动补充全包XML门禁并修正解组Drawing命名空间；这些失败不作为最终通过证据。
+- [staging阻断 - 2026-10-10 / FB-225] SSH 22端口零写预检连续两次ConnectTimeout；复核80端口和`/prod-api/health`为200，8090公网端口不可达，Azure CLI当前订阅看不到该VM。按两轮门禁停止继续猜测，未上传候选、未创建远端备份、未停止服务、未替换任何字节、数据库写0。staging发布和真实报告测试尚未开始。
+- [纠正 - 2026-10-10 / FB-224] 用户确认00401 v2模板全部内容控件均可缺失，包括`report.disclaimer`和`validity.text`；此前“缺`validity.text`必须阻断替换”的结论不再适用于本地新代码。仅字段缺失被放宽，未知Tag及图表、外链、可见占位符、`NUMPAGES`合同仍严格。
+- FB-224按RED/GREEN完成：RED由`TestBugFB224_Phase1V2TemplateAllowsMissingContentControls`命中`缺少v2内容控件Tag：report.disclaimer`；GREEN后上传合同保留注册字段总数60并按实际Tag报告`UsedFields<60`，渲染对现存Tag填值、不重建缺失Tag，个人信息控件全缺时过滤器无操作。handler、Go全量、server build和gofmt检查通过；Python严格脚本改为接受1～60个唯一字段，语法通过，客户候选仍精确命中组合对比图RED。未部署远端。
+- 上传门禁复核：`UploadPhase1V2Template()`在清理外部图表关系后调用专用`validatePhase1V2WordTemplateUpload()`；该校验已逐项要求60字段并调用`validatePhase1PageNumberFields()`，所以当前候选会先因缺`validity.text`被拒绝，补齐后仍会因`NUMPAGES`被拒绝。无需放宽这两项。
+[纠正 - 2026-10-10 / FB-224] 上述“逐项要求60字段、无需放宽”已被用户新决策覆盖；本地校验不再逐项要求字段存在，但仍调用页码门禁拒绝`NUMPAGES`。
+- 已确认一个真实门禁缺口：`resolvePhase1V2BusinessChartParts()`仅用`wp:anchor/wp:inline`正则解析图表标题和关系，不检查对象的`mc:AlternateContent/wpg`祖先；因此组合中的`chart.dimension.comparison`仍可被计入12图并通过可写数据校验。该结构曾由FB-192证实会被LibreOffice丢弃，属于上传时必须拒绝的运行兼容问题。
+- 本地证据：Go现有专用v2合同与`NUMPAGES`测试2/2通过；严格脚本对客户候选真实退出1并命中`comparison chart remains in mc:AlternateContent/wpg group`。同一脚本对当前活动SHA=`52e0020c...`也退出1，但命中的是FB-194“总体得分+overall.score同段”旧视觉断言`StopIteration`，不是活动模板运行合同失败；后续应拆分上传兼容门禁与版本化视觉门禁。
+- 客户原件`docs/261010胜任力待完善/最新胜任力报告模板.docx`保持720337 bytes/SHA=`83bb2c895d538d6759dd7246c3ed15fe5765eb13023b9a1865b8b991f639b0fc`不变；活动模板仍为611455 bytes/SHA=`52e0020c5a6f39535d020bf41b18d9412c096ab43ce6608964b0101b955f30b9`。
+- 原件含两个`result.userTime`控件：一个值为20且已有`w:vanish`，另一个为空白白色占位。独立候选`最新胜任力报告模板-剔除时长-候选.docx`移除重复空白控件、保留隐藏运行合同；候选648445 bytes/SHA=`e1f4f80754f3d98b494542d2e44305a60be02219c8a02eb285c4b4f6ee9e2b28`，解包对比仅`word/document.xml`变化。
+- LibreOffice短路径/隔离profile转换成功：PDF 831767 bytes/SHA=`b40d459d2f4645c72a84d7a2cc717d08096fa925427510a37f8b3ae18215f4d3`、12页A4，提取文本无“时长/分钟”。这仅证明可渲染及无可见时长，不等于可替换。
+- 严格格式合同仍RED：`chart.dimension.comparison`位于`mc:AlternateContent/wpg`组合；跨正文/页眉仅59个唯一语义Tag，缺`validity.text`；页脚含v2上传门禁禁止的`NUMPAGES`。既有修复器另存评估时因`comparison chart relationships not found`失败，未产出修复版。
+- 结论：直接替换NO-GO，活动模板、本地代码、数据库、staging和production均未修改。后续须为该客户重存结构定向修复上述三项，再完整运行60字段、12图、v2上传、LibreOffice及视觉门禁。
+
+# 2026-10-10 UF-061 / FB-222 待发展项Excel短评映射本地修复
+
+- 用户确认00401 v2报告待发展项应使用`260918基层员工胜任力测评题本+等级评价+总体评价.xlsx`“等级评价”Sheet中对应等级的“综合表现评估（待发展项）”。工作簿实证G/I/K列分别对应L1/L2/L3短评；生成器已将其导入`contentType=development`，F/H/J/L/N完整文案仍属`dimension`。
+- RED证明DTO错误读取`dimension`且缺少`development`行仍成功。GREEN仅将最低两项的正文查找改为`development`并保持精确维度/等级/版本/受众门禁；缺行失败关闭。最高3/最低2排序、优势项、评分、详细维度完整表现评估、模板均未修改。
+- 聚焦4项、service完整包、Go全量及server build通过，目标文件诊断0。当前仅LOCAL GREEN；未访问数据库、真实报告、staging或production，既有远端PDF不会自动变化。FB-198“五项均使用完整dimension文案”的历史结论仅对当时版本有效，待发展部分已被本记录纠正。
+
+# 2026-10-10 UF-060 / FB-221 胜任力管理结果百分制本地修复
+
+- 截图显示同一90/90结果在管理列表为整体分30.38、详情维度为2.63～3.38，属于v1旧口径；当前v2 completed result run已持久化百分制overall/3模块/10维/效度，但管理分页和详情没有消费。
+- RED为最新管理投影函数缺失导致专项编译失败。GREEN新增管理专用`ManagementResultDetail()`：先保留旧详情，v2 Schema/run存在时严格加载并用既有完整性校验后投影百分制；原`ResultDetail()`继续供v1/generic正式报告使用。分页以LEFT JOIN一次性优先v2 overall/所选维度并按百分制排序，无run回退旧值，避免N+1。
+- 前端只在`scoreScale=percentage`时显示“整体分（百分制）/模块分（百分制）/维度分（百分制）”，legacy/generic保持旧标签。专项、affected、Go全量/build、前端35文件614项/build及诊断均通过；未访问真实DB/浏览器/远端，当前仅LOCAL GREEN。
+
+# 2026-10-10 UF-059 / FB-220 胜任力批量下载缺失报告本地修复
+
+- 用户截图显示结果页批量下载返回`报告尚未生成: d3ddba34-5834-4bc0-9f6e-74fe527dd7c9`。代码闭包确认前端只按完整答卷启用选择，直接请求ZIP；后端按设计对任一缺失completed实例整体拒绝，形成可点击但必败的业务链。
+- RED新增实际组件方法测试，前端全量35文件611通过/1失败，命中生成调用0次。GREEN仅修改结果页：对冻结选择逐份`force:false`幂等准备报告，已有报告复用、缺失报告生成；全部成功后单次请求ZIP，任一失败时ZIP/saveAs均为0且显示受控业务消息。
+- 最终前端35文件613项通过，production build完成并仅有既有2类体积warning，目标文件诊断0。未访问数据库、真实浏览器、staging或production；当前仅LOCAL GREEN，远端故障是否关闭仍待部署及真实选择验证。
+
+# 2026-10-10 production孤儿试卷保留例外已治理
+
+- 用户从“归档删除/保留例外/重建父exam”中明确选择“保留并登记例外”。本轮production仅READ ONLY查询和备份流式扫描，DB写0、服务/文件/配置/网络变更0。
+- 当前闭包：409 paper/14缺失父exam，state0/state2=199/210、active0；paper_qu20566、answered1467、paper_qu_answer42963；409条均绑定现存sys_user，candidate/tester/MBTI/00401/005 sidecar引用0。历史范围2022-06-16～2025-10-10，主要源题线索00101/00102。
+- 动态枚举全部paper_id/exam_id列发现旁链：exam_repo24/24个缺失exam、user_exam19/12、user_book43/3；14个paper父exam各有exam_repo，其中还有10个仅exam_repo缺父，user_book另有两个无paper分组。旧全局清理不能形成闭包。
+- 最早完整备份`release_00401_20260727_153001/element.sql.gz`流式查找父exam为0/14；不猜字段、不构造tombstone。14组脱敏指纹=`26836df28929fb71c2fa4b901a8cc2dc0a1dfd14eb61d1b4fcfad27af1a7e21b`。
+- 新增production只读预检和备份覆盖脚本；最终门禁status/baseline PASS、drift0、active0、databaseWrites0、cleanup completed。旧`scripts/sql/cleanup_orphans.sql`改为只读诊断并禁止删除。完整结论见[production-paper-orphan-governance-20261010.md](production-paper-orphan-governance-20261010.md)。
+- 删除约63938条子记录不会自动缩小InnoDB表空间，对根盘80%无明显即时收益；磁盘治理保持独立下一任务。
+
+# 2026-10-10 全项目待办只读评估
+
+- 完成后端架构/数据库/性能/安全、前端业务链、测试/CI、运维/数据治理四条并行审计；完整报告为[project-backlog-assessment-20261010.md](project-backlog-assessment-20261010.md)。本轮未访问远端、未写数据库、未部署。
+- 本地实测Go全量测试exit0、总覆盖率45.7%、server build通过；Vue 35文件/611测试通过，覆盖率`60.25/95.53/39.13/60.25`，production build exit0。`result2.vue`编辑器报告70项诊断，但真实production build通过，因此记录为lint/编辑器债务而非构建阻断。
+- 新增当前P0代码安全事实：匿名`OnlinePaging()`把部门限定`open_type=2`考试一并返回；CORS对任意Origin返回true且允许credentials。按bug规则，后续修复必须先补RED测试。
+- CI当前Go 1.24与`go.mod` 1.26不一致，前端依赖/测试/coverage/lint及gosec均可失败继续；“CI通过”不能证明这些门禁通过。
+- 后端主要P1集中于无边界`HasPrefix`路径检查、GORM错误/RowsAffected吞掉、无统一分页上限、Candidate/Tester和试卷答案N+1、JWT占位密钥未在非local fail-closed。前端主要P1集中于MBTI/00401加载保存提交失败恢复、DataTable永久loading和未知历史回退。
+- 当前Git工作树汇总100条：63 deleted、12 modified、25 untracked。production仍只按封存manifest和SHA识别，禁止从整个当前工作树直接发布。
+
+# 2026-10-10 production磁盘80%治理完成
+
+- 用户在零写盘点后批准“执行推荐清理”，范围仅为可再生系统数据：Snap cache、4个disabled revision、APT package cache、journal归档；明确不碰业务backups、uploadPath、MySQL、home、root旧部署或应用发行文件。
+- 写前根盘80%，used=`31,839,608,832`、avail=`8,116,183,040` bytes；Snap cache=`3,546,935,296`、APT archives=`522,063,872`、journal=`1,166,102,528` bytes。清理后根盘72%，used=`28,536,225,792`、avail=`11,419,566,080`，实际释放`3,303,383,040` bytes；journal降至`192,954,368` bytes。
+- 首轮控制脚本在APT clean后把合法0-byte `lock`误判为payload而退出；此时Snap/APT已清理且服务健康。纠正断言为忽略lock后仅续跑journal vacuum，没有重复触碰业务文件。
+- 终验server SHA=`13d5f07e...`、PID2382320、NRestarts0，Go/MySQL active，内外及公网root/API health均200，最近10分钟panic/fatal/permission0；Chrome148及LibreOffice7.4仍可用。业务backups为46个顶层对象/1,926,959,104 bytes且未删；uploadPath有并发业务新增，只记录脱敏路径指纹、未读取或删除。
+- 完整收据见[production-disk-governance-20261010.md](production-disk-governance-20261010.md)。当前低于75% warning，但72%仍高于长期目标70%；下一步应另行设计持久化journal/cache策略和业务资产保留策略。
+
+# 2026-10-10 005 formal slice2资产preview本地完成
+
+- 开工先复核既有Q1～Q3政策和slice1代码，确认无需重复询问；用户选择补充preview分支并全选00501/00502范围、路径不泄露、空列表非null、读取竞态和预算边界。
+- RED：PreviewAssets/formalReadAssetChecked缺失导致service编译失败，真实httptest命中404。GREEN新增`POST /management-traits/formal/assets/preview`，local-only且只接受00501/00502；零DB依赖/写入，不登记、审批、启用或生成PDF。
+- 返回205规则、88 Tag、6图、5数字槽、工作簿/规范内容/模板/binding SHA，数组非nil；失败用稳定reason code，不含路径/XML/客户正文。读取在Lstat、打开句柄、读后路径三阶段复核identity/size；覆盖20MiB、256 ZIP部件及既有64MiB/100000节点/128深度门禁。
+- 初次全量仅新增preview_path_key/non_005两HTTP负向失败：环境未配置时503优先遮蔽400。调整为先验证产品/key再检查local gate；formal专项35/0、最终Go全量exit0、server build通过、diagnostics0、diff-check0。gofmt只报告工作树CRLF与LF整文件行尾差异，未用终端改写文件。
+- 当前客户原始V2.8模板仍有外链/字段风险，未生成替代候选或批准包；formal registry三表未执行，DTO/storage/PDF/UI及远端部署均0。完整证据见[management-traits-formal-assets-preview-local-20261010.md](management-traits-formal-assets-preview-local-20261010.md)。
+
+# 2026-10-10 UF-058 production动态字段字体漂移只读定位
+
+- 用户对比production 00401 v2模板与生成PDF，指出多个填充字段字体变化，免责声明为明确样本。活动模板SHA=`52e0020c...`保持；解包确认免责声明标签、动态控件run和段落run均显式微软雅黑。本地调用真实renderer后，动态值变化但三处`w:rPr`与模板逐字一致，聚焦value-only回归通过。
+- production当前绑定report=`103d9a0d-0113-4aef-8962-434645783477`的实际数据库/文件为758202 bytes、SHA=`cd6dbce48c1947abaf0ed21e02ba96eed1d433beb1002b2676157dbfda04825f`、更新时间`2026-10-10 08:25:30 +0800`；DB report/current均指向该文件。PDF字体映射实证：免责声明动态正文为嵌入SimSun，固定正文为MicrosoftYaHei；动态性别和日期中文同样出现SimSun。fontconfig精确解析微软雅黑到`MSYH.TTC`、宋体到`SIMSUN.TTC`，不是缺字体。
+- 代码边界实证：通用字段走`replaceWordContentControlText`并保留`w:sdt` wrapper；仅优势/待发展项在UF-057后移除wrapper。同一PDF中已移除wrapper的动态标签和正文为MicrosoftYaHei，因此根因锁定为LibreOffice 7.4对保留内容控件wrapper的已填充值采用宋体，不是模板设置或renderer改写run字体。
+- [纠正 - 2026-10-10] 下方UF-057记录的最终PDF SHA=`cf1385c5...`与当前production数据库/唯一同paper文件不一致。当前权威值为`cd6dbce4...`；旧值保留为当时收据，差异原因尚未追溯，不得继续作为当前绑定SHA。本轮只读分析，未改代码、模板、DB、报告文件或服务。
+- [本地修复与目标引擎预检] 新增UF-058回归先RED：`report.disclaimer`填充值仍保留wrapper。最小修复保持填充前Tag/字段合同校验，只在普通可见字段替换成功后调用既有wrapper移除器；隐藏`result.userTime`保持原控件和`w:vanish`。FB-179测试同步从“wrapper结构不变”收紧为“所有可见字段不得残留wrapper”，非正文部件/图表样式门禁保持。专项UF-056/058、FB-179/193通过，Go全量PASS，server build无输出错误。
+- production仅执行零DB/零部署临时转换：两份确定性DOCX上传`/tmp`，LibreOffice 7.4隔离profile转换并由trap清理。免责声明probe为10页、PDF文本存在、font id映射MicrosoftYaHei、SimSun=0；完整中文样式probe为10页、Page前缀0、SimSun=0、`计划执行：`粗体/标签=`1/1`。未替换production server/template/PDF，反馈状态为LOCAL GREEN / production待发布。
+- [staging发布阻断 - 2026-10-10] 用户要求继续部署验证后，明确按staging→production门禁仅尝试staging。Linux amd64/CGO0候选构建通过，50198351 bytes/SHA=`13d5f07e5d157db5a379c014b43c058094800fc01c7d5768ea1be419b7d43415`。staging SSH在任何远端命令启动前连续两次TCP/22 timeout；按两轮失败门禁停止，不继续盲重连、不越过staging直接发布production。公网root和`/prod-api/health`仍分别200/16155 bytes与200/15 bytes，说明应用可用而SSH入口不可达；已有活动Posh-SSH staging会话0。远端上传/备份/停服/替换/重启/DB访问均为0，当前状态不从LOCAL GREEN升级。
+- [staging发布关闭 - 2026-10-10] SSH恢复后重新构建候选，50198351 bytes/SHA仍为`13d5f07e...`。fresh远端核验确认server于09:20:31切换，磁盘/进程SHA均为候选；旧server SHA=`ec4c85d7...`的50255805-byte副本位于`/opt/talent-assessment/backups/uf058-staging-server-20261010092029/server.before`。v2模板SHA仍为`52e0020c...`，未发生模板变更。
+- 可复用completed v2 report=`7426a5dc-3020-4917-9f65-0b0f14b86cb0`、paper=`24504b9c-1874-4bbd-af09-f9d0d83abb16`已重生成；最终PDF=814516 bytes/SHA=`e9eb405c...`，覆盖前PDF SHA=`4d98dc3b...`保存在`/opt/talent-assessment/backups/uf058-staging-report-20261010092417/report-before.pdf`，同目录保留report/current/audit SQL副本。最终report/current=1、audit=24。
+- PDF验收实际通过：10页、完整免责声明存在且仅使用MicrosoftYaHei字体子集、SimSun=0、Page前缀0、`计划执行：`使用BAAAAA+MicrosoftYaHei粗体子集1/1。首次验证器错误依赖不存在的`pdftohtml bold=yes`属性而失败；字体规格诊断证明BAAAAA为粗体子集后改为精确子集断言并通过，属于验证器纠正，不是产品回滚。
+- 终验：service active、PID3245、NRestarts0、server/process=`13d5f07e...`、内外health200、active paper0、09:20后panic/fatal/permission=0、`/tmp` UF-058/phase1-v2残留0。UF-058当前为STAGING GREEN；production继续运行UF-057后端，未部署UF-058、未覆盖production报告。
+- [production发布关闭 - 2026-10-10] 用户明确要求部署production。首轮零写preflight误用无密码socket root及80端口公网health，业务写入0；纠正为从配置仅进程内消费DSN、8090公网入口后PASS：旧server/process=`c321bf35...`、模板`52e0020c...`、report/current1、PDF=`cd6dbce4...`/758202 bytes、audit20、active paper0、LO7.4、磁盘余约7.6GiB。
+- SFTP首次把目标误作文件路径而失败，仅创建空0700 payload目录；按目录语义第二次上传成功。后端备份=`/opt/talent-assessment/backups/uf058-production-server-20261010094424`，旧SHA=`c321bf35...`；单次stop/install/start后server/process=`13d5f07e...`、PID2375402→2382320、NRestarts0、三层health200。
+- 指定paper=`9174f98e-181f-486e-bbc7-0118bc39ced1`、report=`103d9a0d-0113-4aef-8962-434645783477`通过既有精确回滚控制器强制重生成；报告备份=`/opt/talent-assessment/backups/uf058-production-report-20261010095539`。PDF从`cd6dbce4...`/758202 bytes更新为`89896d6f...`/709795 bytes；controller验证10页、时长隐藏、Page前缀0、居中数字页码、计划执行粗体、认证下载与DB/文件绑定；audit20→generate21→download22。
+- 终验前两轮仅验证器假设失败：第一轮未计下载新增审计；第二轮错误假设动态标签只有一处。只读复审确认报告有两处精确`计划执行：`且均为`BAAAAA+MicrosoftYaHei`/`<b>`；按真实2/2合同终验PASS。最终免责声明仅MicrosoftYaHei字体子集、SimSun0、Page前缀0、10页、report/current1、audit22、active paper0、PID2382320、NRestarts0、三层health200、关键日志0、payload0。产品未回滚；UF-058为PRODUCTION GREEN。
+
 # 2026-10-10 UF-057 production旧PDF覆盖完成（LibreOffice 7.4/24.2兼容）
 
 - 用户要求提高效率，不再重复90题，复用staging真实生命周期收据并直接覆盖历史PDF。staging后端SHA=`ec4c85d7...`真实90答/10页PDF已PASS：时长隐藏、Page前缀0、数字页码居中、`计划执行：`粗体、audit2、cleanup=`0|0|0|0`、基线`10|24|48|24`前后一致。随后仅为production LibreOffice 7.4增加wrapper兼容时，Azure staging SSH连续两次超时，未上传或改动。

@@ -601,14 +601,43 @@ func (h *CompetencyReportHandler) loadCompetencyReportArchiveEntries(paperIDs []
 		resultByPaper[result.PaperID] = result
 	}
 
+	bindingSchemaReady := competencyReportBindingSchemaReady(h.db)
+	var currents []model.CompetencyReportCurrent
+	if bindingSchemaReady {
+		if err := h.db.Where("paper_id IN ? AND audience = ?", paperIDs, service.CompetencyReportAudienceFrontlineEmployee).Find(&currents).Error; err != nil {
+			return nil, errors.New("查询当前报告失败")
+		}
+	}
+	currentByPaper := make(map[string]model.CompetencyReportCurrent, len(currents))
+	for _, current := range currents {
+		currentByPaper[current.PaperID] = current
+	}
+
 	var reports []model.CompetencyReport
-	if err := competencyReportQuery(h.db, competencyReportBindingSchemaReady(h.db)).Where("paper_id IN ? AND status = ?", paperIDs, competencyReportStatusCompleted).Find(&reports).Error; err != nil {
+	if err := competencyReportQuery(h.db, bindingSchemaReady).Where("paper_id IN ? AND status = ?", paperIDs, competencyReportStatusCompleted).Find(&reports).Error; err != nil {
 		return nil, errors.New("查询报告实例失败")
 	}
 	reportByKey := make(map[string]model.CompetencyReport, len(reports))
+	reportByID := make(map[string]model.CompetencyReport, len(reports))
+	runIDs := make([]string, 0, len(reports))
 	for _, report := range reports {
 		key := report.PaperID + "\x00" + report.ContentVersion + "\x00" + report.TemplateVersion
 		reportByKey[key] = report
+		reportByID[report.ID] = report
+		if report.ResultRunID != nil && strings.TrimSpace(*report.ResultRunID) != "" {
+			runIDs = append(runIDs, strings.TrimSpace(*report.ResultRunID))
+		}
+	}
+
+	var runs []model.CompetencyResultRun
+	if len(runIDs) > 0 {
+		if err := h.db.Where("id IN ?", runIDs).Find(&runs).Error; err != nil {
+			return nil, errors.New("查询报告评分运行失败")
+		}
+	}
+	runByID := make(map[string]model.CompetencyResultRun, len(runs))
+	for _, run := range runs {
+		runByID[run.ID] = run
 	}
 
 	approvalCache := make(map[string]error)
@@ -618,15 +647,29 @@ func (h *CompetencyReportHandler) loadCompetencyReportArchiveEntries(paperIDs []
 		if !exists {
 			return nil, errors.New("报告结果不存在: " + paperID)
 		}
-		versions := service.CompetencyVersionSetFromResult(result)
-		if service.IsPhase1CompetencyVersionSet(versions) {
-			approvalKey := versions.ProductVersion + "\x00" + versions.ScoringVersion + "\x00" + versions.ContentVersion + "\x00" + versions.ReportTemplateVersion
+		participantName := result.ParticipantName
+		var report model.CompetencyReport
+		if current, hasCurrent := currentByPaper[paperID]; hasCurrent {
+			var reportExists bool
+			report, reportExists = reportByID[current.ReportID]
+			if !reportExists || report.PaperID != paperID || report.Audience != current.Audience || report.Status != competencyReportStatusCompleted {
+				return nil, errors.New("当前报告尚未生成: " + paperID)
+			}
+			if report.ResultRunID == nil || strings.TrimSpace(*report.ResultRunID) == "" {
+				return nil, errors.New("当前报告未绑定评分运行: " + paperID)
+			}
+			run, runExists := runByID[strings.TrimSpace(*report.ResultRunID)]
+			versions := service.CompetencyVersionSet{ProductVersion: run.ProductVersion, ScoringVersion: run.ScoringVersion, ContentVersion: run.ContentVersion, ReportTemplateVersion: run.ReportTemplateVersion}
+			if !runExists || run.PaperID != paperID || run.Status != "completed" || !service.IsPhase1V2VersionSet(versions) || report.ContentVersion != versions.ContentVersion || report.TemplateVersion != versions.ReportTemplateVersion || report.Audience != run.ReportAudience {
+				return nil, errors.New("当前报告版本绑定无效: " + paperID)
+			}
+			approvalKey := versions.ProductVersion + "\x00" + versions.ScoringVersion + "\x00" + versions.ContentVersion + "\x00" + versions.ReportTemplateVersion + "\x00" + run.ReportAudience
 			approvalErr, checked := approvalCache[approvalKey]
 			if !checked {
 				var contentPackage model.CompetencyReportContentPackage
-				approvalErr = h.db.Where("product_version = ? AND scoring_version = ? AND content_version = ? AND template_version = ? AND audience = ?", versions.ProductVersion, versions.ScoringVersion, versions.ContentVersion, versions.ReportTemplateVersion, service.CompetencyReportAudienceFrontlineEmployee).Take(&contentPackage).Error
+				approvalErr = h.db.Where("product_version = ? AND scoring_version = ? AND content_version = ? AND template_version = ? AND audience = ?", versions.ProductVersion, versions.ScoringVersion, versions.ContentVersion, versions.ReportTemplateVersion, run.ReportAudience).Take(&contentPackage).Error
 				if approvalErr == nil {
-					approvalErr = service.ValidatePhase1ReportContentApproval(contentPackage)
+					approvalErr = service.ValidatePhase1ReportContentApprovalForEnvironment(contentPackage, service.CompetencyReportEffectiveEnvironment())
 				} else {
 					approvalErr = service.ErrPhase1ReportContentNotApproved
 				}
@@ -635,14 +678,34 @@ func (h *CompetencyReportHandler) loadCompetencyReportArchiveEntries(paperIDs []
 			if approvalErr != nil {
 				return nil, approvalErr
 			}
-		} else if err := service.ValidateFrozenCompetencyVersionSet(versions); err != nil {
-			return nil, err
-		}
+			participantName = run.ParticipantName
+		} else {
+			versions := service.CompetencyVersionSetFromResult(result)
+			if service.IsPhase1CompetencyVersionSet(versions) {
+				approvalKey := versions.ProductVersion + "\x00" + versions.ScoringVersion + "\x00" + versions.ContentVersion + "\x00" + versions.ReportTemplateVersion
+				approvalErr, checked := approvalCache[approvalKey]
+				if !checked {
+					var contentPackage model.CompetencyReportContentPackage
+					approvalErr = h.db.Where("product_version = ? AND scoring_version = ? AND content_version = ? AND template_version = ? AND audience = ?", versions.ProductVersion, versions.ScoringVersion, versions.ContentVersion, versions.ReportTemplateVersion, service.CompetencyReportAudienceFrontlineEmployee).Take(&contentPackage).Error
+					if approvalErr == nil {
+						approvalErr = service.ValidatePhase1ReportContentApproval(contentPackage)
+					} else {
+						approvalErr = service.ErrPhase1ReportContentNotApproved
+					}
+					approvalCache[approvalKey] = approvalErr
+				}
+				if approvalErr != nil {
+					return nil, approvalErr
+				}
+			} else if err := service.ValidateFrozenCompetencyVersionSet(versions); err != nil {
+				return nil, err
+			}
 
-		key := paperID + "\x00" + versions.ContentVersion + "\x00" + versions.ReportTemplateVersion
-		report, exists := reportByKey[key]
-		if !exists {
-			return nil, errors.New("报告尚未生成: " + paperID)
+			key := paperID + "\x00" + versions.ContentVersion + "\x00" + versions.ReportTemplateVersion
+			report, exists = reportByKey[key]
+			if !exists {
+				return nil, errors.New("报告尚未生成: " + paperID)
+			}
 		}
 		path, err := h.validReportPath(report.PDFPath)
 		if err != nil {
@@ -652,7 +715,7 @@ func (h *CompetencyReportHandler) loadCompetencyReportArchiveEntries(paperIDs []
 		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
 			return nil, errors.New("报告文件不存在: " + paperID)
 		}
-		entries = append(entries, competencyReportArchiveEntry{PaperID: paperID, ReportID: report.ID, ParticipantName: result.ParticipantName, Path: path})
+		entries = append(entries, competencyReportArchiveEntry{PaperID: paperID, ReportID: report.ID, ParticipantName: participantName, Path: path})
 	}
 	return entries, nil
 }
